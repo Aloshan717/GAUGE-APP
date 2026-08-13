@@ -101,7 +101,259 @@ const fmt = (d) => { if (!d) return "—"; const dt = new Date(d + "T00:00:00");
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const pct = (done, total) => Math.min(100, Math.max(0, (done / total) * 100)).toFixed(1) + "%";
 
-// ─── SPARKLINE ───────────────────────────────────────────────────────────────
+// ─── TREND CHART (real time axis, month labels) ──────────────────────────────
+const MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+
+function TrendChart({ data, field, color, T, h = 150, goal = null, goodDirection = -1 }) {
+  const pts = (data || [])
+    .map((d) => ({ t: new Date(d.date + "T00:00:00").getTime(), v: +d[field] }))
+    .filter((p) => !isNaN(p.v) && !isNaN(p.t))
+    .sort((a, b) => a.t - b.t);
+
+  if (pts.length === 0) return null;
+
+  const PW = 320, PH = h;
+  const padL = 38, padR = 10, padT = 10, padB = 22;
+  const iw = PW - padL - padR;
+  const ih = PH - padT - padB;
+
+  // Time domain — extend to the goal date if there is one
+  let tMin = pts[0].t;
+  let tMax = pts[pts.length - 1].t;
+  const goalT = goal?.target_date ? new Date(goal.target_date + "T00:00:00").getTime() : null;
+  if (goalT && goalT > tMax) tMax = goalT;
+  if (tMax === tMin) tMax = tMin + 86400000 * 30; // single point → show a month
+
+  // Value domain — include the target so the goal line is visible
+  const vals = pts.map((p) => p.v);
+  if (goal?.target_weight) vals.push(+goal.target_weight);
+  let vMin = Math.min(...vals), vMax = Math.max(...vals);
+  if (vMax === vMin) { vMin -= 1; vMax += 1; }
+  const padV = (vMax - vMin) * 0.15;
+  vMin -= padV; vMax += padV;
+
+  const X = (t) => padL + ((t - tMin) / (tMax - tMin)) * iw;
+  const Y = (v) => padT + (1 - (v - vMin) / (vMax - vMin)) * ih;
+
+  const line = pts.map((p) => `${X(p.t).toFixed(1)},${Y(p.v).toFixed(1)}`).join(" ");
+  const area = `${X(pts[0].t).toFixed(1)},${(padT + ih).toFixed(1)} ${line} ${X(pts[pts.length-1].t).toFixed(1)},${(padT + ih).toFixed(1)}`;
+
+  // Month ticks across the visible range
+  const ticks = [];
+  const start = new Date(tMin);
+  let cur = new Date(start.getFullYear(), start.getMonth(), 1).getTime();
+  while (cur <= tMax) {
+    if (cur >= tMin) ticks.push(cur);
+    const d = new Date(cur);
+    cur = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
+  }
+  const step = ticks.length > 7 ? Math.ceil(ticks.length / 6) : 1;
+  const shown = ticks.filter((_, i) => i % step === 0);
+
+  // Goal line: from the latest actual reading to the target
+  let goalLine = null;
+  if (goal?.target_weight && goalT) {
+    const last = pts[pts.length - 1];
+    goalLine = `${X(last.t).toFixed(1)},${Y(last.v).toFixed(1)} ${X(goalT).toFixed(1)},${Y(+goal.target_weight).toFixed(1)}`;
+  }
+
+  const first = pts[0].v, last = pts[pts.length - 1].v;
+  const change = +(last - first).toFixed(1);
+  const good = change * goodDirection >= 0;
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${PW} ${PH}`} style={{ width: "100%", height: h, display: "block" }}>
+        {/* horizontal guides */}
+        {[0, 0.5, 1].map((f) => (
+          <line key={f} x1={padL} x2={PW - padR} y1={padT + f * ih} y2={padT + f * ih}
+                stroke={T.divider} strokeWidth={1} />
+        ))}
+
+        {/* y labels */}
+        <text x={4} y={padT + 4} fill={T.n600} fontSize={9} fontFamily="inherit">{vMax.toFixed(1)}</text>
+        <text x={4} y={padT + ih + 4} fill={T.n600} fontSize={9} fontFamily="inherit">{vMin.toFixed(1)}</text>
+
+        {/* month ticks */}
+        {shown.map((t) => {
+          const d = new Date(t);
+          return (
+            <text key={t} x={X(t)} y={PH - 6} fill={T.n600} fontSize={9}
+                  textAnchor="middle" fontFamily="inherit" letterSpacing="0.06em">
+              {MONTHS[d.getMonth()]}
+            </text>
+          );
+        })}
+
+        {/* goal projection */}
+        {goalLine && (
+          <polyline points={goalLine} fill="none" stroke={T.n500}
+                    strokeWidth={1.5} strokeDasharray="4,4" />
+        )}
+
+        {/* actual */}
+        {pts.length > 1 && <polygon points={area} fill={color} fillOpacity={0.18} />}
+        {pts.length > 1 && (
+          <polyline points={line} fill="none" stroke={color} strokeWidth={2.5}
+                    strokeLinejoin="round" strokeLinecap="round" />
+        )}
+
+        {/* points */}
+        {pts.map((p, i) => (
+          <circle key={i} cx={X(p.t)} cy={Y(p.v)} r={i === pts.length - 1 ? 3.5 : 2}
+                  fill={i === pts.length - 1 ? color : T.bg} stroke={color} strokeWidth={1.5} />
+        ))}
+
+        {/* target marker */}
+        {goal?.target_weight && goalT && (
+          <circle cx={X(goalT)} cy={Y(+goal.target_weight)} r={3}
+                  fill="none" stroke={T.n500} strokeWidth={1.5} />
+        )}
+      </svg>
+
+      {pts.length > 1 && (
+        <div style={{ display: "flex", gap: 16, marginTop: 6, fontSize: 11, color: T.n600 }}>
+          <span>Start <strong style={{ color: T.text }}>{first}</strong></span>
+          <span>Now <strong style={{ color: T.text }}>{last}</strong></span>
+          <span>Change <strong style={{ color: good ? T.ok : T.bad }}>{change > 0 ? "+" : ""}{change}</strong></span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── SESSION CARD (muscles dropdown + duration + kcal) ───────────────────────
+const MUSCLE_LIST = ["Chest", "Back", "Legs", "Shoulders", "Arms", "Core", "Cardio"];
+
+function SessionCard({ sessions, token, userId, onRefresh, T }) {
+  const sorted = [...(sessions || [])].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const last = sorted[0];
+
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ date: todayISO(), duration_min: "", kcal: "", muscles: [] });
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(false);
+
+  const card = { background: T.surface, borderRadius: T.radius, padding: 16, display: "flex", flexDirection: "column", gap: 10 };
+  const inp = { width: "100%", background: T.bg, border: `1px solid ${T.divider}`, borderRadius: T.radiusSm, color: T.text, padding: "8px 10px", fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit", minHeight: 44 };
+  const lbl = { fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: T.n600, marginBottom: 4, display: "block" };
+
+  const toggleMuscle = (m) => setForm((f) => ({
+    ...f,
+    muscles: f.muscles.includes(m) ? f.muscles.filter((x) => x !== m) : [...f.muscles, m],
+  }));
+
+  const save = async () => {
+    if (!form.date) return;
+    setSaving(true);
+    await sb.insert("sessions", token, {
+      user_id: userId,
+      date: form.date,
+      duration_min: form.duration_min ? +form.duration_min : null,
+      kcal: form.kcal ? +form.kcal : null,
+      muscles: form.muscles.join(", "),
+    });
+    setForm({ date: todayISO(), duration_min: "", kcal: "", muscles: [] });
+    setEditing(false);
+    setOpen(false);
+    setSaving(false);
+    await onRefresh();
+  };
+
+  const summary = form.muscles.length ? form.muscles.join(", ") : "Select muscles";
+
+  return (
+    <div style={card}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <Kicker T={T}>Last session</Kicker>
+        {last && <span style={{ fontSize: 11, color: T.n700 }}>{fmt(last.date)}</span>}
+      </div>
+
+      {last && !editing && (
+        <>
+          <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>
+            {last.muscles || "No muscles recorded"}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 8, marginTop: 4 }}>
+            <div style={{ background: T.accent100, borderRadius: 10, padding: "9px 10px" }}>
+              <div style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.07em", color: T.n700 }}>Duration</div>
+              <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.15 }}>{last.duration_min ?? "—"}<span style={{ fontSize: 11, color: T.n600 }}> min</span></div>
+            </div>
+            <div style={{ background: T.accent100, borderRadius: 10, padding: "9px 10px" }}>
+              <div style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.07em", color: T.n700 }}>Calories</div>
+              <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.15 }}>{last.kcal ?? "—"}<span style={{ fontSize: 11, color: T.n600 }}> kcal</span></div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {!last && !editing && (
+        <div style={{ fontSize: 13, color: T.n600 }}>No sessions logged yet.</div>
+      )}
+
+      {editing && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div>
+            <label style={lbl}>Muscles targeted</label>
+            <div style={{ position: "relative" }}>
+              <button type="button" onClick={() => setOpen((v) => !v)}
+                style={{ width: "100%", minHeight: 46, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "0 12px", borderRadius: 10, border: `1px solid ${T.divider}`, background: T.bg, color: form.muscles.length ? T.text : T.n600, fontFamily: "inherit", fontSize: 14, cursor: "pointer", textAlign: "left" }}>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summary}</span>
+                <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={T.n600} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+
+              {open && (
+                <div style={{ position: "absolute", left: 0, right: 0, top: 50, zIndex: 20, background: T.bg, border: `1px solid ${T.divider}`, borderRadius: 12, boxShadow: "0 12px 30px rgba(0,0,0,0.35)", overflow: "hidden" }}>
+                  {MUSCLE_LIST.map((m) => {
+                    const on = form.muscles.includes(m);
+                    return (
+                      <button key={m} type="button" onClick={() => toggleMuscle(m)}
+                        style={{ width: "100%", minHeight: 46, display: "flex", alignItems: "center", gap: 10, padding: "0 12px", border: "none", borderBottom: `1px solid ${T.divider}`, background: on ? T.accent100 : "transparent", color: T.text, fontFamily: "inherit", fontSize: 13.5, cursor: "pointer", textAlign: "left" }}>
+                        <span style={{ width: 18, height: 18, flex: "none", borderRadius: 5, border: `1.5px solid ${on ? T.accent : T.n500}`, background: on ? T.accent : "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11, fontWeight: 700 }}>
+                          {on ? "✓" : ""}
+                        </span>
+                        {m}
+                      </button>
+                    );
+                  })}
+                  <button type="button" onClick={() => setOpen(false)}
+                    style={{ width: "100%", minHeight: 44, border: "none", background: T.accent100, color: T.accent, fontFamily: "inherit", fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer" }}>
+                    Done
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10 }}>
+            <div><label style={lbl}>Duration (min)</label><input style={inp} type="number" placeholder="e.g. 58" value={form.duration_min} onChange={(e) => setForm((f) => ({ ...f, duration_min: e.target.value }))} /></div>
+            <div><label style={lbl}>Calories (kcal)</label><input style={inp} type="number" placeholder="e.g. 472" value={form.kcal} onChange={(e) => setForm((f) => ({ ...f, kcal: e.target.value }))} /></div>
+          </div>
+          <div><label style={lbl}>Date</label><input style={inp} type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></div>
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={save} disabled={saving} style={{ flex: 1, minHeight: 46, fontFamily: "inherit", fontSize: 14, fontWeight: 700, border: "none", borderRadius: 10, background: T.accent, color: "#fff", cursor: "pointer", opacity: saving ? 0.6 : 1 }}>
+              {saving ? "Saving…" : "Save session"}
+            </button>
+            <button onClick={() => { setEditing(false); setOpen(false); }} style={{ minHeight: 46, padding: "0 16px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, border: `1px solid ${T.divider}`, borderRadius: 10, background: "transparent", color: T.n600, cursor: "pointer" }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {!editing && (
+        <button onClick={() => setEditing(true)}
+          style={{ minHeight: 44, fontFamily: "inherit", fontSize: 13, fontWeight: 700, border: `1px solid ${T.accent400}`, borderRadius: 10, background: T.accent100, color: T.accent600, cursor: "pointer", marginTop: 4 }}>
+          Log a session
+        </button>
+      )}
+
+      <div style={{ fontSize: 10.5, color: T.n600, lineHeight: 1.5 }}>
+        Read these off your Apple Watch workout summary. A web app can't reach Apple Health directly.
+      </div>
+    </div>
+  );
+}
+
 function Sparkline({ data, field, color, h = 60 }) {
   if (!data || data.length < 2) return null;
   const vals = data.map((d) => +d[field]).filter((v) => !isNaN(v));
@@ -192,12 +444,14 @@ const Kicker = ({ children, T }) => (
 );
 
 // ─── HOME TAB ────────────────────────────────────────────────────────────────
-function HomeTab({ weights, inbody, logs, goal, name, T }) {
+function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
   const sortedW = [...weights].sort((a, b) => new Date(a.date) - new Date(b.date));
   const latest = sortedW[sortedW.length - 1];
-  const latestIb = [...inbody].sort((a, b) => new Date(a.date) - new Date(b.date)).slice(-1)[0];
-  const prevIb = [...inbody].sort((a, b) => new Date(a.date) - new Date(b.date)).slice(-2, -1)[0];
-  const lastLog = [...logs].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+  const sortedIb = [...inbody].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const latestIb = sortedIb[sortedIb.length - 1];
+  const prevIb = sortedIb[sortedIb.length - 2];
+
+  const card = { background: T.surface, borderRadius: T.radius, padding: 16, display: "flex", flexDirection: "column", gap: 10 };
 
   const goalPct = (() => {
     if (!goal || !latest || !sortedW[0]) return null;
@@ -209,89 +463,125 @@ function HomeTab({ weights, inbody, logs, goal, name, T }) {
   const daysLeft = goal?.target_date ? Math.max(0, Math.ceil((new Date(goal.target_date) - new Date()) / 86400000)) : null;
   const pace = (goal && latest && daysLeft) ? (Math.abs(latest.weight - goal.target_weight) / (daysLeft / 7)).toFixed(2) : null;
 
-  const card = { background: T.surface, borderRadius: T.radius, padding: 16, display: "flex", flexDirection: "column", gap: 6 };
+  // 7-day training load
+  const weekAgo = Date.now() - 7 * 86400000;
+  const weekSessions = (sessions || []).filter((s) => new Date(s.date).getTime() >= weekAgo);
+  const weekKcal = weekSessions.reduce((a, s) => a + (+s.kcal || 0), 0);
+  const weekMin = weekSessions.reduce((a, s) => a + (+s.duration_min || 0), 0);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Welcome back{name ? `, ${name.split(" ")[0]}` : ""}</h2>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div>
+        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Welcome back{name ? `, ${name.split(" ")[0]}` : ""}</h2>
+        <div style={{ fontSize: 12, color: T.n600, marginTop: 2 }}>
+          {new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long" })}
+        </div>
+      </div>
 
+      {/* ── Weight + goal chart ── */}
       {latest ? (
         <div style={card}>
           <Kicker T={T}>Current weight</Kicker>
-          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12, margin: "4px 0 10px" }}>
-            <div style={{ fontSize: 54, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 0.95 }}>{latest.weight}<span style={{ fontSize: 18, color: T.n600, marginLeft: 4 }}>kg</span></div>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ fontSize: 48, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 0.95 }}>
+              {latest.weight}<span style={{ fontSize: 17, color: T.n600, marginLeft: 4 }}>kg</span>
+            </div>
             {goal && (
               <div style={{ textAlign: "right", fontSize: 11.5, color: T.n700 }}>
-                <span style={{ display: "inline-block", padding: "4px 8px", borderRadius: 20, border: `1px solid ${T.accent}`, background: T.accent100, color: T.accent, fontWeight: 600, fontSize: 11, marginBottom: 4 }}>On track</span>
+                <div style={{ display: "inline-block", padding: "3px 8px", borderRadius: 20, border: `1px solid ${T.accent}`, background: T.accent100, color: T.accent, fontWeight: 600, fontSize: 10.5, marginBottom: 4 }}>
+                  {daysLeft} days left
+                </div>
                 <div>Target {goal.target_weight} kg</div>
-                {daysLeft !== null && <div>by {fmt(goal.target_date)} · {daysLeft}d left</div>}
+                {pace && <div>{pace} kg/wk needed</div>}
               </div>
             )}
           </div>
+
           {goal && goalPct && (
-            <div style={{ margin: "2px 0 12px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: T.n600, marginBottom: 7 }}>
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9.5, letterSpacing: "0.08em", textTransform: "uppercase", color: T.n600, marginBottom: 6 }}>
                 <span>{sortedW[0]?.weight} kg start</span><span>{goal.target_weight} kg target</span>
               </div>
-              <div style={{ position: "relative", height: 10, borderRadius: 6, background: T.accent100 }}>
+              <div style={{ position: "relative", height: 9, borderRadius: 6, background: T.accent100 }}>
                 <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: 6, background: T.accent, width: goalPct, transition: "width 0.5s" }} />
               </div>
-              <div style={{ fontSize: 11, color: T.n600, marginTop: 7 }}>{goalPct} of the way{pace && ` · ${pace} kg/wk needed`}</div>
+              <div style={{ fontSize: 11, color: T.n600, marginTop: 6 }}>{goalPct} of the way</div>
             </div>
           )}
-          {sortedW.length > 1 && <Sparkline data={sortedW} field="weight" color={T.accent} h={86} />}
+
+          <TrendChart data={sortedW} field="weight" color={T.accent} T={T} h={150} goal={goal} goodDirection={-1} />
         </div>
       ) : (
         <div style={{ ...card, textAlign: "center", color: T.n600, fontSize: 13, padding: 24 }}>
-          No weight logged yet — go to <strong style={{ color: T.accent }}>Weight</strong> to start.
+          No weight logged yet — open <strong style={{ color: T.accent }}>Weight</strong> to start.
         </div>
       )}
 
+      {/* ── Body composition ── */}
       {latestIb && (
         <div style={card}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <Kicker T={T}>Latest InBody</Kicker>
+            <Kicker T={T}>Body composition</Kicker>
             <span style={{ fontSize: 11, color: T.n700 }}>{fmt(latestIb.date)}</span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
             {[
-              { label: "Weight", val: latestIb.weight, unit: "kg", prev: prevIb?.weight, good: -1 },
-              { label: "Body fat", val: latestIb.body_fat, unit: "%", prev: prevIb?.body_fat, good: -1 },
-              { label: "Muscle", val: latestIb.muscle_mass, unit: "%", prev: prevIb?.muscle_mass, good: 1 },
+              { label: "Weight", val: latestIb.weight, unit: "kg", pv: prevIb?.weight, good: -1 },
+              { label: "Body fat", val: latestIb.body_fat, unit: "%", pv: prevIb?.body_fat, good: -1 },
+              { label: "Muscle", val: latestIb.muscle_mass, unit: "%", pv: prevIb?.muscle_mass, good: 1 },
             ].map((b) => {
-              const d = b.prev != null ? +(b.val - b.prev).toFixed(1) : null;
+              const d = (b.pv != null && b.val != null) ? +(b.val - b.pv).toFixed(1) : null;
               const col = d == null ? T.n600 : (d * b.good <= 0 ? T.bad : T.ok);
               return (
-                <div key={b.label} style={{ border: `1px solid ${col}`, borderRadius: 10, padding: "9px 10px" }}>
-                  <div style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.07em", color: T.n700 }}>{b.label}</div>
-                  <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.1 }}>{b.val}<span style={{ fontSize: 11, color: T.n600 }}>{b.unit}</span></div>
-                  {d !== null && <div style={{ fontSize: 11, fontWeight: 600, color: col }}>{d > 0 ? "+" : ""}{d}</div>}
+                <div key={b.label} style={{ border: `1px solid ${col}`, borderRadius: 10, padding: "9px 8px" }}>
+                  <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.06em", color: T.n700 }}>{b.label}</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.1 }}>{b.val ?? "—"}<span style={{ fontSize: 10, color: T.n600 }}>{b.val != null ? b.unit : ""}</span></div>
+                  {d !== null && <div style={{ fontSize: 10.5, fontWeight: 600, color: col }}>{d > 0 ? "+" : ""}{d}</div>}
                 </div>
               );
             })}
           </div>
+
+          {sortedIb.length > 1 && (
+            <div style={{ marginTop: 4 }}>
+              <div style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.08em", color: T.n600, marginBottom: 2 }}>Body fat</div>
+              <TrendChart data={sortedIb} field="body_fat" color={T.warn} T={T} h={110} goodDirection={-1} />
+              <div style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.08em", color: T.n600, margin: "10px 0 2px" }}>Muscle</div>
+              <TrendChart data={sortedIb} field="muscle_mass" color={T.ok} T={T} h={110} goodDirection={1} />
+            </div>
+          )}
         </div>
       )}
 
-      {lastLog && (
+      {/* ── This week ── */}
+      {weekSessions.length > 0 && (
         <div style={card}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <Kicker T={T}>Last session</Kicker>
-            <span style={{ fontSize: 11, color: T.n700 }}>{fmt(lastLog.date)}</span>
+          <Kicker T={T}>Last 7 days</Kicker>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+            {[
+              { label: "Sessions", val: weekSessions.length, unit: "" },
+              { label: "Time", val: Math.round(weekMin), unit: "min" },
+              { label: "Burned", val: Math.round(weekKcal), unit: "kcal" },
+            ].map((s) => (
+              <div key={s.label} style={{ background: T.accent100, borderRadius: 10, padding: "9px 8px" }}>
+                <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.06em", color: T.n700 }}>{s.label}</div>
+                <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.15 }}>{s.val}<span style={{ fontSize: 10, color: T.n600 }}> {s.unit}</span></div>
+              </div>
+            ))}
           </div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{lastLog.exercise}</div>
-          <div style={{ fontSize: 12, color: T.n600 }}>{lastLog.muscle_group} · {lastLog.weight_kg} kg × {lastLog.reps} reps</div>
         </div>
       )}
+
+      {/* ── Last session ── */}
+      <SessionCard sessions={sessions} T={T} {...sessionsProps} />
     </div>
   );
 }
 
 // ─── CALORIE ENGINE ──────────────────────────────────────────────────────────
-function calcCalories({ weight, height, age, gender, activity, watchAvgKcal, goalDirection, targetWeight, targetDate }) {
+function calcCalories({ weight, height, age, gender, activity, burnKcal, goalDirection, targetWeight, targetDate }) {
   if (!weight || !height || !age) return null;
 
-  // Mifflin-St Jeor BMR
   const bmr = gender === "female"
     ? 10 * weight + 6.25 * height - 5 * age - 161
     : 10 * weight + 6.25 * height - 5 * age + 5;
@@ -299,105 +589,116 @@ function calcCalories({ weight, height, age, gender, activity, watchAvgKcal, goa
   const activityMap = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, veryActive: 1.9 };
   const tdeeFormula = bmr * (activityMap[activity] || 1.55);
 
-  // Blend with Watch data if provided (60% formula, 40% watch — watch overrides when available)
-  const tdee = watchAvgKcal ? Math.round(tdeeFormula * 0.6 + watchAvgKcal * 0.4) : Math.round(tdeeFormula);
+  // If we know the real average daily burn from logged sessions, blend it in
+  const tdee = burnKcal
+    ? Math.round(tdeeFormula * 0.6 + (bmr * 1.2 + burnKcal) * 0.4)
+    : Math.round(tdeeFormula);
 
-  // Deficit/surplus based on goal pace
   let adjustment = 0;
   if (goalDirection === "lose" && targetWeight && targetDate) {
     const daysLeft = Math.max(1, Math.ceil((new Date(targetDate) - new Date()) / 86400000));
     const kgToLose = Math.max(0, weight - targetWeight);
-    // 1 kg fat ≈ 7700 kcal
     const dailyDeficit = Math.min(750, Math.round((kgToLose * 7700) / daysLeft));
     adjustment = -dailyDeficit;
   } else if (goalDirection === "gain") {
-    adjustment = 300; // lean bulk surplus
+    adjustment = 300;
   }
 
   const target = tdee + adjustment;
-  const protein = Math.round(weight * 2.0);       // 2g/kg
-  const fat     = Math.round(weight * 0.9);        // 0.9g/kg
-  const carbKcal = target - protein * 4 - fat * 9;
-  const carbs   = Math.max(0, Math.round(carbKcal / 4));
+  const protein = Math.round(weight * 2.0);
+  const fat     = Math.round(weight * 0.9);
+  const carbs   = Math.max(0, Math.round((target - protein * 4 - fat * 9) / 4));
 
   return { tdee, target, adjustment, protein, fat, carbs, bmr: Math.round(bmr) };
 }
 
 // ─── CALORIE CARD ────────────────────────────────────────────────────────────
-function CalorieCard({ weights, goal, T }) {
+function CalorieCard({ weights, goal, sessions, T }) {
   const latest = [...weights].sort((a, b) => new Date(a.date) - new Date(b.date)).slice(-1)[0];
-  const [stats, setStats] = useState({ age: "", height: "", gender: "male", activity: "moderate", watchAvgKcal: "", goalDirection: "lose" });
+
+  // Average daily burn over the last 14 days, from logged sessions
+  const avgBurn = (() => {
+    const since = Date.now() - 14 * 86400000;
+    const recent = (sessions || []).filter((s) => new Date(s.date).getTime() >= since && s.kcal);
+    if (!recent.length) return null;
+    const total = recent.reduce((a, s) => a + (+s.kcal || 0), 0);
+    return Math.round(total / 14);
+  })();
+
+  const [stats, setStats] = useState({ age: "", height: "", gender: "male", activity: "moderate", goalDirection: "lose" });
   const [result, setResult] = useState(null);
   const set = (k) => (e) => setStats((s) => ({ ...s, [k]: e.target.value }));
 
   const card = { background: T.surface, borderRadius: T.radius, padding: 16, display: "flex", flexDirection: "column", gap: 10 };
   const inp = { width: "100%", background: T.bg, border: `1px solid ${T.divider}`, borderRadius: T.radiusSm, color: T.text, padding: "8px 10px", fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit", minHeight: 44 };
   const lbl = { fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: T.n600, marginBottom: 4, display: "block" };
-  const sel = { ...inp, cursor: "pointer" };
 
   const calculate = () => {
-    const r = calcCalories({
+    setResult(calcCalories({
       weight: latest?.weight,
       height: +stats.height,
       age: +stats.age,
       gender: stats.gender,
       activity: stats.activity,
-      watchAvgKcal: stats.watchAvgKcal ? +stats.watchAvgKcal : null,
+      burnKcal: avgBurn,
       goalDirection: stats.goalDirection,
       targetWeight: goal?.target_weight,
       targetDate: goal?.target_date,
-    });
-    setResult(r);
+    }));
   };
 
-  const directionColor = stats.goalDirection === "lose" ? T.bad : T.ok;
+  const dirColor = stats.goalDirection === "lose" ? T.bad : T.ok;
 
   return (
     <div style={card}>
       <Kicker T={T}>Calorie analysis</Kicker>
 
-      {!latest && (
-        <div style={{ fontSize: 12, color: T.n600 }}>Log at least one weight entry first.</div>
-      )}
+      {!latest && <div style={{ fontSize: 12, color: T.n600 }}>Log at least one weight entry first.</div>}
 
       {latest && (
         <>
-          <div style={{ fontSize: 12, color: T.n600, marginBottom: 2 }}>
+          <div style={{ fontSize: 12, color: T.n600 }}>
             Current weight: <strong style={{ color: T.text }}>{latest.weight} kg</strong>
             {goal && <> · Target: <strong style={{ color: T.text }}>{goal.target_weight} kg</strong></>}
           </div>
+
+          {avgBurn ? (
+            <div style={{ fontSize: 11.5, color: T.ok, background: T.accent100, borderRadius: 8, padding: "8px 10px" }}>
+              Using your logged sessions: <strong>{avgBurn} kcal/day</strong> average burn over the last 14 days.
+            </div>
+          ) : (
+            <div style={{ fontSize: 11.5, color: T.n600, background: T.bg, borderRadius: 8, padding: "8px 10px" }}>
+              Log sessions on the Home tab and this will use your real burn instead of an estimate.
+            </div>
+          )}
 
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10 }}>
             <div><label style={lbl}>Age</label><input style={inp} type="number" placeholder="e.g. 30" value={stats.age} onChange={set("age")} /></div>
             <div><label style={lbl}>Height (cm)</label><input style={inp} type="number" placeholder="e.g. 175" value={stats.height} onChange={set("height")} /></div>
             <div>
               <label style={lbl}>Gender</label>
-              <select style={sel} value={stats.gender} onChange={set("gender")}>
+              <select style={inp} value={stats.gender} onChange={set("gender")}>
                 <option value="male">Male</option>
                 <option value="female">Female</option>
               </select>
             </div>
             <div>
               <label style={lbl}>Activity level</label>
-              <select style={sel} value={stats.activity} onChange={set("activity")}>
-                <option value="sedentary">Sedentary (desk job)</option>
+              <select style={inp} value={stats.activity} onChange={set("activity")}>
+                <option value="sedentary">Sedentary</option>
                 <option value="light">Light (1–3x/wk)</option>
                 <option value="moderate">Moderate (3–5x/wk)</option>
                 <option value="active">Active (6–7x/wk)</option>
-                <option value="veryActive">Very active (2x/day)</option>
+                <option value="veryActive">Very active</option>
               </select>
             </div>
-            <div>
+            <div style={{ gridColumn: "1 / -1" }}>
               <label style={lbl}>Goal</label>
-              <select style={sel} value={stats.goalDirection} onChange={set("goalDirection")}>
+              <select style={inp} value={stats.goalDirection} onChange={set("goalDirection")}>
                 <option value="lose">Lose fat</option>
                 <option value="gain">Gain muscle</option>
                 <option value="maintain">Maintain</option>
               </select>
-            </div>
-            <div>
-              <label style={lbl}>Apple Watch avg kcal/day</label>
-              <input style={inp} type="number" placeholder="Optional" value={stats.watchAvgKcal} onChange={set("watchAvgKcal")} />
             </div>
           </div>
 
@@ -406,40 +707,38 @@ function CalorieCard({ weights, goal, T }) {
           </button>
 
           {result && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4, paddingTop: 14, borderTop: `1px solid ${T.divider}` }}>
-
-              {/* Main target */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 12, borderTop: `1px solid ${T.divider}` }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                 <div>
                   <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: T.n600 }}>Daily target</div>
-                  <div style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1, color: T.accent }}>{result.target.toLocaleString()}<span style={{ fontSize: 16, color: T.n600, marginLeft: 4 }}>kcal</span></div>
+                  <div style={{ fontSize: 38, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1, color: T.accent }}>
+                    {result.target.toLocaleString()}<span style={{ fontSize: 15, color: T.n600, marginLeft: 4 }}>kcal</span>
+                  </div>
                 </div>
-                <div style={{ textAlign: "right", fontSize: 12, color: T.n600 }}>
-                  <div>Maintenance: {result.tdee.toLocaleString()} kcal</div>
-                  <div style={{ color: directionColor, fontWeight: 600 }}>
+                <div style={{ textAlign: "right", fontSize: 11.5, color: T.n600 }}>
+                  <div>Maintenance {result.tdee.toLocaleString()}</div>
+                  <div style={{ color: dirColor, fontWeight: 600 }}>
                     {result.adjustment < 0 ? `${result.adjustment} deficit` : result.adjustment > 0 ? `+${result.adjustment} surplus` : "maintenance"}
                   </div>
-                  {stats.watchAvgKcal && <div style={{ fontSize: 10, color: T.n500, marginTop: 2 }}>Blended with Watch data</div>}
                 </div>
               </div>
 
-              {/* Macro split */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                 {[
-                  { label: "Protein", val: result.protein, unit: "g", kcal: result.protein * 4, color: T.ok },
-                  { label: "Carbs",   val: result.carbs,   unit: "g", kcal: result.carbs * 4,   color: T.warn },
-                  { label: "Fat",     val: result.fat,     unit: "g", kcal: result.fat * 9,     color: T.accent },
+                  { label: "Protein", val: result.protein, kcal: result.protein * 4, color: T.ok },
+                  { label: "Carbs",   val: result.carbs,   kcal: result.carbs * 4,   color: T.warn },
+                  { label: "Fat",     val: result.fat,     kcal: result.fat * 9,     color: T.accent },
                 ].map((m) => (
-                  <div key={m.label} style={{ border: `1px solid ${m.color}`, borderRadius: 10, padding: "9px 10px" }}>
-                    <div style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.07em", color: T.n700 }}>{m.label}</div>
-                    <div style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.1, color: T.text }}>{m.val}<span style={{ fontSize: 11, color: T.n600 }}>{m.unit}</span></div>
+                  <div key={m.label} style={{ border: `1px solid ${m.color}`, borderRadius: 10, padding: "9px 8px" }}>
+                    <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.06em", color: T.n700 }}>{m.label}</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.1 }}>{m.val}<span style={{ fontSize: 10, color: T.n600 }}>g</span></div>
                     <div style={{ fontSize: 10, color: m.color, fontWeight: 600 }}>{m.kcal} kcal</div>
                   </div>
                 ))}
               </div>
 
-              <div style={{ fontSize: 11, color: T.n600, lineHeight: 1.5 }}>
-                Based on Mifflin-St Jeor BMR ({result.bmr} kcal){stats.watchAvgKcal ? `, blended with your Apple Watch average of ${stats.watchAvgKcal} kcal/day` : ""}. Protein at 2 g/kg to preserve muscle mass.
+              <div style={{ fontSize: 10.5, color: T.n600, lineHeight: 1.5 }}>
+                Mifflin-St Jeor BMR {result.bmr} kcal{avgBurn ? `, blended with your logged ${avgBurn} kcal/day burn` : ""}. Protein at 2 g/kg to protect muscle while cutting.
               </div>
             </div>
           )}
@@ -450,7 +749,7 @@ function CalorieCard({ weights, goal, T }) {
 }
 
 // ─── WEIGHT TAB ──────────────────────────────────────────────────────────────
-function WeightTab({ weights, goal, token, userId, onRefresh, T }) {
+function WeightTab({ weights, goal, sessions, token, userId, onRefresh, T }) {
   const [wForm, setWForm] = useState({ weight: "", date: todayISO() });
   const [gForm, setGForm] = useState({ target_weight: goal?.target_weight || "", target_date: goal?.target_date || "" });
   const [saving, setSaving] = useState(false);
@@ -504,7 +803,7 @@ function WeightTab({ weights, goal, token, userId, onRefresh, T }) {
         </button>
       </div>
 
-      <CalorieCard weights={weights} goal={goal} T={T} />
+      <CalorieCard weights={weights} goal={goal} sessions={sessions} T={T} />
 
       {sorted.length > 1 && (
         <div style={card}>
@@ -983,7 +1282,7 @@ export default function App() {
   const [userId, setUserId] = useState(null);
   const [tab, setTab] = useState("home");
   const [theme, setTheme] = useState("dark");
-  const [data, setData] = useState({ weights: [], inbody: [], measurements: [], logs: [], goal: null });
+  const [data, setData] = useState({ weights: [], inbody: [], measurements: [], logs: [], sessions: [], goal: null });
   const [loading, setLoading] = useState(false);
   const T = THEMES[theme];
 
@@ -991,18 +1290,20 @@ export default function App() {
     if (!tok || !uid) return;
     setLoading(true);
     const filter = `user_id=eq.${uid}`;
-    const [weights, inbody, measurements, logs, goals] = await Promise.all([
+    const [weights, inbody, measurements, logs, goals, sessions] = await Promise.all([
       sb.select("weight_entries", tok, filter),
       sb.select("inbody_scans", tok, filter),
       sb.select("measurements", tok, filter),
       sb.select("workout_logs", tok, filter),
       sb.select("goals", tok, filter),
+      sb.select("sessions", tok, filter),
     ]);
     setData({
       weights: Array.isArray(weights) ? weights : [],
       inbody: Array.isArray(inbody) ? inbody : [],
       measurements: Array.isArray(measurements) ? measurements : [],
       logs: Array.isArray(logs) ? logs : [],
+      sessions: Array.isArray(sessions) ? sessions : [],
       goal: Array.isArray(goals) && goals.length ? goals[goals.length - 1] : null,
     });
     setLoading(false);
@@ -1076,7 +1377,7 @@ export default function App() {
     localStorage.removeItem("gauge_refresh");
     localStorage.removeItem("gauge_user_name");
     setToken(null); setUserId(null);
-    setData({ weights: [], inbody: [], measurements: [], logs: [], goal: null });
+    setData({ weights: [], inbody: [], measurements: [], logs: [], sessions: [], goal: null });
   };
   const refresh = () => loadData(token, userId);
 
@@ -1111,8 +1412,8 @@ export default function App() {
 
         {/* Scroll content */}
         <div className="gauge-scroll" style={{ flex: "1 1 auto", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "18px 20px 28px" }}>
-          {tab === "home"         && <HomeTab weights={data.weights} inbody={data.inbody} logs={data.logs} goal={data.goal} name={userName} T={T} />}
-          {tab === "weight"       && <WeightTab weights={data.weights} goal={data.goal} token={token} userId={userId} onRefresh={refresh} T={T} />}
+          {tab === "home"         && <HomeTab weights={data.weights} inbody={data.inbody} sessions={data.sessions} goal={data.goal} name={userName} sessionsProps={{ token, userId, onRefresh: refresh }} T={T} />}
+          {tab === "weight"       && <WeightTab weights={data.weights} goal={data.goal} sessions={data.sessions} token={token} userId={userId} onRefresh={refresh} T={T} />}
           {tab === "inbody"       && <InbodyTab inbody={data.inbody} token={token} userId={userId} onRefresh={refresh} T={T} />}
           {tab === "measurements" && <MeasurementsTab measurements={data.measurements} token={token} userId={userId} onRefresh={refresh} T={T} />}
           {tab === "workouts"     && <WorkoutsTab logs={data.logs} token={token} userId={userId} onRefresh={refresh} T={T} />}
