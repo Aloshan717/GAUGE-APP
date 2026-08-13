@@ -532,7 +532,6 @@ function WeightTab({ weights, goal, token, userId, onRefresh, T }) {
 // ─── INBODY TAB ──────────────────────────────────────────────────────────────
 function InbodyTab({ inbody, token, userId, onRefresh, T }) {
   const [status, setStatus] = useState("idle"); // idle | reading | confirm | saving | error
-  const [pending, setPending] = useState(null);  // extracted data awaiting confirmation
   const [editPending, setEditPending] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [manualForm, setManualForm] = useState({ date: todayISO(), weight: "", body_fat: "", muscle_mass: "" });
@@ -561,19 +560,24 @@ function InbodyTab({ inbody, token, userId, onRefresh, T }) {
         r.readAsDataURL(file);
       });
 
-      const mediaType = file.type === "application/pdf" ? "application/pdf" : "image/jpeg";
+      const isPdf = file.type === "application/pdf";
+      // Use the browser-reported type; fall back to jpeg for odd cases
+      const allowed = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+      const mediaType = isPdf
+        ? "application/pdf"
+        : (allowed.includes(file.type) ? file.type : "image/jpeg");
 
       const response = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
+          model: "claude-sonnet-5",
           max_tokens: 1000,
           messages: [{
             role: "user",
             content: [
               {
-                type: mediaType === "application/pdf" ? "document" : "image",
+                type: isPdf ? "document" : "image",
                 source: { type: "base64", media_type: mediaType, data: base64 },
               },
               {
@@ -593,15 +597,27 @@ If a value is not found in the scan, use null. Return only the JSON object.`,
       });
 
       const data = await response.json();
-      const text = data.content?.map((c) => c.text || "").join("").trim();
-      const clean = text.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(clean);
 
-      setPending(parsed);
+      if (!response.ok || data.error) {
+        throw new Error(data.error || `Request failed (${response.status})`);
+      }
+
+      const text = (data.content || []).map((c) => c.text || "").join("").trim();
+      if (!text) throw new Error("Empty response from the model.");
+
+      const clean = text.replace(/```json|```/g, "").trim();
+
+      let parsed;
+      try {
+        parsed = JSON.parse(clean);
+      } catch {
+        throw new Error(`Could not parse the reading: ${clean.slice(0, 120)}`);
+      }
+
       setEditPending({ ...parsed });
       setStatus("confirm");
     } catch (err) {
-      setErrorMsg("Could not read the scan. Try a clearer photo or enter manually.");
+      setErrorMsg(err.message || "Could not read the scan.");
       setStatus("error");
     }
     // Reset file input
@@ -618,7 +634,6 @@ If a value is not found in the scan, use null. Return only the JSON object.`,
       body_fat: d.body_fat ? +d.body_fat : null,
       muscle_mass: d.muscle_mass ? +d.muscle_mass : null,
     });
-    setPending(null);
     setEditPending(null);
     setStatus("idle");
     await onRefresh();
@@ -716,7 +731,7 @@ If a value is not found in the scan, use null. Return only the JSON object.`,
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={confirmSave} style={{ flex: 1, minHeight: 48, fontFamily: "inherit", fontSize: 14, fontWeight: 700, border: "none", borderRadius: 10, background: T.accent, color: "#fff", cursor: "pointer", boxShadow: `0 6px 16px ${T.glow}` }}>Save scan</button>
-              <button onClick={() => { setPending(null); setEditPending(null); setStatus("idle"); }} style={{ minHeight: 48, padding: "0 16px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, border: `1px solid ${T.divider}`, borderRadius: 10, background: "transparent", color: T.n600, cursor: "pointer" }}>Cancel</button>
+              <button onClick={() => { setEditPending(null); setStatus("idle"); }} style={{ minHeight: 48, padding: "0 16px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, border: `1px solid ${T.divider}`, borderRadius: 10, background: "transparent", color: T.n600, cursor: "pointer" }}>Cancel</button>
             </div>
           </div>
         ) : status === "saving" ? (
