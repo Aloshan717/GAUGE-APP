@@ -55,6 +55,63 @@ body {
 .gauge-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 .gauge-scroll::-webkit-scrollbar { display: none; }
 
-/* Make date/number inputs match the dark theme on iOS */
-input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.6); }
-input { font-size: 16px; }  /* prevents iOS auto-zoom on focus */
+/* ── Inputs ─────────────────────────────────────────────
+   iOS renders date/number inputs at their own intrinsic width and
+   ignores the grid column, which pushes text outside the box.
+   Forcing appearance + min-width:0 makes them respect the container. */
+input, select {
+  font-size: 16px;              /* prevents iOS auto-zoom on focus */
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  text-align: left;
+  display: block;
+  min-height: 44px;
+  line-height: normal;
+}
+
+/* iOS wraps date text in an inner container that can overflow */
+input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+}
+input[type="date"]::-webkit-datetime-edit {
+  padding: 0;
+  overflow: hidden;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.6);
+  margin-left: 0;
+  padding: 0;
+}
+
+input[type="number"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 44px;
+}
+
+/* Placeholders must read as hints, never as saved values */
+input::placeholder {
+  color: #6b7780;
+  opacity: 1;
+  font-weight: 400;
+}
