@@ -367,9 +367,9 @@ function CalorieCard({ weights, goal, T }) {
             {goal && <> · Target: <strong style={{ color: T.text }}>{goal.target_weight} kg</strong></>}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div><label style={lbl}>Age</label><input style={inp} type="number" placeholder="30" value={stats.age} onChange={set("age")} /></div>
-            <div><label style={lbl}>Height (cm)</label><input style={inp} type="number" placeholder="175" value={stats.height} onChange={set("height")} /></div>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10 }}>
+            <div><label style={lbl}>Age</label><input style={inp} type="number" placeholder="e.g. 30" value={stats.age} onChange={set("age")} /></div>
+            <div><label style={lbl}>Height (cm)</label><input style={inp} type="number" placeholder="e.g. 175" value={stats.height} onChange={set("height")} /></div>
             <div>
               <label style={lbl}>Gender</label>
               <select style={sel} value={stats.gender} onChange={set("gender")}>
@@ -484,8 +484,8 @@ function WeightTab({ weights, goal, token, userId, onRefresh, T }) {
 
       <div style={card}>
         <Kicker T={T}>Log today's weigh-in</Kicker>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8, marginBottom: 12 }}>
-          <div><label style={lbl}>Weight (kg)</label><input style={inp} type="number" step="0.1" placeholder="84.5" value={wForm.weight} onChange={(e) => setWForm((f) => ({ ...f, weight: e.target.value }))} /></div>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10, marginTop: 8, marginBottom: 12 }}>
+          <div><label style={lbl}>Weight (kg)</label><input style={inp} type="number" step="0.1" placeholder="e.g. 84.5" value={wForm.weight} onChange={(e) => setWForm((f) => ({ ...f, weight: e.target.value }))} /></div>
           <div><label style={lbl}>Date</label><input style={inp} type="date" value={wForm.date} onChange={(e) => setWForm((f) => ({ ...f, date: e.target.value }))} /></div>
         </div>
         <button onClick={addWeight} disabled={saving} style={{ minHeight: 48, fontFamily: "inherit", fontSize: 15, fontWeight: 700, border: "none", borderRadius: 10, background: T.accent, color: "#fff", cursor: "pointer", boxShadow: `0 6px 16px ${T.glow}`, opacity: saving ? 0.6 : 1 }}>
@@ -495,8 +495,8 @@ function WeightTab({ weights, goal, token, userId, onRefresh, T }) {
 
       <div style={card}>
         <Kicker T={T}>Set / edit your target</Kicker>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8, marginBottom: 12 }}>
-          <div><label style={lbl}>Target weight (kg)</label><input style={inp} type="number" step="0.1" placeholder="79.0" value={gForm.target_weight} onChange={(e) => setGForm((f) => ({ ...f, target_weight: e.target.value }))} /></div>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10, marginTop: 8, marginBottom: 12 }}>
+          <div><label style={lbl}>Target weight (kg)</label><input style={inp} type="number" step="0.1" placeholder="e.g. 79.0" value={gForm.target_weight} onChange={(e) => setGForm((f) => ({ ...f, target_weight: e.target.value }))} /></div>
           <div><label style={lbl}>Target date</label><input style={inp} type="date" value={gForm.target_date} onChange={(e) => setGForm((f) => ({ ...f, target_date: e.target.value }))} /></div>
         </div>
         <button onClick={saveGoal} disabled={saving} style={{ minHeight: 44, fontFamily: "inherit", fontSize: 13, fontWeight: 700, border: `1px solid ${T.accent400}`, borderRadius: 10, background: T.accent100, color: T.accent600, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>
@@ -636,13 +636,20 @@ If a value is not found in the scan, use null. Return only the JSON object.`,
   const confirmSave = async () => {
     setStatus("saving");
     const d = editPending;
+    const date = d.date || todayISO();
+    const w = d.weight ? +d.weight : null;
+
     await sb.insert("inbody_scans", token, {
       user_id: userId,
-      date: d.date || todayISO(),
-      weight: d.weight ? +d.weight : null,
+      date,
+      weight: w,
       body_fat: d.body_fat ? +d.body_fat : null,
       muscle_mass: d.muscle_mass ? +d.muscle_mass : null,
     });
+
+    // A scan is also a weigh-in — log it so Home and InBody never disagree
+    if (w) await sb.insert("weight_entries", token, { user_id: userId, date, weight: w });
+
     setEditPending(null);
     setStatus("idle");
     await onRefresh();
@@ -651,13 +658,18 @@ If a value is not found in the scan, use null. Return only the JSON object.`,
   const saveManual = async () => {
     if (!manualForm.date) return;
     setStatus("saving");
+    const w = manualForm.weight ? +manualForm.weight : null;
+
     await sb.insert("inbody_scans", token, {
       user_id: userId,
       date: manualForm.date,
-      weight: manualForm.weight ? +manualForm.weight : null,
+      weight: w,
       body_fat: manualForm.body_fat ? +manualForm.body_fat : null,
       muscle_mass: manualForm.muscle_mass ? +manualForm.muscle_mass : null,
     });
+
+    if (w) await sb.insert("weight_entries", token, { user_id: userId, date: manualForm.date, weight: w });
+
     setManualForm({ date: todayISO(), weight: "", body_fat: "", muscle_mass: "" });
     setShowManual(false);
     setStatus("idle");
@@ -732,7 +744,7 @@ If a value is not found in the scan, use null. Return only the JSON object.`,
         ) : status === "confirm" && editPending ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ fontSize: 12, color: T.ok, fontWeight: 600 }}>✓ Scan read — review and confirm</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10 }}>
               <div><label style={lbl}>Date</label><input style={inp} type="date" value={editPending.date || ""} onChange={(e) => setEditPending(p => ({ ...p, date: e.target.value }))} /></div>
               <div><label style={lbl}>Weight (kg)</label><input style={inp} type="number" step="0.1" value={editPending.weight ?? ""} onChange={(e) => setEditPending(p => ({ ...p, weight: e.target.value }))} /></div>
               <div><label style={lbl}>Body fat (%)</label><input style={inp} type="number" step="0.1" value={editPending.body_fat ?? ""} onChange={(e) => setEditPending(p => ({ ...p, body_fat: e.target.value }))} /></div>
@@ -754,11 +766,11 @@ If a value is not found in the scan, use null. Return only the JSON object.`,
 
         {showManual && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 8, borderTop: `1px solid ${T.divider}` }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10 }}>
               <div><label style={lbl}>Date</label><input style={inp} type="date" value={manualForm.date} onChange={(e) => setManualForm(f => ({ ...f, date: e.target.value }))} /></div>
-              <div><label style={lbl}>Weight (kg)</label><input style={inp} type="number" step="0.1" placeholder="84.0" value={manualForm.weight} onChange={(e) => setManualForm(f => ({ ...f, weight: e.target.value }))} /></div>
-              <div><label style={lbl}>Body fat (%)</label><input style={inp} type="number" step="0.1" placeholder="22.0" value={manualForm.body_fat} onChange={(e) => setManualForm(f => ({ ...f, body_fat: e.target.value }))} /></div>
-              <div><label style={lbl}>Muscle (%)</label><input style={inp} type="number" step="0.1" placeholder="42.0" value={manualForm.muscle_mass} onChange={(e) => setManualForm(f => ({ ...f, muscle_mass: e.target.value }))} /></div>
+              <div><label style={lbl}>Weight (kg)</label><input style={inp} type="number" step="0.1" placeholder="e.g. 84.0" value={manualForm.weight} onChange={(e) => setManualForm(f => ({ ...f, weight: e.target.value }))} /></div>
+              <div><label style={lbl}>Body fat (%)</label><input style={inp} type="number" step="0.1" placeholder="e.g. 22.0" value={manualForm.body_fat} onChange={(e) => setManualForm(f => ({ ...f, body_fat: e.target.value }))} /></div>
+              <div><label style={lbl}>Muscle (%)</label><input style={inp} type="number" step="0.1" placeholder="e.g. 42.0" value={manualForm.muscle_mass} onChange={(e) => setManualForm(f => ({ ...f, muscle_mass: e.target.value }))} /></div>
             </div>
             <button onClick={saveManual} style={{ minHeight: 44, fontFamily: "inherit", fontSize: 13, fontWeight: 700, border: "none", borderRadius: 10, background: T.accent100, color: T.accent600, cursor: "pointer" }}>
               Save manually
@@ -842,13 +854,13 @@ function MeasurementsTab({ measurements, token, userId, onRefresh, T }) {
 
       <div style={card}>
         <Kicker T={T}>Add measurements (cm)</Kicker>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8, marginBottom: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10, marginTop: 8, marginBottom: 12 }}>
           <div><label style={lbl}>Date</label><input style={inp} type="date" value={form.date} onChange={set("date")} /></div>
-          <div><label style={lbl}>Waist</label><input style={inp} type="number" step="0.1" placeholder="93" value={form.waist} onChange={set("waist")} /></div>
-          <div><label style={lbl}>Chest</label><input style={inp} type="number" step="0.1" placeholder="108" value={form.chest} onChange={set("chest")} /></div>
-          <div><label style={lbl}>Hips</label><input style={inp} type="number" step="0.1" placeholder="101" value={form.hips} onChange={set("hips")} /></div>
-          <div><label style={lbl}>Arms</label><input style={inp} type="number" step="0.1" placeholder="37" value={form.arms} onChange={set("arms")} /></div>
-          <div><label style={lbl}>Thighs</label><input style={inp} type="number" step="0.1" placeholder="58" value={form.thighs} onChange={set("thighs")} /></div>
+          <div><label style={lbl}>Waist</label><input style={inp} type="number" step="0.1" placeholder="e.g. 93" value={form.waist} onChange={set("waist")} /></div>
+          <div><label style={lbl}>Chest</label><input style={inp} type="number" step="0.1" placeholder="e.g. 108" value={form.chest} onChange={set("chest")} /></div>
+          <div><label style={lbl}>Hips</label><input style={inp} type="number" step="0.1" placeholder="e.g. 101" value={form.hips} onChange={set("hips")} /></div>
+          <div><label style={lbl}>Arms</label><input style={inp} type="number" step="0.1" placeholder="e.g. 37" value={form.arms} onChange={set("arms")} /></div>
+          <div><label style={lbl}>Thighs</label><input style={inp} type="number" step="0.1" placeholder="e.g. 58" value={form.thighs} onChange={set("thighs")} /></div>
         </div>
         <button onClick={add} disabled={saving} style={{ minHeight: 48, fontFamily: "inherit", fontSize: 15, fontWeight: 700, border: "none", borderRadius: 10, background: T.accent, color: "#fff", cursor: "pointer", boxShadow: `0 6px 16px ${T.glow}`, opacity: saving ? 0.6 : 1 }}>
           {saving ? "Saving…" : "Add entry"}
@@ -919,10 +931,10 @@ function WorkoutsTab({ logs, token, userId, onRefresh, T }) {
 
       <div style={card}>
         <Kicker T={T}>Log set — {muscle}</Kicker>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8, marginBottom: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10, marginTop: 8, marginBottom: 12 }}>
           <div style={{ gridColumn: "1 / -1" }}><label style={lbl}>Exercise</label><input style={inp} placeholder="e.g. Bench press" value={form.exercise} onChange={set("exercise")} /></div>
-          <div><label style={lbl}>Weight (kg)</label><input style={inp} type="number" step="0.5" placeholder="70" value={form.weight_kg} onChange={set("weight_kg")} /></div>
-          <div><label style={lbl}>Reps</label><input style={inp} type="number" placeholder="8" value={form.reps} onChange={set("reps")} /></div>
+          <div><label style={lbl}>Weight (kg)</label><input style={inp} type="number" step="0.5" placeholder="e.g. 70" value={form.weight_kg} onChange={set("weight_kg")} /></div>
+          <div><label style={lbl}>Reps</label><input style={inp} type="number" placeholder="e.g. 8" value={form.reps} onChange={set("reps")} /></div>
           <div style={{ gridColumn: "1 / -1" }}><label style={lbl}>Date</label><input style={inp} type="date" value={form.date} onChange={set("date")} /></div>
         </div>
         <button onClick={add} disabled={saving} style={{ minHeight: 48, fontFamily: "inherit", fontSize: 15, fontWeight: 700, border: "none", borderRadius: 10, background: T.accent, color: "#fff", cursor: "pointer", boxShadow: `0 6px 16px ${T.glow}`, opacity: saving ? 0.6 : 1 }}>
