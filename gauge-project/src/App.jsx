@@ -20,6 +20,14 @@ const sb = {
     const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, { method: "POST", headers: this.headers(), body: JSON.stringify({ email, password }) });
     return r.json();
   },
+  async refresh(refreshToken) {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    return r.json();
+  },
   async signOut(token) {
     await fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: "POST", headers: this.headers(token) });
   },
@@ -137,6 +145,7 @@ function AuthScreen({ onAuth }) {
       }
       if (res.error) { setError(res.error.message || "Sign in failed."); setLoading(false); return; }
       localStorage.setItem("gauge_token", res.access_token);
+      if (res.refresh_token) localStorage.setItem("gauge_refresh", res.refresh_token);
       localStorage.setItem("gauge_user_name", res.user?.user_metadata?.name || form.email.split("@")[0]);
       onAuth(res.access_token, res.user?.user_metadata?.name || form.email.split("@")[0]);
     } catch { setError("Network error. Check Supabase config."); }
@@ -147,7 +156,7 @@ function AuthScreen({ onAuth }) {
   const lbl = { fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: T.n600, marginBottom: 5, display: "block" };
 
   return (
-    <div style={{ minHeight: "100vh", background: T.pageBg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', system-ui, sans-serif", color: T.text }}>
+    <div style={{ minHeight: "100dvh", width: "100%", background: T.pageBg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', system-ui, sans-serif", color: T.text, padding: "24px 0", boxSizing: "border-box" }}>
       <div style={{ width: "100%", maxWidth: 360, padding: "0 20px", boxSizing: "border-box" }}>
         <div style={{ marginBottom: 28 }}>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: T.n600, marginBottom: 6 }}>Progress tracker</div>
@@ -989,24 +998,70 @@ export default function App() {
 
   useEffect(() => {
     if (!token) return;
-    sb.getUser(token).then((user) => {
-      if (user?.id) {
-        setUserId(user.id);
-        const name = user.user_metadata?.name || user.email?.split("@")[0] || "";
-        setUserName(name);
-        localStorage.setItem("gauge_user_name", name);
-        loadData(token, user.id);
-      } else {
-        setToken(null);
-        localStorage.removeItem("gauge_token");
+    let cancelled = false;
+
+    const applyUser = (user, tok) => {
+      if (cancelled) return;
+      setUserId(user.id);
+      const name = user.user_metadata?.name || user.email?.split("@")[0] || "";
+      setUserName(name);
+      localStorage.setItem("gauge_user_name", name);
+      loadData(tok, user.id);
+    };
+
+    (async () => {
+      const user = await sb.getUser(token);
+      if (user?.id) { applyUser(user, token); return; }
+
+      // Access token expired — try the refresh token before giving up
+      const rt = localStorage.getItem("gauge_refresh");
+      if (rt) {
+        const res = await sb.refresh(rt);
+        if (res?.access_token) {
+          localStorage.setItem("gauge_token", res.access_token);
+          if (res.refresh_token) localStorage.setItem("gauge_refresh", res.refresh_token);
+          const u2 = await sb.getUser(res.access_token);
+          if (u2?.id) {
+            if (!cancelled) setToken(res.access_token);
+            applyUser(u2, res.access_token);
+            return;
+          }
+        }
       }
-    });
+
+      // Refresh genuinely failed — now sign out
+      if (cancelled) return;
+      setToken(null);
+      localStorage.removeItem("gauge_token");
+      localStorage.removeItem("gauge_refresh");
+    })();
+
+    return () => { cancelled = true; };
   }, [token, loadData]);
+
+  // Keep the session alive while the app is open, and re-check on resume
+  useEffect(() => {
+    const renew = async () => {
+      const rt = localStorage.getItem("gauge_refresh");
+      if (!rt) return;
+      const res = await sb.refresh(rt);
+      if (res?.access_token) {
+        localStorage.setItem("gauge_token", res.access_token);
+        if (res.refresh_token) localStorage.setItem("gauge_refresh", res.refresh_token);
+        setToken(res.access_token);
+      }
+    };
+    const id = setInterval(renew, 45 * 60 * 1000); // every 45 min
+    const onShow = () => { if (document.visibilityState === "visible") renew(); };
+    document.addEventListener("visibilitychange", onShow);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onShow); };
+  }, []);
 
   const onAuth = (tok, name) => { setToken(tok); setUserName(name); };
   const signOut = async () => {
     await sb.signOut(token);
     localStorage.removeItem("gauge_token");
+    localStorage.removeItem("gauge_refresh");
     localStorage.removeItem("gauge_user_name");
     setToken(null); setUserId(null);
     setData({ weights: [], inbody: [], measurements: [], logs: [], goal: null });
@@ -1024,32 +1079,26 @@ export default function App() {
   ];
 
   return (
-    <div style={{ minHeight: "100vh", background: T.pageBg, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "32px 12px", boxSizing: "border-box", fontFamily: "'Inter', system-ui, sans-serif", color: T.text }}>
-      <div style={{ position: "relative", width: 390, minHeight: 844, background: T.bg, borderRadius: 26, boxShadow: "0 24px 60px rgba(0,0,0,0.35)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-
-        {/* Status bar */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 20px 6px", fontSize: 12, fontWeight: 500, flexShrink: 0 }}>
-          <span>9:41</span>
-          <svg width={16} height={11} viewBox="0 0 16 11" fill="none"><rect x={0} y={6} width={3} height={5} fill="currentColor"/><rect x={4.5} y={4} width={3} height={7} fill="currentColor"/><rect x={9} y={1.5} width={3} height={9.5} fill="currentColor"/><rect x={13} y={0} width={3} height={11} fill="currentColor" opacity={0.35}/></svg>
-        </div>
+    <div className="gauge-page" style={{ background: T.pageBg, color: T.text }}>
+      <div className="gauge-shell" style={{ background: T.bg }}>
 
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: "6px 20px 14px", flexShrink: 0, borderBottom: `1px solid ${T.divider}` }}>
-          <h4 style={{ margin: 0, letterSpacing: "0.14em", color: T.accent, fontSize: 16, fontWeight: 800 }}>GAUGE</h4>
-          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {loading && <span style={{ fontSize: 10, color: T.n600 }}>Syncing…</span>}
-            <span style={{ fontSize: 11, color: T.n600, textTransform: "uppercase", letterSpacing: "0.06em" }}>{userName}</span>
-            <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} style={{ minHeight: 30, padding: "0 11px", borderRadius: 20, border: `1px solid ${T.divider}`, background: T.surface, color: T.n700, fontFamily: "inherit", fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", cursor: "pointer" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px 12px", flexShrink: 0, borderBottom: `1px solid ${T.divider}`, gap: 8 }}>
+          <h4 style={{ margin: 0, letterSpacing: "0.14em", color: T.accent, fontSize: 16, fontWeight: 800, flexShrink: 0 }}>GAUGE</h4>
+          <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            {loading && <span style={{ fontSize: 10, color: T.n600, flexShrink: 0 }}>Syncing…</span>}
+            <span style={{ fontSize: 11, color: T.n600, textTransform: "uppercase", letterSpacing: "0.06em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{userName}</span>
+            <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} style={{ minHeight: 30, padding: "0 11px", borderRadius: 20, border: `1px solid ${T.divider}`, background: T.surface, color: T.n700, fontFamily: "inherit", fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", cursor: "pointer", flexShrink: 0 }}>
               {theme === "dark" ? "Light" : "Dark"}
             </button>
-            <button onClick={signOut} style={{ minHeight: 30, padding: "0 11px", borderRadius: 20, border: `1px solid ${T.divider}`, background: T.surface, color: T.n700, fontFamily: "inherit", fontSize: 10.5, fontWeight: 600, cursor: "pointer" }}>
+            <button onClick={signOut} style={{ minHeight: 30, padding: "0 11px", borderRadius: 20, border: `1px solid ${T.divider}`, background: T.surface, color: T.n700, fontFamily: "inherit", fontSize: 10.5, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>
               Sign out
             </button>
           </span>
         </div>
 
         {/* Scroll content */}
-        <div style={{ flex: "1 1 auto", overflowY: "auto", padding: "18px 20px 24px", msOverflowStyle: "none", scrollbarWidth: "none" }}>
+        <div className="gauge-scroll" style={{ flex: "1 1 auto", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "18px 20px 28px" }}>
           {tab === "home"         && <HomeTab weights={data.weights} inbody={data.inbody} logs={data.logs} goal={data.goal} name={userName} T={T} />}
           {tab === "weight"       && <WeightTab weights={data.weights} goal={data.goal} token={token} userId={userId} onRefresh={refresh} T={T} />}
           {tab === "inbody"       && <InbodyTab inbody={data.inbody} token={token} userId={userId} onRefresh={refresh} T={T} />}
@@ -1057,12 +1106,12 @@ export default function App() {
           {tab === "workouts"     && <WorkoutsTab logs={data.logs} token={token} userId={userId} onRefresh={refresh} T={T} />}
         </div>
 
-        {/* Bottom nav */}
-        <div style={{ display: "flex", flexShrink: 0, borderTop: `1px solid ${T.divider}`, background: T.bg }}>
+        {/* Bottom nav — always visible */}
+        <div style={{ display: "flex", flexShrink: 0, borderTop: `1px solid ${T.divider}`, background: T.bg, paddingBottom: "env(safe-area-inset-bottom)" }}>
           {NAV.map((n) => (
-            <button key={n.id} onClick={() => setTab(n.id)} style={{ flex: 1, border: "none", borderRadius: 16, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "9px 2px 10px", margin: "6px 2px 8px", cursor: "pointer", background: tab === n.id ? T.accent100 : "transparent", color: tab === n.id ? T.accent : T.n500, fontFamily: "inherit", fontSize: 10, fontWeight: 600, letterSpacing: "0.02em" }}>
+            <button key={n.id} onClick={() => setTab(n.id)} style={{ flex: 1, minWidth: 0, border: "none", borderRadius: 14, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "8px 1px 9px", margin: "6px 2px 8px", cursor: "pointer", background: tab === n.id ? T.accent100 : "transparent", color: tab === n.id ? T.accent : T.n500, fontFamily: "inherit", fontSize: 9.5, fontWeight: 600, letterSpacing: "0.01em" }}>
               <NavIcon tab={n.id} />
-              <span>{n.label}</span>
+              <span style={{ whiteSpace: "nowrap" }}>{n.label}</span>
             </button>
           ))}
         </div>
