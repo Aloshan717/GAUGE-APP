@@ -99,6 +99,21 @@ const THEMES = {
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const fmt = (d) => { if (!d) return "—"; const dt = new Date(d + "T00:00:00"); return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
 const todayISO = () => new Date().toISOString().slice(0, 10);
+// A weigh-in is a weigh-in, whether it was typed in or read off a scan.
+// Merging both sources means Home can never claim "no weight" while an
+// InBody scan is sitting right there showing one.
+function mergeWeightSeries(weights, inbody) {
+  const byDate = new Map();
+  (inbody || []).forEach((s) => {
+    if (s.weight != null) byDate.set(s.date, { date: s.date, weight: +s.weight, source: "scan" });
+  });
+  // A manual entry wins over a scan on the same date
+  (weights || []).forEach((w) => {
+    if (w.weight != null) byDate.set(w.date, { date: w.date, weight: +w.weight, source: "manual", id: w.id });
+  });
+  return [...byDate.values()].sort((a, b) => new Date(a.date) - new Date(b.date));
+}
+
 const pct = (done, total) => Math.min(100, Math.max(0, (done / total) * 100)).toFixed(1) + "%";
 
 // ─── TREND CHART (real time axis, month labels) ──────────────────────────────
@@ -249,6 +264,132 @@ function ChartHeading({ label, color, T, right = null }) {
         {label}
       </span>
       {right}
+    </div>
+  );
+}
+
+// ─── PACE BAR ────────────────────────────────────────────────────────────────
+// Progress is only meaningful against time. Being 30% of the way to a target
+// is good at week 2 and bad at week 10 — so we compare progress made against
+// time elapsed, and colour by the ratio between them.
+function computePace({ curr, start, target, startDate, targetDate, goodDirection }) {
+  if (curr == null || target == null || !targetDate) return null;
+
+  const now = Date.now();
+  const tEnd = new Date(targetDate + "T00:00:00").getTime();
+  const tStart = startDate ? new Date(startDate + "T00:00:00").getTime() : null;
+
+  // Progress toward the target
+  const base = start != null ? start : curr;
+  const span = target - base;
+  const moved = curr - base;
+  let progress = span === 0 ? 100 : (moved / span) * 100;
+  const reached = (target - curr) * goodDirection <= 0;
+  if (reached) progress = 100;
+  progress = Math.max(0, Math.min(100, progress));
+
+  // Time elapsed toward the deadline
+  let elapsed = null;
+  if (tStart != null && tEnd > tStart) {
+    elapsed = Math.max(0, Math.min(100, ((now - tStart) / (tEnd - tStart)) * 100));
+  }
+
+  const daysLeft = Math.ceil((tEnd - now) / 86400000);
+
+  // Status
+  let status, color, note;
+  if (reached) {
+    status = "Target reached";
+    color = "ok";
+    note = `Hit ${target} — ahead of the ${daysLeft > 0 ? `${daysLeft}-day` : ""} deadline.`.replace("  ", " ");
+  } else if (daysLeft < 0) {
+    status = "Date passed";
+    color = "bad";
+    note = `Target date has passed. ${Math.abs(+(target - curr).toFixed(1))} still to go — worth setting a new date.`;
+  } else if (moved * goodDirection < 0) {
+    status = "Wrong direction";
+    color = "bad";
+    note = `Moved away from the target since you started. ${daysLeft} days left.`;
+  } else if (elapsed == null || elapsed < 8) {
+    status = "Just started";
+    color = "neutral";
+    note = `Too early to judge pace. ${daysLeft} days to go.`;
+  } else {
+    const ratio = progress / elapsed;
+    const remaining = Math.abs(+(target - curr).toFixed(1));
+    const perWeek = daysLeft > 0 ? (remaining / (daysLeft / 7)).toFixed(2) : null;
+
+    if (ratio >= 0.95) {
+      status = "On track";
+      color = "ok";
+      note = `${progress.toFixed(0)}% done with ${elapsed.toFixed(0)}% of the time used.${perWeek ? ` ${perWeek}/wk keeps you on pace.` : ""}`;
+    } else if (ratio >= 0.75) {
+      status = "Slightly behind";
+      color = "warn";
+      note = `${progress.toFixed(0)}% done but ${elapsed.toFixed(0)}% of the time is gone.${perWeek ? ` Needs ${perWeek}/wk to catch up.` : ""}`;
+    } else {
+      status = "Behind";
+      color = "bad";
+      note = `Only ${progress.toFixed(0)}% done with ${elapsed.toFixed(0)}% of the time used.${perWeek ? ` Would need ${perWeek}/wk from here.` : ""}`;
+    }
+  }
+
+  return { progress, elapsed, status, color, note, daysLeft, reached };
+}
+
+function PaceBar({ label, curr, start, target, startDate, targetDate, goodDirection, unit, T }) {
+  const p = computePace({ curr, start, target, startDate, targetDate, goodDirection });
+  if (!p) return null;
+
+  const palette = { ok: T.ok, warn: T.warn, bad: T.bad, neutral: T.n500 };
+  const c = palette[p.color];
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      {/* label + values */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+        <span style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
+          padding: "5px 11px", borderRadius: 8,
+          border: `1px solid ${c}`, background: `${c}1f`, color: c,
+          fontSize: 10.5, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase",
+        }}>
+          <span style={{ width: 7, height: 7, borderRadius: 2, background: c, flex: "none" }} />
+          {label}
+        </span>
+        <span style={{ fontSize: 12, color: T.n600, whiteSpace: "nowrap" }}>
+          <strong style={{ color: T.text, fontSize: 15 }}>{curr}{unit}</strong>
+          <span style={{ margin: "0 5px" }}>→</span>
+          {target}{unit}
+        </span>
+      </div>
+
+      {/* bar with an expected-position marker */}
+      <div style={{ position: "relative", height: 12, borderRadius: 7, background: T.bg, overflow: "hidden" }}>
+        <div style={{
+          position: "absolute", left: 0, top: 0, bottom: 0,
+          width: `${p.progress.toFixed(1)}%`, background: c,
+          borderRadius: 7, transition: "width 0.5s ease",
+        }} />
+        {p.elapsed != null && !p.reached && (
+          <div style={{
+            position: "absolute", left: `${p.elapsed.toFixed(1)}%`, top: -2, bottom: -2,
+            width: 2, background: T.text, opacity: 0.55,
+          }} />
+        )}
+      </div>
+
+      {/* status row */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 6 }}>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: c }}>{p.status}</span>
+        {p.elapsed != null && !p.reached && (
+          <span style={{ fontSize: 10, color: T.n600 }}>
+            marker = where you should be
+          </span>
+        )}
+      </div>
+
+      <div style={{ fontSize: 11.5, color: T.n700, lineHeight: 1.5, marginTop: 3 }}>{p.note}</div>
     </div>
   );
 }
@@ -476,23 +617,25 @@ const Kicker = ({ children, T }) => (
 
 // ─── HOME TAB ────────────────────────────────────────────────────────────────
 function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
-  const sortedW = [...weights].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const sortedW = mergeWeightSeries(weights, inbody);
   const latest = sortedW[sortedW.length - 1];
   const sortedIb = [...inbody].sort((a, b) => new Date(a.date) - new Date(b.date));
   const latestIb = sortedIb[sortedIb.length - 1];
   const prevIb = sortedIb[sortedIb.length - 2];
 
+  // Baselines for pace: the first scan that actually recorded each metric
+  const firstBf  = sortedIb.find((s) => s.body_fat != null);
+  const firstMus = sortedIb.find((s) => s.muscle_mass != null);
+  const firstIb = {
+    body_fat: firstBf?.body_fat,
+    bfDate:   firstBf?.date,
+    muscle:   firstMus?.muscle_mass,
+    musDate:  firstMus?.date,
+  };
+
   const card = { background: T.surface, borderRadius: T.radius, padding: 16, display: "flex", flexDirection: "column", gap: 10 };
 
-  const goalPct = (() => {
-    if (!goal || goal.target_weight == null || !latest || !sortedW[0]) return null;
-    const start = sortedW[0].weight, curr = latest.weight, target = goal.target_weight;
-    const done = Math.abs(curr - start), total = Math.abs(target - start);
-    return total ? pct(done, total) : "0%";
-  })();
-
   const daysLeft = goal?.target_date ? Math.max(0, Math.ceil((new Date(goal.target_date) - new Date()) / 86400000)) : null;
-  const pace = (goal && goal.target_weight != null && latest && daysLeft) ? (Math.abs(latest.weight - goal.target_weight) / (daysLeft / 7)).toFixed(2) : null;
 
   // 7-day training load
   const weekAgo = Date.now() - 7 * 86400000;
@@ -522,27 +665,11 @@ function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
                 <div style={{ display: "inline-block", padding: "3px 8px", borderRadius: 20, border: `1px solid ${T.accent}`, background: T.accent100, color: T.accent, fontWeight: 600, fontSize: 10.5, marginBottom: 4 }}>
                   {daysLeft} days left
                 </div>
-                {goal.target_weight != null && <div>Target {goal.target_weight} kg</div>}
-                {goal.target_body_fat != null && <div>Fat target {goal.target_body_fat}%</div>}
-                {goal.target_muscle != null && <div>Muscle target {goal.target_muscle}%</div>}
-                {pace && <div>{pace} kg/wk needed</div>}
+                <div>Goal date {fmt(goal.target_date)}</div>
               </div>
             )}
           </div>
 
-          {goal && goalPct && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9.5, letterSpacing: "0.08em", textTransform: "uppercase", color: T.n600, marginBottom: 6 }}>
-                <span>{sortedW[0]?.weight} kg start</span><span>{goal.target_weight} kg target</span>
-              </div>
-              <div style={{ position: "relative", height: 9, borderRadius: 6, background: T.accent100 }}>
-                <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: 6, background: T.accent, width: goalPct, transition: "width 0.5s" }} />
-              </div>
-              <div style={{ fontSize: 11, color: T.n600, marginTop: 6 }}>{goalPct} of the way</div>
-            </div>
-          )}
-
-          <TrendChart data={sortedW} field="weight" color={T.accent} T={T} h={150} target={goal?.target_weight != null ? { value: goal.target_weight, date: goal.target_date } : null} goodDirection={-1} unit=" kg" />
         </div>
       ) : (
         <div style={{ ...card, textAlign: "center", color: T.n600, fontSize: 13, padding: 24 }}>
@@ -575,23 +702,51 @@ function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
             })}
           </div>
 
-          {sortedIb.length > 1 && (
-            <div style={{ marginTop: 2 }}>
-              <ChartHeading label="Body fat" color={T.warn} T={T} />
-              <TrendChart
-                data={sortedIb.filter((s) => s.body_fat != null)} field="body_fat"
-                color={T.warn} T={T} h={120} unit="%"
-                target={goal?.target_body_fat != null ? { value: goal.target_body_fat, date: goal.target_date } : null}
-                goodDirection={-1}
-              />
-              <ChartHeading label="Muscle" color={T.ok} T={T} />
-              <TrendChart
-                data={sortedIb.filter((s) => s.muscle_mass != null)} field="muscle_mass"
-                color={T.ok} T={T} h={120} unit="%"
-                target={goal?.target_muscle != null ? { value: goal.target_muscle, date: goal.target_date } : null}
-                goodDirection={1}
-              />
-            </div>
+          <div style={{ fontSize: 10.5, color: T.n600, marginTop: 2 }}>
+            Deltas compare against your previous scan. Full charts live on the InBody tab.
+          </div>
+        </div>
+      )}
+
+      {/* ── Goal pace ── */}
+      {goal && goal.target_date && (goal.target_weight != null || goal.target_body_fat != null || goal.target_muscle != null) && (
+        <div style={card}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <Kicker T={T}>Goal pace</Kicker>
+            <span style={{ fontSize: 11, color: T.n700 }}>{daysLeft} days left</span>
+          </div>
+
+          {goal.target_weight != null && (
+            <PaceBar
+              label="Weight" unit=" kg" T={T} goodDirection={-1}
+              curr={latest?.weight}
+              start={sortedW[0]?.weight}
+              startDate={sortedW[0]?.date}
+              target={goal.target_weight}
+              targetDate={goal.target_date}
+            />
+          )}
+
+          {goal.target_body_fat != null && (
+            <PaceBar
+              label="Body fat" unit="%" T={T} goodDirection={-1}
+              curr={latestIb?.body_fat}
+              start={firstIb.body_fat}
+              startDate={firstIb.bfDate}
+              target={goal.target_body_fat}
+              targetDate={goal.target_date}
+            />
+          )}
+
+          {goal.target_muscle != null && (
+            <PaceBar
+              label="Muscle" unit="%" T={T} goodDirection={1}
+              curr={latestIb?.muscle_mass}
+              start={firstIb.muscle}
+              startDate={firstIb.musDate}
+              target={goal.target_muscle}
+              targetDate={goal.target_date}
+            />
           )}
         </div>
       )}
@@ -663,8 +818,8 @@ function calcCalories({ weight, height, age, gender, activity, burnKcal, goalDir
 }
 
 // ─── CALORIE CARD ────────────────────────────────────────────────────────────
-function CalorieCard({ weights, goal, sessions, T }) {
-  const latest = [...weights].sort((a, b) => new Date(a.date) - new Date(b.date)).slice(-1)[0];
+function CalorieCard({ weights, inbody, goal, sessions, T }) {
+  const latest = mergeWeightSeries(weights, inbody).slice(-1)[0];
 
   // Average daily burn over the last 14 days, from logged sessions
   const avgBurn = (() => {
@@ -800,11 +955,11 @@ function CalorieCard({ weights, goal, sessions, T }) {
 }
 
 // ─── WEIGHT TAB ──────────────────────────────────────────────────────────────
-function WeightTab({ weights, goal, sessions, token, userId, onRefresh, T }) {
+function WeightTab({ weights, inbody, goal, sessions, token, userId, onRefresh, T }) {
   const [wForm, setWForm] = useState({ weight: "", date: todayISO() });
   const [gForm, setGForm] = useState({ target_weight: goal?.target_weight || "", target_date: goal?.target_date || "", target_body_fat: goal?.target_body_fat || "", target_muscle: goal?.target_muscle || "" });
   const [saving, setSaving] = useState(false);
-  const sorted = [...weights].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const sorted = mergeWeightSeries(weights, inbody);
   const card = { background: T.surface, borderRadius: T.radius, padding: 16, display: "flex", flexDirection: "column", gap: 6 };
   const inp = { width: "100%", background: T.bg, border: `1px solid ${T.divider}`, borderRadius: T.radiusSm, color: T.text, padding: "8px 10px", fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit", minHeight: 44 };
   const lbl = { fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: T.n600, marginBottom: 4, display: "block" };
@@ -867,7 +1022,7 @@ function WeightTab({ weights, goal, sessions, token, userId, onRefresh, T }) {
         </button>
       </div>
 
-      <CalorieCard weights={weights} goal={goal} sessions={sessions} T={T} />
+      <CalorieCard weights={weights} inbody={inbody} goal={goal} sessions={sessions} T={T} />
 
       {sorted.length > 1 && (
         <div style={card}>
@@ -876,25 +1031,40 @@ function WeightTab({ weights, goal, sessions, token, userId, onRefresh, T }) {
         </div>
       )}
 
-      {weights.length > 0 && (
+      {sorted.length > 0 && (
         <div style={card}>
           <Kicker T={T}>History</Kicker>
-          {[...weights].sort((a, b) => new Date(b.date) - new Date(a.date)).map((w, i, arr) => {
+          {[...sorted].reverse().map((w, i, arr) => {
             const prev = arr[i + 1];
             const d = prev ? +(w.weight - prev.weight).toFixed(1) : null;
+            const fromScan = w.source === "scan";
             return (
-              <div key={w.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: i < arr.length - 1 ? `1px solid ${T.divider}` : "none" }}>
-                <div>
+              <div key={`${w.date}-${w.source}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: i < arr.length - 1 ? `1px solid ${T.divider}` : "none" }}>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 600 }}>{w.weight} kg</div>
-                  <div style={{ fontSize: 11, color: T.n600 }}>{fmt(w.date)}</div>
+                  <div style={{ fontSize: 11, color: T.n600, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    {fmt(w.date)}
+                    {fromScan && (
+                      <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: T.n500, border: `1px solid ${T.divider}`, borderRadius: 5, padding: "1px 5px" }}>
+                        from scan
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
                   {d !== null && <span style={{ fontSize: 12, fontWeight: 600, color: d <= 0 ? T.ok : T.bad }}>{d <= 0 ? "" : "+"}{d} kg</span>}
-                  <button onClick={() => del(w.id)} style={{ padding: "5px 10px", fontSize: 11, fontWeight: 600, border: "none", borderRadius: 8, background: T.accent100, color: T.bad, cursor: "pointer", fontFamily: "inherit" }}>Del</button>
+                  {fromScan ? (
+                    <span style={{ fontSize: 10, color: T.n500 }}>InBody</span>
+                  ) : (
+                    <button onClick={() => del(w.id)} style={{ padding: "5px 10px", fontSize: 11, fontWeight: 600, border: "none", borderRadius: 8, background: T.accent100, color: T.bad, cursor: "pointer", fontFamily: "inherit" }}>Del</button>
+                  )}
                 </div>
               </div>
             );
           })}
+          <div style={{ fontSize: 10.5, color: T.n600, marginTop: 6, lineHeight: 1.5 }}>
+            Entries marked "from scan" come from your InBody uploads. Delete those on the InBody tab.
+          </div>
         </div>
       )}
     </div>
@@ -1649,7 +1819,7 @@ export default function App() {
         {/* Scroll content */}
         <div className="gauge-scroll" style={{ flex: "1 1 auto", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "18px 20px 28px" }}>
           {tab === "home"         && <HomeTab weights={data.weights} inbody={data.inbody} sessions={data.sessions} goal={data.goal} name={userName} sessionsProps={{ token, userId, onRefresh: refresh }} T={T} />}
-          {tab === "weight"       && <WeightTab weights={data.weights} goal={data.goal} sessions={data.sessions} token={token} userId={userId} onRefresh={refresh} T={T} />}
+          {tab === "weight"       && <WeightTab weights={data.weights} inbody={data.inbody} goal={data.goal} sessions={data.sessions} token={token} userId={userId} onRefresh={refresh} T={T} />}
           {tab === "inbody"       && <InbodyTab inbody={data.inbody} goal={data.goal} token={token} userId={userId} onRefresh={refresh} T={T} />}
           {tab === "measurements" && <MeasurementsTab measurements={data.measurements} token={token} userId={userId} onRefresh={refresh} T={T} />}
           {tab === "workouts"     && <WorkoutsTab logs={data.logs} token={token} userId={userId} onRefresh={refresh} T={T} />}
