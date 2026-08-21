@@ -35,8 +35,10 @@ const sb = {
     const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: this.headers(token) });
     return r.json();
   },
-  async select(table, token, filter = "") {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}&order=date.desc`, { headers: this.headers(token) });
+  async select(table, token, filter = "", order = "date.desc") {
+    // NOTE: `goals` has no `date` column — ordering by it returns a Postgres
+    // error object instead of rows, which silently reads back as "no goal".
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}&order=${order}`, { headers: this.headers(token) });
     return r.json();
   },
   async insert(table, token, data) {
@@ -1690,6 +1692,7 @@ export default function App() {
   const [theme, setTheme] = useState("dark");
   const [data, setData] = useState({ weights: [], inbody: [], measurements: [], logs: [], sessions: [], goal: null });
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const T = THEMES[theme];
 
   const loadData = useCallback(async (tok, uid) => {
@@ -1701,16 +1704,32 @@ export default function App() {
       sb.select("inbody_scans", tok, filter),
       sb.select("measurements", tok, filter),
       sb.select("workout_logs", tok, filter),
-      sb.select("goals", tok, filter),
+      sb.select("goals", tok, filter, "created_at.desc"),
       sb.select("sessions", tok, filter),
     ]);
+    // Surface query failures instead of silently showing empty data.
+    // A non-array response means Postgres returned an error object.
+    const failures = [
+      ["weight_entries", weights], ["inbody_scans", inbody],
+      ["measurements", measurements], ["workout_logs", logs],
+      ["goals", goals], ["sessions", sessions],
+    ].filter(([, r]) => !Array.isArray(r));
+
+    if (failures.length) {
+      const msg = failures.map(([t, r]) => `${t}: ${r?.message || r?.hint || "failed"}`).join(" · ");
+      console.error("Gauge data load failed —", msg);
+      setLoadError(msg);
+    } else {
+      setLoadError("");
+    }
+
     setData({
       weights: Array.isArray(weights) ? weights : [],
       inbody: Array.isArray(inbody) ? inbody : [],
       measurements: Array.isArray(measurements) ? measurements : [],
       logs: Array.isArray(logs) ? logs : [],
       sessions: Array.isArray(sessions) ? sessions : [],
-      goal: Array.isArray(goals) && goals.length ? goals[goals.length - 1] : null,
+      goal: Array.isArray(goals) && goals.length ? goals[0] : null,
     });
     setLoading(false);
   }, []);
@@ -1815,6 +1834,12 @@ export default function App() {
             </button>
           </span>
         </div>
+
+        {loadError && (
+          <div style={{ background: `${T.bad}1f`, borderBottom: `1px solid ${T.bad}`, color: T.bad, fontSize: 11, padding: "8px 16px", lineHeight: 1.45, flexShrink: 0 }}>
+            Some data could not load — {loadError}
+          </div>
+        )}
 
         {/* Scroll content */}
         <div className="gauge-scroll" style={{ flex: "1 1 auto", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "18px 20px 28px" }}>
