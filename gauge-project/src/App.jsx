@@ -104,7 +104,7 @@ const pct = (done, total) => Math.min(100, Math.max(0, (done / total) * 100)).to
 // ─── TREND CHART (real time axis, month labels) ──────────────────────────────
 const MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 
-function TrendChart({ data, field, color, T, h = 150, goal = null, goodDirection = -1 }) {
+function TrendChart({ data, field, color, T, h = 150, target = null, goodDirection = -1, unit = "" }) {
   const pts = (data || [])
     .map((d) => ({ t: new Date(d.date + "T00:00:00").getTime(), v: +d[field] }))
     .filter((p) => !isNaN(p.v) && !isNaN(p.t))
@@ -113,111 +113,142 @@ function TrendChart({ data, field, color, T, h = 150, goal = null, goodDirection
   if (pts.length === 0) return null;
 
   const PW = 320, PH = h;
-  const padL = 38, padR = 10, padT = 10, padB = 22;
+  const padL = 40, padR = 12, padT = 12, padB = 24;
   const iw = PW - padL - padR;
   const ih = PH - padT - padB;
 
-  // Time domain — extend to the goal date if there is one
+  // ── time domain ──
   let tMin = pts[0].t;
   let tMax = pts[pts.length - 1].t;
-  const goalT = goal?.target_date ? new Date(goal.target_date + "T00:00:00").getTime() : null;
-  if (goalT && goalT > tMax) tMax = goalT;
-  if (tMax === tMin) tMax = tMin + 86400000 * 30; // single point → show a month
+  const tgtT = target?.date ? new Date(target.date + "T00:00:00").getTime() : null;
+  if (tgtT && tgtT > tMax) tMax = tgtT;
+  if (tMax === tMin) { tMin -= 86400000 * 3; tMax += 86400000 * 3; }
 
-  // Value domain — include the target so the goal line is visible
+  // ── value domain ──
   const vals = pts.map((p) => p.v);
-  if (goal?.target_weight) vals.push(+goal.target_weight);
+  if (target?.value != null) vals.push(+target.value);
   let vMin = Math.min(...vals), vMax = Math.max(...vals);
   if (vMax === vMin) { vMin -= 1; vMax += 1; }
-  const padV = (vMax - vMin) * 0.15;
+  const padV = (vMax - vMin) * 0.18;
   vMin -= padV; vMax += padV;
 
   const X = (t) => padL + ((t - tMin) / (tMax - tMin)) * iw;
   const Y = (v) => padT + (1 - (v - vMin) / (vMax - vMin)) * ih;
 
   const line = pts.map((p) => `${X(p.t).toFixed(1)},${Y(p.v).toFixed(1)}`).join(" ");
-  const area = `${X(pts[0].t).toFixed(1)},${(padT + ih).toFixed(1)} ${line} ${X(pts[pts.length-1].t).toFixed(1)},${(padT + ih).toFixed(1)}`;
+  const baseY = (padT + ih).toFixed(1);
+  const area = `${X(pts[0].t).toFixed(1)},${baseY} ${line} ${X(pts[pts.length-1].t).toFixed(1)},${baseY}`;
 
-  // Month ticks across the visible range
-  const ticks = [];
-  const start = new Date(tMin);
-  let cur = new Date(start.getFullYear(), start.getMonth(), 1).getTime();
-  while (cur <= tMax) {
-    if (cur >= tMin) ticks.push(cur);
-    const d = new Date(cur);
-    cur = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
+  // ── adaptive date labels ──
+  // Month boundaries only make sense over a long span. Inside ~10 weeks we
+  // label the actual readings instead, otherwise short ranges draw no labels.
+  const spanDays = (tMax - tMin) / 86400000;
+  const dayLabel  = (d) => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  let labels = [];
+
+  if (spanDays <= 70) {
+    const stamps = [...new Set(pts.map((p) => p.t))];
+    if (tgtT) stamps.push(tgtT);
+    const maxN = 4;
+    const stride = stamps.length > maxN ? Math.ceil(stamps.length / maxN) : 1;
+    labels = stamps
+      .filter((_, i) => i % stride === 0 || i === stamps.length - 1)
+      .map((t) => ({ t, text: dayLabel(new Date(t)) }));
+  } else {
+    const s = new Date(tMin);
+    let cur = new Date(s.getFullYear(), s.getMonth(), 1).getTime();
+    const months = [];
+    while (cur <= tMax) {
+      if (cur >= tMin) months.push(cur);
+      const d = new Date(cur);
+      cur = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
+    }
+    // always anchor the ends so the axis is never blank
+    if (!months.length || months[0] > tMin + 86400000 * 5) months.unshift(tMin);
+    const stride = months.length > 6 ? Math.ceil(months.length / 5) : 1;
+    labels = months
+      .filter((_, i) => i % stride === 0)
+      .map((t) => ({ t, text: MONTHS[new Date(t).getMonth()] }));
   }
-  const step = ticks.length > 7 ? Math.ceil(ticks.length / 6) : 1;
-  const shown = ticks.filter((_, i) => i % step === 0);
 
-  // Goal line: from the latest actual reading to the target
-  let goalLine = null;
-  if (goal?.target_weight && goalT) {
+  // keep labels inside the plot area
+  const anchorFor = (x) => (x < padL + 16 ? "start" : x > PW - padR - 16 ? "end" : "middle");
+
+  // ── target projection ──
+  let tgtLine = null;
+  if (target?.value != null && tgtT) {
     const last = pts[pts.length - 1];
-    goalLine = `${X(last.t).toFixed(1)},${Y(last.v).toFixed(1)} ${X(goalT).toFixed(1)},${Y(+goal.target_weight).toFixed(1)}`;
+    tgtLine = `${X(last.t).toFixed(1)},${Y(last.v).toFixed(1)} ${X(tgtT).toFixed(1)},${Y(+target.value).toFixed(1)}`;
   }
 
   const first = pts[0].v, last = pts[pts.length - 1].v;
   const change = +(last - first).toFixed(1);
-  const good = change * goodDirection >= 0;
+  const good = change === 0 ? null : change * goodDirection > 0;
 
   return (
     <div>
       <svg viewBox={`0 0 ${PW} ${PH}`} style={{ width: "100%", height: h, display: "block" }}>
-        {/* horizontal guides */}
         {[0, 0.5, 1].map((f) => (
           <line key={f} x1={padL} x2={PW - padR} y1={padT + f * ih} y2={padT + f * ih}
                 stroke={T.divider} strokeWidth={1} />
         ))}
 
-        {/* y labels */}
         <text x={4} y={padT + 4} fill={T.n600} fontSize={9} fontFamily="inherit">{vMax.toFixed(1)}</text>
         <text x={4} y={padT + ih + 4} fill={T.n600} fontSize={9} fontFamily="inherit">{vMin.toFixed(1)}</text>
 
-        {/* month ticks */}
-        {shown.map((t) => {
-          const d = new Date(t);
-          return (
-            <text key={t} x={X(t)} y={PH - 6} fill={T.n600} fontSize={9}
-                  textAnchor="middle" fontFamily="inherit" letterSpacing="0.06em">
-              {MONTHS[d.getMonth()]}
-            </text>
-          );
-        })}
+        {labels.map((L) => (
+          <text key={L.t} x={X(L.t)} y={PH - 7} fill={T.n600} fontSize={8.5}
+                textAnchor={anchorFor(X(L.t))} fontFamily="inherit" letterSpacing="0.05em">
+            {L.text}
+          </text>
+        ))}
 
-        {/* goal projection */}
-        {goalLine && (
-          <polyline points={goalLine} fill="none" stroke={T.n500}
-                    strokeWidth={1.5} strokeDasharray="4,4" />
-        )}
+        {tgtLine && <polyline points={tgtLine} fill="none" stroke={T.n500} strokeWidth={1.5} strokeDasharray="4,4" />}
 
-        {/* actual */}
         {pts.length > 1 && <polygon points={area} fill={color} fillOpacity={0.18} />}
         {pts.length > 1 && (
           <polyline points={line} fill="none" stroke={color} strokeWidth={2.5}
                     strokeLinejoin="round" strokeLinecap="round" />
         )}
 
-        {/* points */}
         {pts.map((p, i) => (
           <circle key={i} cx={X(p.t)} cy={Y(p.v)} r={i === pts.length - 1 ? 3.5 : 2}
                   fill={i === pts.length - 1 ? color : T.bg} stroke={color} strokeWidth={1.5} />
         ))}
 
-        {/* target marker */}
-        {goal?.target_weight && goalT && (
-          <circle cx={X(goalT)} cy={Y(+goal.target_weight)} r={3}
-                  fill="none" stroke={T.n500} strokeWidth={1.5} />
+        {target?.value != null && tgtT && (
+          <circle cx={X(tgtT)} cy={Y(+target.value)} r={3.5} fill="none" stroke={T.n500} strokeWidth={1.5} />
         )}
       </svg>
 
       {pts.length > 1 && (
-        <div style={{ display: "flex", gap: 16, marginTop: 6, fontSize: 11, color: T.n600 }}>
-          <span>Start <strong style={{ color: T.text }}>{first}</strong></span>
-          <span>Now <strong style={{ color: T.text }}>{last}</strong></span>
-          <span>Change <strong style={{ color: good ? T.ok : T.bad }}>{change > 0 ? "+" : ""}{change}</strong></span>
+        <div style={{ display: "flex", gap: 14, marginTop: 4, fontSize: 11, color: T.n600, flexWrap: "wrap" }}>
+          <span>Start <strong style={{ color: T.text }}>{first}{unit}</strong></span>
+          <span>Now <strong style={{ color: T.text }}>{last}{unit}</strong></span>
+          <span>Change <strong style={{ color: good === null ? T.n600 : good ? T.ok : T.bad }}>
+            {change > 0 ? "+" : ""}{change}{unit}
+          </strong></span>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── FRAMED CHART HEADING ────────────────────────────────────────────────────
+function ChartHeading({ label, color, T, right = null }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, margin: "14px 0 6px" }}>
+      <span style={{
+        display: "inline-flex", alignItems: "center", gap: 6,
+        padding: "5px 11px", borderRadius: 8,
+        border: `1px solid ${color}`, background: `${color}1f`,
+        color, fontSize: 10.5, fontWeight: 800,
+        letterSpacing: "0.12em", textTransform: "uppercase",
+      }}>
+        <span style={{ width: 7, height: 7, borderRadius: 2, background: color, flex: "none" }} />
+        {label}
+      </span>
+      {right}
     </div>
   );
 }
@@ -454,14 +485,14 @@ function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
   const card = { background: T.surface, borderRadius: T.radius, padding: 16, display: "flex", flexDirection: "column", gap: 10 };
 
   const goalPct = (() => {
-    if (!goal || !latest || !sortedW[0]) return null;
+    if (!goal || goal.target_weight == null || !latest || !sortedW[0]) return null;
     const start = sortedW[0].weight, curr = latest.weight, target = goal.target_weight;
     const done = Math.abs(curr - start), total = Math.abs(target - start);
     return total ? pct(done, total) : "0%";
   })();
 
   const daysLeft = goal?.target_date ? Math.max(0, Math.ceil((new Date(goal.target_date) - new Date()) / 86400000)) : null;
-  const pace = (goal && latest && daysLeft) ? (Math.abs(latest.weight - goal.target_weight) / (daysLeft / 7)).toFixed(2) : null;
+  const pace = (goal && goal.target_weight != null && latest && daysLeft) ? (Math.abs(latest.weight - goal.target_weight) / (daysLeft / 7)).toFixed(2) : null;
 
   // 7-day training load
   const weekAgo = Date.now() - 7 * 86400000;
@@ -491,7 +522,9 @@ function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
                 <div style={{ display: "inline-block", padding: "3px 8px", borderRadius: 20, border: `1px solid ${T.accent}`, background: T.accent100, color: T.accent, fontWeight: 600, fontSize: 10.5, marginBottom: 4 }}>
                   {daysLeft} days left
                 </div>
-                <div>Target {goal.target_weight} kg</div>
+                {goal.target_weight != null && <div>Target {goal.target_weight} kg</div>}
+                {goal.target_body_fat != null && <div>Fat target {goal.target_body_fat}%</div>}
+                {goal.target_muscle != null && <div>Muscle target {goal.target_muscle}%</div>}
                 {pace && <div>{pace} kg/wk needed</div>}
               </div>
             )}
@@ -509,7 +542,7 @@ function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
             </div>
           )}
 
-          <TrendChart data={sortedW} field="weight" color={T.accent} T={T} h={150} goal={goal} goodDirection={-1} />
+          <TrendChart data={sortedW} field="weight" color={T.accent} T={T} h={150} target={goal?.target_weight != null ? { value: goal.target_weight, date: goal.target_date } : null} goodDirection={-1} unit=" kg" />
         </div>
       ) : (
         <div style={{ ...card, textAlign: "center", color: T.n600, fontSize: 13, padding: 24 }}>
@@ -543,11 +576,21 @@ function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
           </div>
 
           {sortedIb.length > 1 && (
-            <div style={{ marginTop: 4 }}>
-              <div style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.08em", color: T.n600, marginBottom: 2 }}>Body fat</div>
-              <TrendChart data={sortedIb} field="body_fat" color={T.warn} T={T} h={110} goodDirection={-1} />
-              <div style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.08em", color: T.n600, margin: "10px 0 2px" }}>Muscle</div>
-              <TrendChart data={sortedIb} field="muscle_mass" color={T.ok} T={T} h={110} goodDirection={1} />
+            <div style={{ marginTop: 2 }}>
+              <ChartHeading label="Body fat" color={T.warn} T={T} />
+              <TrendChart
+                data={sortedIb.filter((s) => s.body_fat != null)} field="body_fat"
+                color={T.warn} T={T} h={120} unit="%"
+                target={goal?.target_body_fat != null ? { value: goal.target_body_fat, date: goal.target_date } : null}
+                goodDirection={-1}
+              />
+              <ChartHeading label="Muscle" color={T.ok} T={T} />
+              <TrendChart
+                data={sortedIb.filter((s) => s.muscle_mass != null)} field="muscle_mass"
+                color={T.ok} T={T} h={120} unit="%"
+                target={goal?.target_muscle != null ? { value: goal.target_muscle, date: goal.target_date } : null}
+                goodDirection={1}
+              />
             </div>
           )}
         </div>
@@ -595,17 +638,24 @@ function calcCalories({ weight, height, age, gender, activity, burnKcal, goalDir
     : Math.round(tdeeFormula);
 
   let adjustment = 0;
-  if (goalDirection === "lose" && targetWeight && targetDate) {
-    const daysLeft = Math.max(1, Math.ceil((new Date(targetDate) - new Date()) / 86400000));
-    const kgToLose = Math.max(0, weight - targetWeight);
-    const dailyDeficit = Math.min(750, Math.round((kgToLose * 7700) / daysLeft));
-    adjustment = -dailyDeficit;
+  if (goalDirection === "lose") {
+    if (targetWeight && targetDate) {
+      const daysLeft = Math.max(1, Math.ceil((new Date(targetDate) - new Date()) / 86400000));
+      const kgToLose = Math.max(0, weight - targetWeight);
+      adjustment = -Math.min(750, Math.round((kgToLose * 7700) / daysLeft));
+    } else {
+      adjustment = -500;
+    }
   } else if (goalDirection === "gain") {
     adjustment = 300;
+  } else if (goalDirection === "recomp") {
+    // Fat down + muscle up: a small deficit with high protein is the
+    // established approach. Aggressive cuts cost lean mass.
+    adjustment = -250;
   }
 
   const target = tdee + adjustment;
-  const protein = Math.round(weight * 2.0);
+  const protein = Math.round(weight * (goalDirection === "recomp" ? 2.2 : 2.0));
   const fat     = Math.round(weight * 0.9);
   const carbs   = Math.max(0, Math.round((target - protein * 4 - fat * 9) / 4));
 
@@ -695,6 +745,7 @@ function CalorieCard({ weights, goal, sessions, T }) {
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={lbl}>Goal</label>
               <select style={inp} value={stats.goalDirection} onChange={set("goalDirection")}>
+                <option value="recomp">Build muscle &amp; lose fat</option>
                 <option value="lose">Lose fat</option>
                 <option value="gain">Gain muscle</option>
                 <option value="maintain">Maintain</option>
@@ -738,7 +789,7 @@ function CalorieCard({ weights, goal, sessions, T }) {
               </div>
 
               <div style={{ fontSize: 10.5, color: T.n600, lineHeight: 1.5 }}>
-                Mifflin-St Jeor BMR {result.bmr} kcal{avgBurn ? `, blended with your logged ${avgBurn} kcal/day burn` : ""}. Protein at 2 g/kg to protect muscle while cutting.
+                Mifflin-St Jeor BMR {result.bmr} kcal{avgBurn ? `, blended with your logged ${avgBurn} kcal/day burn` : ""}. {stats.goalDirection === "recomp" ? "Recomposition uses a small 250 kcal deficit with protein at 2.2 g/kg — a steep cut costs lean mass." : "Protein at 2 g/kg to protect muscle."}
               </div>
             </div>
           )}
@@ -751,7 +802,7 @@ function CalorieCard({ weights, goal, sessions, T }) {
 // ─── WEIGHT TAB ──────────────────────────────────────────────────────────────
 function WeightTab({ weights, goal, sessions, token, userId, onRefresh, T }) {
   const [wForm, setWForm] = useState({ weight: "", date: todayISO() });
-  const [gForm, setGForm] = useState({ target_weight: goal?.target_weight || "", target_date: goal?.target_date || "" });
+  const [gForm, setGForm] = useState({ target_weight: goal?.target_weight || "", target_date: goal?.target_date || "", target_body_fat: goal?.target_body_fat || "", target_muscle: goal?.target_muscle || "" });
   const [saving, setSaving] = useState(false);
   const sorted = [...weights].sort((a, b) => new Date(a.date) - new Date(b.date));
   const card = { background: T.surface, borderRadius: T.radius, padding: 16, display: "flex", flexDirection: "column", gap: 6 };
@@ -768,9 +819,17 @@ function WeightTab({ weights, goal, sessions, token, userId, onRefresh, T }) {
   };
 
   const saveGoal = async () => {
-    if (!gForm.target_weight || !gForm.target_date) return;
+    // A date plus at least one target is enough
+    const hasTarget = gForm.target_weight || gForm.target_body_fat || gForm.target_muscle;
+    if (!gForm.target_date || !hasTarget) return;
     setSaving(true);
-    await sb.insert("goals", token, { user_id: userId, target_weight: +gForm.target_weight, target_date: gForm.target_date });
+    await sb.insert("goals", token, {
+      user_id: userId,
+      target_date: gForm.target_date,
+      target_weight:   gForm.target_weight   ? +gForm.target_weight   : null,
+      target_body_fat: gForm.target_body_fat ? +gForm.target_body_fat : null,
+      target_muscle:   gForm.target_muscle   ? +gForm.target_muscle   : null,
+    });
     await onRefresh();
     setSaving(false);
   };
@@ -793,10 +852,15 @@ function WeightTab({ weights, goal, sessions, token, userId, onRefresh, T }) {
       </div>
 
       <div style={card}>
-        <Kicker T={T}>Set / edit your target</Kicker>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10, marginTop: 8, marginBottom: 12 }}>
-          <div><label style={lbl}>Target weight (kg)</label><input style={inp} type="number" step="0.1" placeholder="e.g. 79.0" value={gForm.target_weight} onChange={(e) => setGForm((f) => ({ ...f, target_weight: e.target.value }))} /></div>
+        <Kicker T={T}>Set / edit your targets</Kicker>
+        <div style={{ fontSize: 11.5, color: T.n600, lineHeight: 1.5, marginBottom: 4 }}>
+          Fill in only what you care about. Leave a field blank to skip that target — you don't need a weight goal to track body recomposition.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10, marginTop: 4, marginBottom: 12 }}>
+          <div><label style={lbl}>Target weight (kg)</label><input style={inp} type="number" step="0.1" placeholder="optional" value={gForm.target_weight} onChange={(e) => setGForm((f) => ({ ...f, target_weight: e.target.value }))} /></div>
           <div><label style={lbl}>Target date</label><input style={inp} type="date" value={gForm.target_date} onChange={(e) => setGForm((f) => ({ ...f, target_date: e.target.value }))} /></div>
+          <div><label style={lbl}>Target body fat (%)</label><input style={inp} type="number" step="0.1" placeholder="optional" value={gForm.target_body_fat} onChange={(e) => setGForm((f) => ({ ...f, target_body_fat: e.target.value }))} /></div>
+          <div><label style={lbl}>Target muscle (%)</label><input style={inp} type="number" step="0.1" placeholder="optional" value={gForm.target_muscle} onChange={(e) => setGForm((f) => ({ ...f, target_muscle: e.target.value }))} /></div>
         </div>
         <button onClick={saveGoal} disabled={saving} style={{ minHeight: 44, fontFamily: "inherit", fontSize: 13, fontWeight: 700, border: `1px solid ${T.accent400}`, borderRadius: 10, background: T.accent100, color: T.accent600, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>
           Save goal
@@ -837,8 +901,130 @@ function WeightTab({ weights, goal, sessions, token, userId, onRefresh, T }) {
   );
 }
 
+// ─── METRIC ANALYSIS ─────────────────────────────────────────────────────────
+// Turns two scans plus a target into plain-language commentary.
+function analyseMetric({ label, curr, prev, first, target, targetDate, goodDirection, unit }) {
+  if (curr == null) return null;
+
+  const lines = [];
+  const delta = prev != null ? +(curr - prev).toFixed(1) : null;
+  const total = first != null ? +(curr - first).toFixed(1) : null;
+
+  // Movement since the previous scan
+  if (delta === null) {
+    lines.push(`First recorded ${label.toLowerCase()} reading. The next scan will show movement.`);
+  } else if (delta === 0) {
+    lines.push(`No change since the last scan — holding at ${curr}${unit}.`);
+  } else {
+    const dir = delta > 0 ? "up" : "down";
+    const helping = delta * goodDirection > 0;
+    lines.push(
+      `${helping ? "Moving the right way" : "Moving against your goal"} — ${dir} ${Math.abs(delta)}${unit} since the last scan.`
+    );
+  }
+
+  // Cumulative movement
+  if (total !== null && total !== 0 && first !== prev) {
+    const dir = total > 0 ? "up" : "down";
+    lines.push(`${dir === "up" ? "Up" : "Down"} ${Math.abs(total)}${unit} in total since your first scan.`);
+  }
+
+  // Progress toward target
+  let progress = null;
+  if (target != null) {
+    const remaining = +(target - curr).toFixed(1);
+    const reached = remaining * goodDirection <= 0;
+
+    if (reached) {
+      lines.push(`Target of ${target}${unit} reached.`);
+      progress = 100;
+    } else {
+      lines.push(`${Math.abs(remaining)}${unit} to go to reach ${target}${unit}.`);
+
+      if (first != null && target !== first) {
+        progress = Math.max(0, Math.min(100,
+          (Math.abs(curr - first) / Math.abs(target - first)) * 100
+        ));
+      }
+
+      // Required pace
+      if (targetDate) {
+        const weeksLeft = (new Date(targetDate) - new Date()) / (86400000 * 7);
+        if (weeksLeft > 0.5) {
+          const perWeek = Math.abs(remaining) / weeksLeft;
+          lines.push(`Needs about ${perWeek.toFixed(2)}${unit} per week to land on time.`);
+        } else if (weeksLeft > 0) {
+          lines.push(`Target date is this week.`);
+        } else {
+          lines.push(`Target date has passed — worth resetting it.`);
+        }
+      }
+    }
+  }
+
+  return { lines, delta, total, progress };
+}
+
+function MetricBlock({ label, color, T, data, field, curr, prev, first, target, targetDate, goodDirection, unit }) {
+  const analysis = analyseMetric({ label, curr, prev, first, target, targetDate, goodDirection, unit });
+  if (!analysis) return null;
+
+  const { lines, delta, progress } = analysis;
+  const deltaColor = delta == null || delta === 0 ? T.n600 : (delta * goodDirection > 0 ? T.ok : T.bad);
+
+  return (
+    <div style={{ paddingTop: 4 }}>
+      <ChartHeading
+        label={label}
+        color={color}
+        T={T}
+        right={
+          <span style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontSize: 19, fontWeight: 800, color: T.text, lineHeight: 1 }}>
+              {curr}<span style={{ fontSize: 11, color: T.n600 }}>{unit}</span>
+            </span>
+            {delta !== null && (
+              <span style={{ fontSize: 12, fontWeight: 700, color: deltaColor }}>
+                {delta > 0 ? "+" : ""}{delta}{unit}
+              </span>
+            )}
+          </span>
+        }
+      />
+
+      <TrendChart
+        data={data}
+        field={field}
+        color={color}
+        T={T}
+        h={130}
+        target={target != null ? { value: target, date: targetDate } : null}
+        goodDirection={goodDirection}
+        unit={unit}
+      />
+
+      {progress !== null && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ height: 6, borderRadius: 4, background: `${color}26` }}>
+            <div style={{ height: 6, borderRadius: 4, background: color, width: `${progress.toFixed(1)}%`, transition: "width 0.5s" }} />
+          </div>
+          <div style={{ fontSize: 10, color: T.n600, marginTop: 4 }}>{progress.toFixed(0)}% of the way to target</div>
+        </div>
+      )}
+
+      <div style={{ marginTop: 8, background: T.bg, borderRadius: 10, padding: "10px 12px", borderLeft: `3px solid ${color}` }}>
+        {lines.map((l, i) => (
+          <div key={i} style={{ fontSize: 12, color: i === 0 ? T.text : T.n700, lineHeight: 1.55, fontWeight: i === 0 ? 600 : 400 }}>
+            {l}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── INBODY TAB ──────────────────────────────────────────────────────────────
-function InbodyTab({ inbody, token, userId, onRefresh, T }) {
+function InbodyTab({ inbody, goal, token, userId, onRefresh, T }) {
   const [status, setStatus] = useState("idle"); // idle | reading | confirm | saving | error
   const [editPending, setEditPending] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -1008,13 +1194,63 @@ If a value is not found in the scan, use null. Return only the JSON object.`,
         </div>
       )}
 
-      {/* Trends */}
-      {sorted.length > 1 && (
+      {/* Per-metric analysis: weight, body fat, muscle */}
+      {latest && (
         <div style={card}>
-          <Kicker T={T}>Body fat trend</Kicker>
-          <Sparkline data={sorted.filter(s => s.body_fat)} field="body_fat" color={T.warn} h={50} />
-          <Kicker T={T}>Muscle trend</Kicker>
-          <Sparkline data={sorted.filter(s => s.muscle_mass)} field="muscle_mass" color={T.ok} h={50} />
+          <Kicker T={T}>Analysis</Kicker>
+          <div style={{ fontSize: 11.5, color: T.n600, lineHeight: 1.5 }}>
+            {prev
+              ? `Compared against your scan on ${fmt(prev.date)}.`
+              : "Upload a second scan and each metric will show what changed."}
+          </div>
+
+          <MetricBlock
+            label="Weight" field="weight" unit=" kg"
+            color={T.accent} T={T}
+            data={sorted.filter((s) => s.weight != null)}
+            curr={latest.weight} prev={prev?.weight} first={sorted.find((s) => s.weight != null)?.weight}
+            target={goal?.target_weight} targetDate={goal?.target_date}
+            goodDirection={-1}
+          />
+
+          <MetricBlock
+            label="Body fat" field="body_fat" unit="%"
+            color={T.warn} T={T}
+            data={sorted.filter((s) => s.body_fat != null)}
+            curr={latest.body_fat} prev={prev?.body_fat} first={sorted.find((s) => s.body_fat != null)?.body_fat}
+            target={goal?.target_body_fat} targetDate={goal?.target_date}
+            goodDirection={-1}
+          />
+
+          <MetricBlock
+            label="Muscle" field="muscle_mass" unit="%"
+            color={T.ok} T={T}
+            data={sorted.filter((s) => s.muscle_mass != null)}
+            curr={latest.muscle_mass} prev={prev?.muscle_mass} first={sorted.find((s) => s.muscle_mass != null)?.muscle_mass}
+            target={goal?.target_muscle} targetDate={goal?.target_date}
+            goodDirection={1}
+          />
+
+          {/* Recomposition read: fat down while muscle up */}
+          {prev && latest.body_fat != null && prev.body_fat != null &&
+           latest.muscle_mass != null && prev.muscle_mass != null && (() => {
+            const fatD = +(latest.body_fat - prev.body_fat).toFixed(1);
+            const musD = +(latest.muscle_mass - prev.muscle_mass).toFixed(1);
+            const recomp = fatD < 0 && musD > 0;
+            const both   = fatD > 0 && musD < 0;
+            return (
+              <div style={{ marginTop: 14, borderRadius: 10, padding: "12px 14px", background: recomp ? `${T.ok}1a` : both ? `${T.bad}1a` : T.bg, border: `1px solid ${recomp ? T.ok : both ? T.bad : T.divider}` }}>
+                <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: recomp ? T.ok : both ? T.bad : T.n600, marginBottom: 5 }}>
+                  Overall
+                </div>
+                <div style={{ fontSize: 12.5, color: T.text, lineHeight: 1.55 }}>
+                  {recomp && `Body recomposition is working — fat down ${Math.abs(fatD)}% and muscle up ${musD}% at the same time. That is the hardest combination to achieve, and it is why the scale alone would understate your progress.`}
+                  {both && `Fat up ${fatD}% and muscle down ${Math.abs(musD)}% since the last scan. Worth reviewing protein intake and training volume before the next one.`}
+                  {!recomp && !both && `Fat ${fatD > 0 ? "up" : fatD < 0 ? "down" : "flat"} ${Math.abs(fatD)}%, muscle ${musD > 0 ? "up" : musD < 0 ? "down" : "flat"} ${Math.abs(musD)}%. Mixed movement — one more scan will show whether it is a trend or noise.`}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -1414,7 +1650,7 @@ export default function App() {
         <div className="gauge-scroll" style={{ flex: "1 1 auto", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "18px 20px 28px" }}>
           {tab === "home"         && <HomeTab weights={data.weights} inbody={data.inbody} sessions={data.sessions} goal={data.goal} name={userName} sessionsProps={{ token, userId, onRefresh: refresh }} T={T} />}
           {tab === "weight"       && <WeightTab weights={data.weights} goal={data.goal} sessions={data.sessions} token={token} userId={userId} onRefresh={refresh} T={T} />}
-          {tab === "inbody"       && <InbodyTab inbody={data.inbody} token={token} userId={userId} onRefresh={refresh} T={T} />}
+          {tab === "inbody"       && <InbodyTab inbody={data.inbody} goal={data.goal} token={token} userId={userId} onRefresh={refresh} T={T} />}
           {tab === "measurements" && <MeasurementsTab measurements={data.measurements} token={token} userId={userId} onRefresh={refresh} T={T} />}
           {tab === "workouts"     && <WorkoutsTab logs={data.logs} token={token} userId={userId} onRefresh={refresh} T={T} />}
         </div>
@@ -1433,3 +1669,4 @@ export default function App() {
     </div>
   );
 }
+
