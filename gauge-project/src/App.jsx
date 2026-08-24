@@ -38,8 +38,24 @@ const sb = {
   async select(table, token, filter = "", order = "date.desc") {
     // NOTE: `goals` has no `date` column — ordering by it returns a Postgres
     // error object instead of rows, which silently reads back as "no goal".
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}&order=${order}`, { headers: this.headers(token) });
-    return r.json();
+    const url = `${SUPABASE_URL}/rest/v1/${table}?${filter}&order=${order}`;
+
+    const attempt = async () => {
+      const r = await fetch(url, { headers: this.headers(token) });
+      return r.json();
+    };
+
+    let out = await attempt();
+
+    // "JWT issued at future" / "JWT expired" are clock-skew races between the
+    // auth server and Postgres. They clear on their own within a second or two,
+    // so one retry turns a visible error into a non-event.
+    const msg = (out && !Array.isArray(out) && (out.message || out.msg || "")) || "";
+    if (/jwt|token/i.test(msg)) {
+      await new Promise((res) => setTimeout(res, 1200));
+      out = await attempt();
+    }
+    return out;
   },
   async insert(table, token, data) {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, { method: "POST", headers: this.headers(token), body: JSON.stringify(data) });
@@ -528,23 +544,6 @@ function SessionCard({ sessions, token, userId, onRefresh, T }) {
   );
 }
 
-function Sparkline({ data, field, color, h = 60 }) {
-  if (!data || data.length < 2) return null;
-  const vals = data.map((d) => +d[field]).filter((v) => !isNaN(v));
-  if (vals.length < 2) return null;
-  const min = Math.min(...vals), max = Math.max(...vals);
-  const range = max - min || 1;
-  const PW = 326, PH = h;
-  const pts = vals.map((v, i) => `${(i / (vals.length - 1)) * PW},${PH - ((v - min) / range) * (PH - 10) - 5}`).join(" ");
-  const area = `0,${PH} ` + pts + ` ${PW},${PH}`;
-  return (
-    <svg viewBox={`0 0 ${PW} ${PH}`} style={{ width: "100%", height: h, display: "block", overflow: "visible" }} preserveAspectRatio="none">
-      <polygon points={area} fill={color} fillOpacity={0.22} />
-      <polyline points={pts} fill="none" stroke={color} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 // ─── AUTH SCREEN ─────────────────────────────────────────────────────────────
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("signin");
@@ -1029,7 +1028,11 @@ function WeightTab({ weights, inbody, goal, sessions, token, userId, onRefresh, 
       {sorted.length > 1 && (
         <div style={card}>
           <Kicker T={T}>Trend</Kicker>
-          <Sparkline data={sorted} field="weight" color={T.accent} h={86} />
+          <TrendChart
+            data={sorted} field="weight" color={T.accent} T={T} h={150} unit=" kg"
+            target={goal?.target_weight != null ? { value: goal.target_weight, date: goal.target_date } : null}
+            goodDirection={-1}
+          />
         </div>
       )}
 
@@ -1543,7 +1546,7 @@ function MeasurementsTab({ measurements, token, userId, onRefresh, T }) {
               </button>
             ))}
           </div>
-          <Sparkline data={sorted} field={metric} color={T.accent} h={120} />
+          <TrendChart data={sorted} field={metric} color={T.accent} T={T} h={140} unit=" cm" goodDirection={metric === "waist" || metric === "hips" ? -1 : 1} />
           {(() => {
             const first = sorted[0][metric], last = sorted[sorted.length - 1][metric];
             const d = +(last - first).toFixed(1);
@@ -1632,7 +1635,7 @@ function WorkoutsTab({ logs, token, userId, onRefresh, T }) {
       {volumeSeries.length > 1 && (
         <div style={card}>
           <Kicker T={T}>{muscle} — volume trend</Kicker>
-          <Sparkline data={volumeSeries} field="volume" color={T.accent} h={110} />
+          <TrendChart data={volumeSeries} field="volume" color={T.accent} T={T} h={140} goodDirection={1} />
         </div>
       )}
 
@@ -1777,11 +1780,28 @@ export default function App() {
     return () => { cancelled = true; };
   }, [token, loadData]);
 
-  // Keep the session alive while the app is open, and re-check on resume
+  // Keep the session alive while the app is open, and re-check on resume.
+  // Only actually refresh when the token is near expiry — minting a new token
+  // and immediately querying with it invites "JWT issued at future" skew errors.
   useEffect(() => {
-    const renew = async () => {
+    const expiryOf = (tok) => {
+      try {
+        const payload = JSON.parse(atob(tok.split(".")[1]));
+        return payload.exp ? payload.exp * 1000 : null;
+      } catch { return null; }
+    };
+
+    const renew = async (force = false) => {
       const rt = localStorage.getItem("gauge_refresh");
       if (!rt) return;
+
+      if (!force) {
+        const tok = localStorage.getItem("gauge_token");
+        const exp = tok ? expiryOf(tok) : null;
+        // still more than 10 minutes of life left → leave it alone
+        if (exp && exp - Date.now() > 10 * 60 * 1000) return;
+      }
+
       const res = await sb.refresh(rt);
       if (res?.access_token) {
         localStorage.setItem("gauge_token", res.access_token);
@@ -1789,8 +1809,9 @@ export default function App() {
         setToken(res.access_token);
       }
     };
-    const id = setInterval(renew, 45 * 60 * 1000); // every 45 min
-    const onShow = () => { if (document.visibilityState === "visible") renew(); };
+
+    const id = setInterval(() => renew(false), 10 * 60 * 1000);
+    const onShow = () => { if (document.visibilityState === "visible") renew(false); };
     document.addEventListener("visibilitychange", onShow);
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onShow); };
   }, []);
@@ -1836,8 +1857,14 @@ export default function App() {
         </div>
 
         {loadError && (
-          <div style={{ background: `${T.bad}1f`, borderBottom: `1px solid ${T.bad}`, color: T.bad, fontSize: 11, padding: "8px 16px", lineHeight: 1.45, flexShrink: 0 }}>
-            Some data could not load — {loadError}
+          <div style={{ background: `${T.bad}1f`, borderBottom: `1px solid ${T.bad}`, color: T.bad, fontSize: 11, padding: "8px 12px 8px 16px", lineHeight: 1.45, flexShrink: 0, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ flex: 1, minWidth: 0 }}>Some data could not load — {loadError}</span>
+            <button onClick={refresh} style={{ flexShrink: 0, border: `1px solid ${T.bad}`, background: "transparent", color: T.bad, borderRadius: 7, padding: "3px 9px", fontSize: 10.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+              Retry
+            </button>
+            <button onClick={() => setLoadError("")} style={{ flexShrink: 0, border: "none", background: "transparent", color: T.bad, fontSize: 15, lineHeight: 1, padding: "0 2px", cursor: "pointer", fontFamily: "inherit" }}>
+              ×
+            </button>
           </div>
         )}
 
