@@ -10,12 +10,22 @@
   },
   "scripts": {
     "start": "react-scripts start",
-"build": "CI=false react-scripts build"  },
+    "build": "CI=false react-scripts build",
+    "test": "node tests/logic.test.mjs"
+  },
   "eslintConfig": {
-    "extends": ["react-app"]
+    "extends": [
+      "react-app"
+    ]
   },
   "browserslist": {
-    "production": [">0.2%", "not dead", "not op_mini all"],
-    "development": ["last 1 chrome version"]
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version"
+    ]
   }
 }
