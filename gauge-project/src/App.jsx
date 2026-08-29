@@ -1,4 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
+import {
+  todayISO, fmt,
+  parseScanResponse, mergeWeightSeries, chartLabels,
+  computePace, analyseMetric, calcCalories,
+  averageDailyBurn, weekSummary,
+} from "./logic";
 
 // ─── SUPABASE CONFIG ─────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://mhksjkzpyurcspcnvxtr.supabase.co";
@@ -115,27 +121,9 @@ const THEMES = {
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-const fmt = (d) => { if (!d) return "—"; const dt = new Date(d + "T00:00:00"); return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
-const todayISO = () => new Date().toISOString().slice(0, 10);
-// A weigh-in is a weigh-in, whether it was typed in or read off a scan.
-// Merging both sources means Home can never claim "no weight" while an
-// InBody scan is sitting right there showing one.
-function mergeWeightSeries(weights, inbody) {
-  const byDate = new Map();
-  (inbody || []).forEach((s) => {
-    if (s.weight != null) byDate.set(s.date, { date: s.date, weight: +s.weight, source: "scan" });
-  });
-  // A manual entry wins over a scan on the same date
-  (weights || []).forEach((w) => {
-    if (w.weight != null) byDate.set(w.date, { date: w.date, weight: +w.weight, source: "manual", id: w.id });
-  });
-  return [...byDate.values()].sort((a, b) => new Date(a.date) - new Date(b.date));
-}
 
-const pct = (done, total) => Math.min(100, Math.max(0, (done / total) * 100)).toFixed(1) + "%";
 
 // ─── TREND CHART (real time axis, month labels) ──────────────────────────────
-const MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 
 function TrendChart({ data, field, color, T, h = 150, target = null, goodDirection = -1, unit = "" }) {
   const pts = (data || [])
@@ -172,37 +160,9 @@ function TrendChart({ data, field, color, T, h = 150, target = null, goodDirecti
   const baseY = (padT + ih).toFixed(1);
   const area = `${X(pts[0].t).toFixed(1)},${baseY} ${line} ${X(pts[pts.length-1].t).toFixed(1)},${baseY}`;
 
-  // ── adaptive date labels ──
-  // Month boundaries only make sense over a long span. Inside ~10 weeks we
-  // label the actual readings instead, otherwise short ranges draw no labels.
-  const spanDays = (tMax - tMin) / 86400000;
-  const dayLabel  = (d) => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
-  let labels = [];
-
-  if (spanDays <= 70) {
-    const stamps = [...new Set(pts.map((p) => p.t))];
-    if (tgtT) stamps.push(tgtT);
-    const maxN = 4;
-    const stride = stamps.length > maxN ? Math.ceil(stamps.length / maxN) : 1;
-    labels = stamps
-      .filter((_, i) => i % stride === 0 || i === stamps.length - 1)
-      .map((t) => ({ t, text: dayLabel(new Date(t)) }));
-  } else {
-    const s = new Date(tMin);
-    let cur = new Date(s.getFullYear(), s.getMonth(), 1).getTime();
-    const months = [];
-    while (cur <= tMax) {
-      if (cur >= tMin) months.push(cur);
-      const d = new Date(cur);
-      cur = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
-    }
-    // always anchor the ends so the axis is never blank
-    if (!months.length || months[0] > tMin + 86400000 * 5) months.unshift(tMin);
-    const stride = months.length > 6 ? Math.ceil(months.length / 5) : 1;
-    labels = months
-      .filter((_, i) => i % stride === 0)
-      .map((t) => ({ t, text: MONTHS[new Date(t).getMonth()] }));
-  }
+  // Date labels come from logic.js (tested): day labels for short spans,
+  // month names once the range is long enough to justify them.
+  const labels = chartLabels(tMin, tMax, pts.map((p) => p.t), tgtT);
 
   // keep labels inside the plot area
   const anchorFor = (x) => (x < padL + 16 ? "start" : x > PW - padR - 16 ? "end" : "middle");
@@ -284,75 +244,6 @@ function ChartHeading({ label, color, T, right = null }) {
       {right}
     </div>
   );
-}
-
-// ─── PACE BAR ────────────────────────────────────────────────────────────────
-// Progress is only meaningful against time. Being 30% of the way to a target
-// is good at week 2 and bad at week 10 — so we compare progress made against
-// time elapsed, and colour by the ratio between them.
-function computePace({ curr, start, target, startDate, targetDate, goodDirection }) {
-  if (curr == null || target == null || !targetDate) return null;
-
-  const now = Date.now();
-  const tEnd = new Date(targetDate + "T00:00:00").getTime();
-  const tStart = startDate ? new Date(startDate + "T00:00:00").getTime() : null;
-
-  // Progress toward the target
-  const base = start != null ? start : curr;
-  const span = target - base;
-  const moved = curr - base;
-  let progress = span === 0 ? 100 : (moved / span) * 100;
-  const reached = (target - curr) * goodDirection <= 0;
-  if (reached) progress = 100;
-  progress = Math.max(0, Math.min(100, progress));
-
-  // Time elapsed toward the deadline
-  let elapsed = null;
-  if (tStart != null && tEnd > tStart) {
-    elapsed = Math.max(0, Math.min(100, ((now - tStart) / (tEnd - tStart)) * 100));
-  }
-
-  const daysLeft = Math.ceil((tEnd - now) / 86400000);
-
-  // Status
-  let status, color, note;
-  if (reached) {
-    status = "Target reached";
-    color = "ok";
-    note = `Hit ${target} — ahead of the ${daysLeft > 0 ? `${daysLeft}-day` : ""} deadline.`.replace("  ", " ");
-  } else if (daysLeft < 0) {
-    status = "Date passed";
-    color = "bad";
-    note = `Target date has passed. ${Math.abs(+(target - curr).toFixed(1))} still to go — worth setting a new date.`;
-  } else if (moved * goodDirection < 0) {
-    status = "Wrong direction";
-    color = "bad";
-    note = `Moved away from the target since you started. ${daysLeft} days left.`;
-  } else if (elapsed == null || elapsed < 8) {
-    status = "Just started";
-    color = "neutral";
-    note = `Too early to judge pace. ${daysLeft} days to go.`;
-  } else {
-    const ratio = progress / elapsed;
-    const remaining = Math.abs(+(target - curr).toFixed(1));
-    const perWeek = daysLeft > 0 ? (remaining / (daysLeft / 7)).toFixed(2) : null;
-
-    if (ratio >= 0.95) {
-      status = "On track";
-      color = "ok";
-      note = `${progress.toFixed(0)}% done with ${elapsed.toFixed(0)}% of the time used.${perWeek ? ` ${perWeek}/wk keeps you on pace.` : ""}`;
-    } else if (ratio >= 0.75) {
-      status = "Slightly behind";
-      color = "warn";
-      note = `${progress.toFixed(0)}% done but ${elapsed.toFixed(0)}% of the time is gone.${perWeek ? ` Needs ${perWeek}/wk to catch up.` : ""}`;
-    } else {
-      status = "Behind";
-      color = "bad";
-      note = `Only ${progress.toFixed(0)}% done with ${elapsed.toFixed(0)}% of the time used.${perWeek ? ` Would need ${perWeek}/wk from here.` : ""}`;
-    }
-  }
-
-  return { progress, elapsed, status, color, note, daysLeft, reached };
 }
 
 function PaceBar({ label, curr, start, target, startDate, targetDate, goodDirection, unit, T }) {
@@ -639,10 +530,7 @@ function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
   const daysLeft = goal?.target_date ? Math.max(0, Math.ceil((new Date(goal.target_date) - new Date()) / 86400000)) : null;
 
   // 7-day training load
-  const weekAgo = Date.now() - 7 * 86400000;
-  const weekSessions = (sessions || []).filter((s) => new Date(s.date).getTime() >= weekAgo);
-  const weekKcal = weekSessions.reduce((a, s) => a + (+s.kcal || 0), 0);
-  const weekMin = weekSessions.reduce((a, s) => a + (+s.duration_min || 0), 0);
+  const week = weekSummary(sessions);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -753,14 +641,14 @@ function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
       )}
 
       {/* ── This week ── */}
-      {weekSessions.length > 0 && (
+      {week.count > 0 && (
         <div style={card}>
           <Kicker T={T}>Last 7 days</Kicker>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
             {[
-              { label: "Sessions", val: weekSessions.length, unit: "" },
-              { label: "Time", val: Math.round(weekMin), unit: "min" },
-              { label: "Burned", val: Math.round(weekKcal), unit: "kcal" },
+              { label: "Sessions", val: week.count, unit: "" },
+              { label: "Time", val: week.minutes, unit: "min" },
+              { label: "Burned", val: week.kcal, unit: "kcal" },
             ].map((s) => (
               <div key={s.label} style={{ background: T.accent100, borderRadius: 10, padding: "9px 8px" }}>
                 <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.06em", color: T.n700 }}>{s.label}</div>
@@ -777,59 +665,12 @@ function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
   );
 }
 
-// ─── CALORIE ENGINE ──────────────────────────────────────────────────────────
-function calcCalories({ weight, height, age, gender, activity, burnKcal, goalDirection, targetWeight, targetDate }) {
-  if (!weight || !height || !age) return null;
-
-  const bmr = gender === "female"
-    ? 10 * weight + 6.25 * height - 5 * age - 161
-    : 10 * weight + 6.25 * height - 5 * age + 5;
-
-  const activityMap = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, veryActive: 1.9 };
-  const tdeeFormula = bmr * (activityMap[activity] || 1.55);
-
-  // If we know the real average daily burn from logged sessions, blend it in
-  const tdee = burnKcal
-    ? Math.round(tdeeFormula * 0.6 + (bmr * 1.2 + burnKcal) * 0.4)
-    : Math.round(tdeeFormula);
-
-  let adjustment = 0;
-  if (goalDirection === "lose") {
-    if (targetWeight && targetDate) {
-      const daysLeft = Math.max(1, Math.ceil((new Date(targetDate) - new Date()) / 86400000));
-      const kgToLose = Math.max(0, weight - targetWeight);
-      adjustment = -Math.min(750, Math.round((kgToLose * 7700) / daysLeft));
-    } else {
-      adjustment = -500;
-    }
-  } else if (goalDirection === "gain") {
-    adjustment = 300;
-  } else if (goalDirection === "recomp") {
-    // Fat down + muscle up: a small deficit with high protein is the
-    // established approach. Aggressive cuts cost lean mass.
-    adjustment = -250;
-  }
-
-  const target = tdee + adjustment;
-  const protein = Math.round(weight * (goalDirection === "recomp" ? 2.2 : 2.0));
-  const fat     = Math.round(weight * 0.9);
-  const carbs   = Math.max(0, Math.round((target - protein * 4 - fat * 9) / 4));
-
-  return { tdee, target, adjustment, protein, fat, carbs, bmr: Math.round(bmr) };
-}
-
 // ─── CALORIE CARD ────────────────────────────────────────────────────────────
 function CalorieCard({ weights, inbody, goal, sessions, T }) {
   const latest = mergeWeightSeries(weights, inbody).slice(-1)[0];
 
   // Average daily burn over the last 14 days, from logged sessions
-  const avgBurn = (() => {
-    const since = Date.now() - 14 * 86400000;
-    const recent = (sessions || []).filter((s) => new Date(s.date).getTime() >= since && s.kcal);
-    if (!recent.length) return null;
-    const total = recent.reduce((a, s) => a + (+s.kcal || 0), 0);
-    return Math.round(total / 14);
-  })();
+  const avgBurn = averageDailyBurn(sessions);
 
   const [stats, setStats] = useState({ age: "", height: "", gender: "male", activity: "moderate", goalDirection: "lose" });
   const [result, setResult] = useState(null);
@@ -1076,70 +917,6 @@ function WeightTab({ weights, inbody, goal, sessions, token, userId, onRefresh, 
   );
 }
 
-// ─── METRIC ANALYSIS ─────────────────────────────────────────────────────────
-// Turns two scans plus a target into plain-language commentary.
-function analyseMetric({ label, curr, prev, first, target, targetDate, goodDirection, unit }) {
-  if (curr == null) return null;
-
-  const lines = [];
-  const delta = prev != null ? +(curr - prev).toFixed(1) : null;
-  const total = first != null ? +(curr - first).toFixed(1) : null;
-
-  // Movement since the previous scan
-  if (delta === null) {
-    lines.push(`First recorded ${label.toLowerCase()} reading. The next scan will show movement.`);
-  } else if (delta === 0) {
-    lines.push(`No change since the last scan — holding at ${curr}${unit}.`);
-  } else {
-    const dir = delta > 0 ? "up" : "down";
-    const helping = delta * goodDirection > 0;
-    lines.push(
-      `${helping ? "Moving the right way" : "Moving against your goal"} — ${dir} ${Math.abs(delta)}${unit} since the last scan.`
-    );
-  }
-
-  // Cumulative movement
-  if (total !== null && total !== 0 && first !== prev) {
-    const dir = total > 0 ? "up" : "down";
-    lines.push(`${dir === "up" ? "Up" : "Down"} ${Math.abs(total)}${unit} in total since your first scan.`);
-  }
-
-  // Progress toward target
-  let progress = null;
-  if (target != null) {
-    const remaining = +(target - curr).toFixed(1);
-    const reached = remaining * goodDirection <= 0;
-
-    if (reached) {
-      lines.push(`Target of ${target}${unit} reached.`);
-      progress = 100;
-    } else {
-      lines.push(`${Math.abs(remaining)}${unit} to go to reach ${target}${unit}.`);
-
-      if (first != null && target !== first) {
-        progress = Math.max(0, Math.min(100,
-          (Math.abs(curr - first) / Math.abs(target - first)) * 100
-        ));
-      }
-
-      // Required pace
-      if (targetDate) {
-        const weeksLeft = (new Date(targetDate) - new Date()) / (86400000 * 7);
-        if (weeksLeft > 0.5) {
-          const perWeek = Math.abs(remaining) / weeksLeft;
-          lines.push(`Needs about ${perWeek.toFixed(2)}${unit} per week to land on time.`);
-        } else if (weeksLeft > 0) {
-          lines.push(`Target date is this week.`);
-        } else {
-          lines.push(`Target date has passed — worth resetting it.`);
-        }
-      }
-    }
-  }
-
-  return { lines, delta, total, progress };
-}
-
 function MetricBlock({ label, color, T, data, field, curr, prev, first, target, targetDate, goodDirection, unit }) {
   const analysis = analyseMetric({ label, curr, prev, first, target, targetDate, goodDirection, unit });
   if (!analysis) return null;
@@ -1254,9 +1031,9 @@ function InbodyTab({ inbody, goal, token, userId, onRefresh, T }) {
                 text: `This is an InBody body composition scan. Extract the following values and return ONLY a JSON object with no explanation, no markdown, no backticks:
 {
   "date": "YYYY-MM-DD (scan date if visible, otherwise today ${todayISO()})",
-  "weight": number (body weight in kg),
-  "body_fat": number (body fat percentage),
-  "muscle_mass": number (skeletal muscle mass percentage or lean body mass percentage)
+  "weight": number (body weight in kg, digits only, no unit text),
+  "body_fat": number (body fat percentage, digits only, no % sign),
+  "muscle_mass": number (skeletal muscle mass as a PERCENTAGE of body weight, digits only. If the sheet only gives SMM in kg, divide by body weight and multiply by 100)
 }
 If a value is not found in the scan, use null. Return only the JSON object.`,
               },
@@ -1267,23 +1044,12 @@ If a value is not found in the scan, use null. Return only the JSON object.`,
 
       const data = await response.json();
 
-      if (!response.ok || data.error) {
-        throw new Error(data.error || `Request failed (${response.status})`);
-      }
+      // All parsing lives in logic.js and is covered by tests — it tolerates
+      // units, camelCase keys, prose-wrapped JSON and nested objects.
+      const result = parseScanResponse(data, todayISO());
+      if (!result.ok) throw new Error(result.error);
 
-      const text = (data.content || []).map((c) => c.text || "").join("").trim();
-      if (!text) throw new Error("Empty response from the model.");
-
-      const clean = text.replace(/```json|```/g, "").trim();
-
-      let parsed;
-      try {
-        parsed = JSON.parse(clean);
-      } catch {
-        throw new Error(`Could not parse the reading: ${clean.slice(0, 120)}`);
-      }
-
-      setEditPending({ ...parsed });
+      setEditPending(result.data);
       setStatus("confirm");
     } catch (err) {
       setErrorMsg(err.message || "Could not read the scan.");
