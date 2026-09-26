@@ -1,16 +1,98 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   todayISO, fmt,
   parseScanResponse, mergeWeightSeries, chartLabels,
   computePace, analyseMetric, calcCalories,
   averageDailyBurn, weekSummary,
+  tokenNeedsRefresh, isJwtError, isFatalRefreshFailure,
+  EMPTY_DATA, mergeLoadedData, parseCachedData,
+  SESSION_MUSCLES, workoutMuscleTabs,
 } from "./logic";
 
 // ─── SUPABASE CONFIG ─────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://mhksjkzpyurcspcnvxtr.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_SnjjsrjYxe_SEWJqwht3pQ_i0yA91tr";
 
+// ─── LOCAL STORAGE (never throws) ────────────────────────────────────────────
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* full or blocked */ } },
+  del(k) { try { localStorage.removeItem(k); } catch { /* blocked */ } },
+};
+const cacheKey = (uid) => `gauge_cache_${uid}`;
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+// App-level message sink for failed saves. App wires it to a banner.
+let notify = (msg) => console.error(msg);
+
+// ─── AUTH SESSION ────────────────────────────────────────────────────────────
+// One place owns the token. Every request asks it for a valid token at the
+// moment it is sent, instead of using whatever token a component received as
+// a prop an hour ago. That stale-token path is what blanked the screen after
+// the phone had been idle: requests failed with "JWT expired" and the failed
+// results replaced the data on screen.
+const auth = {
+  _inflight: null,
+  onFatal: null,   // App: the session is really over (refresh token rejected)
+
+  token() { return store.get("gauge_token"); },
+
+  save(res) {
+    if (res?.access_token) store.set("gauge_token", res.access_token);
+    if (res?.refresh_token) store.set("gauge_refresh", res.refresh_token);
+  },
+
+  clear() { store.del("gauge_token"); store.del("gauge_refresh"); },
+
+  // One refresh at a time. Two parallel refreshes with the same refresh token
+  // can trip Supabase's reuse detection and revoke the whole session.
+  refresh() {
+    if (this._inflight) return this._inflight;
+    this._inflight = (async () => {
+      const rt = store.get("gauge_refresh");
+      if (!rt) { this.onFatal?.(); return { ok: false, fatal: true }; }
+
+      let status = null, body = null;
+      try {
+        const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY },
+          body: JSON.stringify({ refresh_token: rt }),
+        });
+        status = r.status;
+        body = await r.json().catch(() => null);
+      } catch {
+        // Offline, or iOS resumed the app before the network was back.
+        // Temporary — keep the session and the data.
+        return { ok: false, fatal: false };
+      }
+
+      if (body?.access_token) {
+        this.save(body);
+        return { ok: true, token: body.access_token };
+      }
+
+      const fatal = isFatalRefreshFailure(status, body);
+      if (fatal) this.onFatal?.();
+      return { ok: false, fatal };
+    })().finally(() => { this._inflight = null; });
+    return this._inflight;
+  },
+
+  async validToken() {
+    const tok = this.token();
+    if (tok && !tokenNeedsRefresh(tok)) return tok;
+    const r = await this.refresh();
+    return r.ok ? r.token : tok;
+  },
+};
+
 // ─── SUPABASE CLIENT ─────────────────────────────────────────────────────────
+const errText = (res) =>
+  res?.network
+    ? "No connection — nothing was saved. Try again when you're back online."
+    : `Couldn't save: ${res?.body?.message || res?.body?.msg || `server returned ${res?.status}`}`;
+
 const sb = {
   headers: (token) => ({
     "Content-Type": "application/json",
@@ -26,49 +108,77 @@ const sb = {
     const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, { method: "POST", headers: this.headers(), body: JSON.stringify({ email, password }) });
     return r.json();
   },
-  async refresh(refreshToken) {
-    const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-    return r.json();
+  async signOut() {
+    try { await fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: "POST", headers: this.headers(auth.token()) }); }
+    catch { /* signing out locally is what matters */ }
   },
-  async signOut(token) {
-    await fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: "POST", headers: this.headers(token) });
+
+  // Every authenticated call goes through here: fresh token, one retry on
+  // JWT errors, and network failures come back as a value instead of throwing.
+  async request(path, { method = "GET", body } = {}) {
+    const run = async (tok) => {
+      const r = await fetch(`${SUPABASE_URL}${path}`, {
+        method,
+        headers: this.headers(tok),
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+      const text = await r.text();
+      let json = null;
+      if (text) { try { json = JSON.parse(text); } catch { json = { message: text.slice(0, 160) }; } }
+      return { ok: r.ok, status: r.status, body: json };
+    };
+    const offline = { ok: false, status: null, network: true, body: { message: "No connection" } };
+
+    let tok = await auth.validToken();
+    let res;
+    try { res = await run(tok); } catch { return offline; }
+
+    if (!res.ok && isJwtError(res.status, res.body)) {
+      // Expired → mint a new token. "Issued at future" is clock skew between
+      // the auth server and Postgres; it clears by itself within a second.
+      const expired = /expired/i.test(JSON.stringify(res.body || {})) || tokenNeedsRefresh(tok, Date.now(), 0);
+      if (expired) {
+        const r = await auth.refresh();
+        if (r.ok) tok = r.token;
+      }
+      await sleep(1200);
+      try { res = await run(tok); } catch { return offline; }
+    }
+    return res;
   },
-  async getUser(token) {
-    const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: this.headers(token) });
-    return r.json();
+
+  async getUser() {
+    return this.request("/auth/v1/user");
   },
-  async select(table, token, filter = "", order = "date.desc") {
+
+  // Returns rows on success, or an error object (never throws).
+  async select(table, filter = "", order = "date.desc") {
     // NOTE: `goals` has no `date` column — ordering by it returns a Postgres
     // error object instead of rows, which silently reads back as "no goal".
-    const url = `${SUPABASE_URL}/rest/v1/${table}?${filter}&order=${order}`;
-
-    const attempt = async () => {
-      const r = await fetch(url, { headers: this.headers(token) });
-      return r.json();
+    const res = await this.request(`/rest/v1/${table}?${filter}&order=${order}`);
+    if (res.ok && Array.isArray(res.body)) return res.body;
+    return {
+      ...(res.body && typeof res.body === "object" ? res.body : {}),
+      network: !!res.network,
+      message: res.body?.message || res.body?.msg || `server returned ${res.status}`,
     };
-
-    let out = await attempt();
-
-    // "JWT issued at future" / "JWT expired" are clock-skew races between the
-    // auth server and Postgres. They clear on their own within a second or two,
-    // so one retry turns a visible error into a non-event.
-    const msg = (out && !Array.isArray(out) && (out.message || out.msg || "")) || "";
-    if (/jwt|token/i.test(msg)) {
-      await new Promise((res) => setTimeout(res, 1200));
-      out = await attempt();
-    }
-    return out;
   },
-  async insert(table, token, data) {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, { method: "POST", headers: this.headers(token), body: JSON.stringify(data) });
-    return r.json();
+
+  // Returns { data, error }. On failure the caller keeps the form filled in.
+  async insert(table, data) {
+    const res = await this.request(`/rest/v1/${table}`, { method: "POST", body: data });
+    if (res.ok) return { data: res.body, error: null };
+    const error = errText(res);
+    notify(error);
+    return { data: null, error };
   },
-  async delete(table, token, id) {
-    await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, { method: "DELETE", headers: this.headers(token) });
+
+  async delete(table, id) {
+    const res = await this.request(`/rest/v1/${table}?id=eq.${id}`, { method: "DELETE" });
+    if (res.ok) return { error: null };
+    const error = res.network ? "No connection — nothing was deleted." : `Couldn't delete: ${res.body?.message || res.status}`;
+    notify(error);
+    return { error };
   },
 };
 
@@ -304,9 +414,9 @@ function PaceBar({ label, curr, start, target, startDate, targetDate, goodDirect
 }
 
 // ─── SESSION CARD (muscles dropdown + duration + kcal) ───────────────────────
-const MUSCLE_LIST = ["Chest", "Back", "Legs", "Shoulders", "Arms", "Core", "Cardio"];
+const MUSCLE_LIST = SESSION_MUSCLES;
 
-function SessionCard({ sessions, token, userId, onRefresh, T }) {
+function SessionCard({ sessions, userId, onRefresh, T }) {
   const sorted = [...(sessions || [])].sort((a, b) => new Date(b.date) - new Date(a.date));
   const last = sorted[0];
 
@@ -327,13 +437,16 @@ function SessionCard({ sessions, token, userId, onRefresh, T }) {
   const save = async () => {
     if (!form.date) return;
     setSaving(true);
-    await sb.insert("sessions", token, {
+    // Keep the muscles in list order, whatever order they were tapped in
+    const muscles = MUSCLE_LIST.filter((m) => form.muscles.includes(m));
+    const { error } = await sb.insert("sessions", {
       user_id: userId,
       date: form.date,
       duration_min: form.duration_min ? +form.duration_min : null,
       kcal: form.kcal ? +form.kcal : null,
-      muscles: form.muscles.join(", "),
+      muscles: muscles.join(", "),
     });
+    if (error) { setSaving(false); return; }   // keep the form so nothing is lost
     setForm({ date: todayISO(), duration_min: "", kcal: "", muscles: [] });
     setEditing(false);
     setOpen(false);
@@ -341,7 +454,7 @@ function SessionCard({ sessions, token, userId, onRefresh, T }) {
     await onRefresh();
   };
 
-  const summary = form.muscles.length ? form.muscles.join(", ") : "Select muscles";
+  const summary = form.muscles.length ? MUSCLE_LIST.filter((m) => form.muscles.includes(m)).join(", ") : "Select muscles";
 
   return (
     <div style={card}>
@@ -436,7 +549,7 @@ function SessionCard({ sessions, token, userId, onRefresh, T }) {
 }
 
 // ─── AUTH SCREEN ─────────────────────────────────────────────────────────────
-function AuthScreen({ onAuth }) {
+function AuthScreen({ onAuth, notice = "" }) {
   const [mode, setMode] = useState("signin");
   const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
   const [error, setError] = useState("");
@@ -459,11 +572,14 @@ function AuthScreen({ onAuth }) {
       } else {
         res = await sb.signIn(form.email, form.password);
       }
-      if (res.error) { setError(res.error.message || "Sign in failed."); setLoading(false); return; }
-      localStorage.setItem("gauge_token", res.access_token);
-      if (res.refresh_token) localStorage.setItem("gauge_refresh", res.refresh_token);
-      localStorage.setItem("gauge_user_name", res.user?.user_metadata?.name || form.email.split("@")[0]);
-      onAuth(res.access_token, res.user?.user_metadata?.name || form.email.split("@")[0]);
+      if (res.error || !res.access_token) {
+        const m = res.error?.message || res.error_description || res.msg || (typeof res.error === "string" ? res.error : "") || "Sign in failed.";
+        setError(m); setLoading(false); return;
+      }
+      auth.save(res);
+      const name = res.user?.user_metadata?.name || form.email.split("@")[0];
+      store.set("gauge_user_name", name);
+      onAuth(name);
     } catch { setError("Network error. Check Supabase config."); }
     setLoading(false);
   };
@@ -479,6 +595,11 @@ function AuthScreen({ onAuth }) {
           <div style={{ fontSize: 34, fontWeight: 800, color: T.accent, letterSpacing: "0.1em", lineHeight: 1 }}>GAUGE</div>
           <div style={{ fontSize: 13.5, color: T.n700, marginTop: 8 }}>Sign in to keep your weigh-ins, InBody scans and sessions synced.</div>
         </div>
+        {notice && (
+          <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 10, background: T.accent100, border: `1px solid ${T.accent400}`, color: T.text, fontSize: 12.5, lineHeight: 1.5 }}>
+            {notice}
+          </div>
+        )}
         <div style={{ background: T.surface, borderRadius: 14, padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ display: "flex", gap: 6, padding: 4, borderRadius: 12, background: T.accent100 }}>
             {["signin","signup"].map((m) => (
@@ -797,7 +918,7 @@ function CalorieCard({ weights, inbody, goal, sessions, T }) {
 }
 
 // ─── WEIGHT TAB ──────────────────────────────────────────────────────────────
-function WeightTab({ weights, inbody, goal, sessions, token, userId, onRefresh, T }) {
+function WeightTab({ weights, inbody, goal, sessions, userId, onRefresh, T }) {
   const [wForm, setWForm] = useState({ weight: "", date: todayISO() });
   const [gForm, setGForm] = useState({ target_weight: goal?.target_weight || "", target_date: goal?.target_date || "", target_body_fat: goal?.target_body_fat || "", target_muscle: goal?.target_muscle || "" });
   const [saving, setSaving] = useState(false);
@@ -809,7 +930,8 @@ function WeightTab({ weights, inbody, goal, sessions, token, userId, onRefresh, 
   const addWeight = async () => {
     if (!wForm.weight || !wForm.date) return;
     setSaving(true);
-    await sb.insert("weight_entries", token, { user_id: userId, date: wForm.date, weight: +wForm.weight });
+    const { error } = await sb.insert("weight_entries", { user_id: userId, date: wForm.date, weight: +wForm.weight });
+    if (error) { setSaving(false); return; }
     setWForm((f) => ({ ...f, weight: "" }));
     await onRefresh();
     setSaving(false);
@@ -820,18 +942,19 @@ function WeightTab({ weights, inbody, goal, sessions, token, userId, onRefresh, 
     const hasTarget = gForm.target_weight || gForm.target_body_fat || gForm.target_muscle;
     if (!gForm.target_date || !hasTarget) return;
     setSaving(true);
-    await sb.insert("goals", token, {
+    const { error } = await sb.insert("goals", {
       user_id: userId,
       target_date: gForm.target_date,
       target_weight:   gForm.target_weight   ? +gForm.target_weight   : null,
       target_body_fat: gForm.target_body_fat ? +gForm.target_body_fat : null,
       target_muscle:   gForm.target_muscle   ? +gForm.target_muscle   : null,
     });
+    if (error) { setSaving(false); return; }
     await onRefresh();
     setSaving(false);
   };
 
-  const del = async (id) => { await sb.delete("weight_entries", token, id); await onRefresh(); };
+  const del = async (id) => { await sb.delete("weight_entries", id); await onRefresh(); };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -976,7 +1099,7 @@ function MetricBlock({ label, color, T, data, field, curr, prev, first, target, 
 }
 
 // ─── INBODY TAB ──────────────────────────────────────────────────────────────
-function InbodyTab({ inbody, goal, token, userId, onRefresh, T }) {
+function InbodyTab({ inbody, goal, userId, onRefresh, T }) {
   const [status, setStatus] = useState("idle"); // idle | reading | confirm | saving | error
   const [editPending, setEditPending] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -1065,16 +1188,18 @@ If a value is not found in the scan, use null. Return only the JSON object.`,
     const date = d.date || todayISO();
     const w = d.weight ? +d.weight : null;
 
-    await sb.insert("inbody_scans", token, {
+    const { error } = await sb.insert("inbody_scans", {
       user_id: userId,
       date,
       weight: w,
       body_fat: d.body_fat ? +d.body_fat : null,
       muscle_mass: d.muscle_mass ? +d.muscle_mass : null,
     });
+    // Keep the reading on screen so it can be saved again
+    if (error) { setStatus("confirm"); return; }
 
     // A scan is also a weigh-in — log it so Home and InBody never disagree
-    if (w) await sb.insert("weight_entries", token, { user_id: userId, date, weight: w });
+    if (w) await sb.insert("weight_entries", { user_id: userId, date, weight: w });
 
     setEditPending(null);
     setStatus("idle");
@@ -1086,15 +1211,16 @@ If a value is not found in the scan, use null. Return only the JSON object.`,
     setStatus("saving");
     const w = manualForm.weight ? +manualForm.weight : null;
 
-    await sb.insert("inbody_scans", token, {
+    const { error } = await sb.insert("inbody_scans", {
       user_id: userId,
       date: manualForm.date,
       weight: w,
       body_fat: manualForm.body_fat ? +manualForm.body_fat : null,
       muscle_mass: manualForm.muscle_mass ? +manualForm.muscle_mass : null,
     });
+    if (error) { setStatus("idle"); return; }   // form stays filled in
 
-    if (w) await sb.insert("weight_entries", token, { user_id: userId, date: manualForm.date, weight: w });
+    if (w) await sb.insert("weight_entries", { user_id: userId, date: manualForm.date, weight: w });
 
     setManualForm({ date: todayISO(), weight: "", body_fat: "", muscle_mass: "" });
     setShowManual(false);
@@ -1102,7 +1228,7 @@ If a value is not found in the scan, use null. Return only the JSON object.`,
     await onRefresh();
   };
 
-  const del = async (id) => { await sb.delete("inbody_scans", token, id); await onRefresh(); };
+  const del = async (id) => { await sb.delete("inbody_scans", id); await onRefresh(); };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -1277,7 +1403,7 @@ If a value is not found in the scan, use null. Return only the JSON object.`,
 }
 
 // ─── MEASUREMENTS TAB ────────────────────────────────────────────────────────
-function MeasurementsTab({ measurements, token, userId, onRefresh, T }) {
+function MeasurementsTab({ measurements, userId, onRefresh, T }) {
   const [form, setForm] = useState({ date: todayISO(), waist: "", chest: "", hips: "", arms: "", thighs: "" });
   const [metric, setMetric] = useState("waist");
   const [saving, setSaving] = useState(false);
@@ -1291,13 +1417,14 @@ function MeasurementsTab({ measurements, token, userId, onRefresh, T }) {
   const add = async () => {
     if (!form.date) return;
     setSaving(true);
-    await sb.insert("measurements", token, { user_id: userId, date: form.date, waist: +form.waist || 0, chest: +form.chest || 0, hips: +form.hips || 0, arms: +form.arms || 0, thighs: +form.thighs || 0 });
+    const { error } = await sb.insert("measurements", { user_id: userId, date: form.date, waist: +form.waist || 0, chest: +form.chest || 0, hips: +form.hips || 0, arms: +form.arms || 0, thighs: +form.thighs || 0 });
+    if (error) { setSaving(false); return; }
     setForm((f) => ({ date: f.date, waist: "", chest: "", hips: "", arms: "", thighs: "" }));
     await onRefresh();
     setSaving(false);
   };
 
-  const del = async (id) => { await sb.delete("measurements", token, id); await onRefresh(); };
+  const del = async (id) => { await sb.delete("measurements", id); await onRefresh(); };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -1362,9 +1489,9 @@ function MeasurementsTab({ measurements, token, userId, onRefresh, T }) {
 }
 
 // ─── WORKOUTS TAB ────────────────────────────────────────────────────────────
-const MUSCLES = ["Chest", "Back", "Legs", "Shoulders", "Arms", "Core"];
-
-function WorkoutsTab({ logs, token, userId, onRefresh, T }) {
+function WorkoutsTab({ logs, userId, onRefresh, T }) {
+  // Biceps / Triceps replace Arms; "Arms" only appears while old sets use it
+  const MUSCLES = workoutMuscleTabs(logs);
   const [muscle, setMuscle] = useState("Chest");
   const [form, setForm] = useState({ exercise: "", weight_kg: "", reps: "", date: todayISO() });
   const [saving, setSaving] = useState(false);
@@ -1376,13 +1503,14 @@ function WorkoutsTab({ logs, token, userId, onRefresh, T }) {
   const add = async () => {
     if (!form.exercise || !form.weight_kg || !form.reps || !form.date) return;
     setSaving(true);
-    await sb.insert("workout_logs", token, { user_id: userId, muscle_group: muscle, exercise: form.exercise, weight_kg: +form.weight_kg, reps: +form.reps, date: form.date });
+    const { error } = await sb.insert("workout_logs", { user_id: userId, muscle_group: muscle, exercise: form.exercise, weight_kg: +form.weight_kg, reps: +form.reps, date: form.date });
+    if (error) { setSaving(false); return; }
     setForm((f) => ({ exercise: "", weight_kg: "", reps: "", date: f.date }));
     await onRefresh();
     setSaving(false);
   };
 
-  const del = async (id) => { await sb.delete("workout_logs", token, id); await onRefresh(); };
+  const del = async (id) => { await sb.delete("workout_logs", id); await onRefresh(); };
   const muscleLogs = [...logs].filter((l) => l.muscle_group === muscle).sort((a, b) => new Date(a.date) - new Date(b.date));
   const volumeSeries = muscleLogs.map((l) => ({ date: l.date, volume: l.weight_kg * l.reps }));
 
@@ -1454,146 +1582,178 @@ function NavIcon({ tab }) {
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [token, setToken] = useState(() => localStorage.getItem("gauge_token") || null);
-  const [userName, setUserName] = useState(() => localStorage.getItem("gauge_user_name") || "");
-  const [userId, setUserId] = useState(null);
+  // Signed in = we hold a session. Losing the network, or the access token
+  // expiring while the phone sat idle, does NOT end it — only Supabase
+  // rejecting the refresh token does.
+  const [signedIn, setSignedIn] = useState(() => !!(store.get("gauge_token") || store.get("gauge_refresh")));
+  const [userName, setUserName] = useState(() => store.get("gauge_user_name") || "");
+  const [userId, setUserId] = useState(() => store.get("gauge_user_id") || null);
   const [tab, setTab] = useState("home");
   const [theme, setTheme] = useState("dark");
-  const [data, setData] = useState({ weights: [], inbody: [], measurements: [], logs: [], sessions: [], goal: null });
+  // Start from the last synced copy so the screen is never empty on launch,
+  // even before (or without) a network round-trip.
+  const [data, setData] = useState(() => {
+    const uid = store.get("gauge_user_id");
+    return (uid && parseCachedData(store.get(cacheKey(uid)))) || EMPTY_DATA;
+  });
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [authNotice, setAuthNotice] = useState("");
   const T = THEMES[theme];
 
-  const loadData = useCallback(async (tok, uid) => {
-    if (!tok || !uid) return;
+  const dataRef = useRef(data);
+  const ownerRef = useRef(store.get("gauge_user_id") || null);  // whose rows `data` holds
+
+  const loadData = useCallback(async (uid) => {
+    if (!uid) return;
     setLoading(true);
-    const filter = `user_id=eq.${uid}`;
-    const [weights, inbody, measurements, logs, goals, sessions] = await Promise.all([
-      sb.select("weight_entries", tok, filter),
-      sb.select("inbody_scans", tok, filter),
-      sb.select("measurements", tok, filter),
-      sb.select("workout_logs", tok, filter),
-      sb.select("goals", tok, filter, "created_at.desc"),
-      sb.select("sessions", tok, filter),
-    ]);
-    // Surface query failures instead of silently showing empty data.
-    // A non-array response means Postgres returned an error object.
-    const failures = [
-      ["weight_entries", weights], ["inbody_scans", inbody],
-      ["measurements", measurements], ["workout_logs", logs],
-      ["goals", goals], ["sessions", sessions],
-    ].filter(([, r]) => !Array.isArray(r));
+    try {
+      const filter = `user_id=eq.${uid}`;
+      const [weights, inbody, measurements, logs, goals, sessions] = await Promise.all([
+        sb.select("weight_entries", filter),
+        sb.select("inbody_scans", filter),
+        sb.select("measurements", filter),
+        sb.select("workout_logs", filter),
+        sb.select("goals", filter, "created_at.desc"),
+        sb.select("sessions", filter),
+      ]);
+      if (ownerRef.current !== uid) return;   // signed out / switched user mid-load
 
-    if (failures.length) {
-      const msg = failures.map(([t, r]) => `${t}: ${r?.message || r?.hint || "failed"}`).join(" · ");
-      console.error("Gauge data load failed —", msg);
-      setLoadError(msg);
-    } else {
-      setLoadError("");
+      // Surface query failures instead of silently showing empty data.
+      const failures = [
+        ["weight_entries", weights], ["inbody_scans", inbody],
+        ["measurements", measurements], ["workout_logs", logs],
+        ["goals", goals], ["sessions", sessions],
+      ].filter(([, r]) => !Array.isArray(r));
+
+      if (!failures.length) {
+        setLoadError("");
+      } else if (failures.every(([, r]) => r?.network)) {
+        setLoadError("No connection — showing your last synced data.");
+      } else {
+        const msg = failures.map(([t, r]) => `${t}: ${r?.message || r?.hint || "failed"}`).join(" · ");
+        console.error("Gauge data load failed —", msg);
+        setLoadError(`Some data could not load (your saved data is still shown) — ${msg}`);
+      }
+
+      // A table that failed keeps what was already on screen.
+      const next = mergeLoadedData(dataRef.current, { weights, inbody, measurements, logs, goals, sessions });
+      dataRef.current = next;
+      setData(next);
+      store.set(cacheKey(uid), JSON.stringify(next));
+    } catch (e) {
+      console.error("Gauge sync failed —", e);
+      setLoadError("Couldn't sync — showing your last synced data.");
+    } finally {
+      setLoading(false);
     }
-
-    setData({
-      weights: Array.isArray(weights) ? weights : [],
-      inbody: Array.isArray(inbody) ? inbody : [],
-      measurements: Array.isArray(measurements) ? measurements : [],
-      logs: Array.isArray(logs) ? logs : [],
-      sessions: Array.isArray(sessions) ? sessions : [],
-      goal: Array.isArray(goals) && goals.length ? goals[0] : null,
-    });
-    setLoading(false);
   }, []);
 
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
+  // End the session. A manual sign-out also wipes this device's cached copy;
+  // an expired session keeps it, so signing back in shows everything at once.
+  const endSession = useCallback((manual) => {
+    auth.clear();
+    if (manual) {
+      const uid = store.get("gauge_user_id");
+      if (uid) store.del(cacheKey(uid));
+      store.del("gauge_user_id");
+      store.del("gauge_user_name");
+      setAuthNotice("");
+    } else {
+      setAuthNotice("Your session expired — sign in again. Your data is safe and will appear as soon as you do.");
+    }
+    ownerRef.current = null;
+    dataRef.current = EMPTY_DATA;
+    setData(EMPTY_DATA);
+    setUserId(null);
+    setLoadError("");
+    setSignedIn(false);
+  }, []);
 
-    const applyUser = (user, tok) => {
-      if (cancelled) return;
-      setUserId(user.id);
+  // Confirm who is signed in, then pull fresh data. Safe to call repeatedly.
+  const bootstrap = useCallback(async () => {
+    const res = await sb.getUser();
+    const user = res.ok ? res.body : null;
+
+    if (user?.id) {
       const name = user.user_metadata?.name || user.email?.split("@")[0] || "";
       setUserName(name);
-      localStorage.setItem("gauge_user_name", name);
-      loadData(tok, user.id);
-    };
+      store.set("gauge_user_name", name);
+      store.set("gauge_user_id", user.id);
 
-    (async () => {
-      const user = await sb.getUser(token);
-      if (user?.id) { applyUser(user, token); return; }
-
-      // Access token expired — try the refresh token before giving up
-      const rt = localStorage.getItem("gauge_refresh");
-      if (rt) {
-        const res = await sb.refresh(rt);
-        if (res?.access_token) {
-          localStorage.setItem("gauge_token", res.access_token);
-          if (res.refresh_token) localStorage.setItem("gauge_refresh", res.refresh_token);
-          const u2 = await sb.getUser(res.access_token);
-          if (u2?.id) {
-            if (!cancelled) setToken(res.access_token);
-            applyUser(u2, res.access_token);
-            return;
-          }
-        }
+      if (ownerRef.current !== user.id) {
+        // Different account from the cached one — never mix their data
+        const cached = parseCachedData(store.get(cacheKey(user.id))) || EMPTY_DATA;
+        ownerRef.current = user.id;
+        dataRef.current = cached;
+        setData(cached);
       }
+      setUserId(user.id);
+      setAuthNotice("");
+      await loadData(user.id);
+      return;
+    }
 
-      // Refresh genuinely failed — now sign out
-      if (cancelled) return;
-      setToken(null);
-      localStorage.removeItem("gauge_token");
-      localStorage.removeItem("gauge_refresh");
-    })();
+    // Couldn't confirm the user. If Supabase rejected the refresh token,
+    // auth.onFatal has already ended the session. Anything else is temporary:
+    // keep showing the cached data and try again on the next resume.
+    if (!store.get("gauge_refresh")) return;   // session already ended
+    if (res.network) setLoadError("No connection — showing your last synced data.");
+    else setLoadError(`Couldn't reach the server (${res.body?.message || res.body?.msg || res.status}) — showing your last synced data.`);
+  }, [loadData]);
 
-    return () => { cancelled = true; };
-  }, [token, loadData]);
-
-  // Keep the session alive while the app is open, and re-check on resume.
-  // Only actually refresh when the token is near expiry — minting a new token
-  // and immediately querying with it invites "JWT issued at future" skew errors.
+  // Wire the module-level auth + notify hooks into this component.
   useEffect(() => {
-    const expiryOf = (tok) => {
-      try {
-        const payload = JSON.parse(atob(tok.split(".")[1]));
-        return payload.exp ? payload.exp * 1000 : null;
-      } catch { return null; }
+    auth.onFatal = () => endSession(false);
+    notify = (msg) => setNotice(msg);
+    return () => { auth.onFatal = null; notify = (msg) => console.error(msg); };
+  }, [endSession]);
+
+  // First load, and again after every sign-in.
+  useEffect(() => {
+    if (signedIn) bootstrap();
+  }, [signedIn, bootstrap]);
+
+  // Coming back to the app (resume, reconnect): renew the token if it's due
+  // and pull fresh data. Throttled so quick app switches don't spam requests.
+  useEffect(() => {
+    if (!signedIn) return;
+    let last = Date.now();
+    const resync = (force = false) => {
+      if (document.visibilityState !== "visible") return;
+      if (!force && Date.now() - last < 30 * 1000) return;
+      last = Date.now();
+      bootstrap();
     };
+    const onVisible = () => resync(false);
+    const onOnline = () => resync(true);
+    const onPageShow = (e) => { if (e.persisted) resync(true); };
+    // While open, keep the token ahead of expiry (setInterval pauses when iOS
+    // suspends the app; the visibility handler covers that case).
+    const keepFresh = setInterval(() => {
+      if (document.visibilityState === "visible") auth.validToken();
+    }, 5 * 60 * 1000);
 
-    const renew = async (force = false) => {
-      const rt = localStorage.getItem("gauge_refresh");
-      if (!rt) return;
-
-      if (!force) {
-        const tok = localStorage.getItem("gauge_token");
-        const exp = tok ? expiryOf(tok) : null;
-        // still more than 10 minutes of life left → leave it alone
-        if (exp && exp - Date.now() > 10 * 60 * 1000) return;
-      }
-
-      const res = await sb.refresh(rt);
-      if (res?.access_token) {
-        localStorage.setItem("gauge_token", res.access_token);
-        if (res.refresh_token) localStorage.setItem("gauge_refresh", res.refresh_token);
-        setToken(res.access_token);
-      }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      clearInterval(keepFresh);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("pageshow", onPageShow);
     };
+  }, [signedIn, bootstrap]);
 
-    const id = setInterval(() => renew(false), 10 * 60 * 1000);
-    const onShow = () => { if (document.visibilityState === "visible") renew(false); };
-    document.addEventListener("visibilitychange", onShow);
-    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onShow); };
-  }, []);
-
-  const onAuth = (tok, name) => { setToken(tok); setUserName(name); };
+  const onAuth = (name) => { setUserName(name); setAuthNotice(""); setSignedIn(true); };
   const signOut = async () => {
-    await sb.signOut(token);
-    localStorage.removeItem("gauge_token");
-    localStorage.removeItem("gauge_refresh");
-    localStorage.removeItem("gauge_user_name");
-    setToken(null); setUserId(null);
-    setData({ weights: [], inbody: [], measurements: [], logs: [], sessions: [], goal: null });
+    await sb.signOut();
+    endSession(true);
   };
-  const refresh = () => loadData(token, userId);
+  const refresh = () => loadData(userId);
 
-  if (!token) return <AuthScreen onAuth={onAuth} />;
+  if (!signedIn) return <AuthScreen onAuth={onAuth} notice={authNotice} />;
 
   const NAV = [
     { id: "home", label: "Home" },
@@ -1625,7 +1785,7 @@ export default function App() {
         {loadError && (
           <div style={{ background: `${T.bad}1f`, borderBottom: `1px solid ${T.bad}`, color: T.bad, fontSize: 11, padding: "8px 12px 8px 16px", lineHeight: 1.45, flexShrink: 0, display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ flex: 1, minWidth: 0 }}>Some data could not load — {loadError}</span>
-            <button onClick={refresh} style={{ flexShrink: 0, border: `1px solid ${T.bad}`, background: "transparent", color: T.bad, borderRadius: 7, padding: "3px 9px", fontSize: 10.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+            <button onClick={() => bootstrap()} style={{ flexShrink: 0, border: `1px solid ${T.bad}`, background: "transparent", color: T.bad, borderRadius: 7, padding: "3px 9px", fontSize: 10.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
               Retry
             </button>
             <button onClick={() => setLoadError("")} style={{ flexShrink: 0, border: "none", background: "transparent", color: T.bad, fontSize: 15, lineHeight: 1, padding: "0 2px", cursor: "pointer", fontFamily: "inherit" }}>
@@ -1634,13 +1794,22 @@ export default function App() {
           </div>
         )}
 
+        {notice && (
+          <div style={{ background: `${T.warn}1f`, borderBottom: `1px solid ${T.warn}`, color: T.warn, fontSize: 11.5, fontWeight: 600, padding: "8px 12px 8px 16px", lineHeight: 1.45, flexShrink: 0, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ flex: 1, minWidth: 0 }}>{notice}</span>
+            <button onClick={() => setNotice("")} style={{ flexShrink: 0, border: "none", background: "transparent", color: T.warn, fontSize: 15, lineHeight: 1, padding: "0 2px", cursor: "pointer", fontFamily: "inherit" }}>
+              ×
+            </button>
+          </div>
+        )}
+
         {/* Scroll content */}
         <div className="gauge-scroll" style={{ flex: "1 1 auto", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "18px 20px 28px" }}>
-          {tab === "home"         && <HomeTab weights={data.weights} inbody={data.inbody} sessions={data.sessions} goal={data.goal} name={userName} sessionsProps={{ token, userId, onRefresh: refresh }} T={T} />}
-          {tab === "weight"       && <WeightTab weights={data.weights} inbody={data.inbody} goal={data.goal} sessions={data.sessions} token={token} userId={userId} onRefresh={refresh} T={T} />}
-          {tab === "inbody"       && <InbodyTab inbody={data.inbody} goal={data.goal} token={token} userId={userId} onRefresh={refresh} T={T} />}
-          {tab === "measurements" && <MeasurementsTab measurements={data.measurements} token={token} userId={userId} onRefresh={refresh} T={T} />}
-          {tab === "workouts"     && <WorkoutsTab logs={data.logs} token={token} userId={userId} onRefresh={refresh} T={T} />}
+          {tab === "home"         && <HomeTab weights={data.weights} inbody={data.inbody} sessions={data.sessions} goal={data.goal} name={userName} sessionsProps={{ userId, onRefresh: refresh }} T={T} />}
+          {tab === "weight"       && <WeightTab weights={data.weights} inbody={data.inbody} goal={data.goal} sessions={data.sessions} userId={userId} onRefresh={refresh} T={T} />}
+          {tab === "inbody"       && <InbodyTab inbody={data.inbody} goal={data.goal} userId={userId} onRefresh={refresh} T={T} />}
+          {tab === "measurements" && <MeasurementsTab measurements={data.measurements} userId={userId} onRefresh={refresh} T={T} />}
+          {tab === "workouts"     && <WorkoutsTab logs={data.logs} userId={userId} onRefresh={refresh} T={T} />}
         </div>
 
         {/* Bottom nav — always visible */}

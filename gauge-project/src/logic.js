@@ -341,6 +341,111 @@ export function calcCalories({ weight, height, age, gender, activity, burnKcal, 
   return { tdee, target, adjustment, protein, fat, carbs, bmr: Math.round(bmr) };
 }
 
+// ─── AUTH / SESSION ──────────────────────────────────────────────────────────
+
+// JWT payloads are base64url (uses - and _ , no padding). Plain atob() throws on
+// those characters, which used to make the expiry check silently fail.
+export function tokenExpiry(token) {
+  if (!token || typeof token !== "string") return null;
+  const part = token.split(".")[1];
+  if (!part) return null;
+  try {
+    let b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4) b64 += "=";
+    const json = typeof atob === "function"
+      ? atob(b64)
+      : Buffer.from(b64, "base64").toString("binary");
+    const payload = JSON.parse(json);
+    return typeof payload.exp === "number" ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+// Refresh a little before the token actually dies, so a request never goes out
+// with a token that expires in flight. Unknown expiry → treat as needing refresh.
+export function tokenNeedsRefresh(token, now = Date.now(), marginMs = 2 * 60 * 1000) {
+  const exp = tokenExpiry(token);
+  if (exp == null) return true;
+  return exp - now <= marginMs;
+}
+
+// A PostgREST / GoTrue response that failed because of the JWT itself
+// (expired, not yet valid, malformed) rather than because of the data.
+export function isJwtError(status, body) {
+  const msg = `${body?.message || ""} ${body?.msg || ""} ${body?.error || ""} ${body?.error_code || ""} ${body?.code || ""}`;
+  if (/PGRST30[0-9]/.test(msg)) return true;
+  if (/jwt|bad_jwt|token/i.test(msg)) return true;
+  return status === 401;
+}
+
+// The ONLY refresh failures that should end the session. Everything else —
+// no network, a 5xx, rate limiting, a paused project — is temporary, and
+// signing the user out for it is what made the app look like it had lost
+// everything after a period of inactivity.
+export function isFatalRefreshFailure(status, body) {
+  if (status == null) return false;               // network error
+  if (status >= 500 || status === 429) return false;
+  const code = `${body?.error_code || ""} ${body?.error || ""} ${body?.code || ""}`;
+  const msg = `${body?.error_description || ""} ${body?.msg || ""} ${body?.message || ""}`;
+  if (/refresh_token_not_found|refresh_token_already_used|session_not_found|session_expired|invalid_grant|user_not_found/i.test(code)) return true;
+  if (/invalid refresh token|refresh token not found|already used|session.*(expired|not found)/i.test(msg)) return true;
+  return status === 400 || status === 401;
+}
+
+// ─── DATA LOADING ────────────────────────────────────────────────────────────
+
+export const EMPTY_DATA = Object.freeze({
+  weights: [], inbody: [], measurements: [], logs: [], sessions: [], goal: null,
+});
+
+// Merge a fresh load into what is already on screen. A table that failed to
+// load keeps its previous rows — a failed request must never blank the screen.
+export function mergeLoadedData(prev, results) {
+  const base = prev || EMPTY_DATA;
+  const pickRows = (r, fallback) => (Array.isArray(r) ? r : fallback);
+  const goals = results?.goals;
+  return {
+    weights:      pickRows(results?.weights,      base.weights),
+    inbody:       pickRows(results?.inbody,       base.inbody),
+    measurements: pickRows(results?.measurements, base.measurements),
+    logs:         pickRows(results?.logs,         base.logs),
+    sessions:     pickRows(results?.sessions,     base.sessions),
+    goal: Array.isArray(goals) ? (goals.length ? goals[0] : null) : base.goal,
+  };
+}
+
+// Read a cached snapshot back defensively — a corrupted or old-shape cache
+// should degrade to "no cache", never crash the app on launch.
+export function parseCachedData(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  try {
+    const obj = JSON.parse(raw);
+    if (!obj || typeof obj !== "object") return null;
+    return mergeLoadedData(EMPTY_DATA, {
+      weights: obj.weights, inbody: obj.inbody, measurements: obj.measurements,
+      logs: obj.logs, sessions: obj.sessions,
+      goals: obj.goal ? [obj.goal] : [],
+    });
+  } catch {
+    return null;
+  }
+}
+
+// ─── MUSCLE GROUPS ───────────────────────────────────────────────────────────
+
+// Arms is split: biceps and triceps are trained on different days and with
+// different movements, so one "Arms" bucket hid what was actually worked.
+export const SESSION_MUSCLES = ["Chest", "Back", "Legs", "Shoulders", "Biceps", "Triceps", "Core", "Cardio"];
+export const WORKOUT_MUSCLES = ["Chest", "Back", "Legs", "Shoulders", "Biceps", "Triceps", "Core"];
+
+// Older sets were logged under "Arms". Keep that tab visible only while such
+// sets exist, so history is never hidden by the rename.
+export function workoutMuscleTabs(logs) {
+  const legacy = (logs || []).some((l) => l && l.muscle_group === "Arms");
+  return legacy ? [...WORKOUT_MUSCLES, "Arms"] : [...WORKOUT_MUSCLES];
+}
+
 // ─── SESSIONS ────────────────────────────────────────────────────────────────
 
 export function averageDailyBurn(sessions, days = 14, now) {
