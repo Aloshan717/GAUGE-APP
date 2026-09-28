@@ -302,43 +302,377 @@ export function analyseMetric({ label, curr, prev, first, target, targetDate, go
   return { lines, delta, total, progress };
 }
 
-// ─── CALORIES ────────────────────────────────────────────────────────────────
+// ─── EVIDENCE BASE ───────────────────────────────────────────────────────────
+// Every number the coach uses comes from one of these. Shown in the app too.
+export const SOURCES = {
+  helms2014: "Helms, Aragon & Fitschen (2014). Evidence-based recommendations for natural bodybuilding contest preparation. J Int Soc Sports Nutr 11:20",
+  iraki2019: "Iraki et al. (2019). Nutrition recommendations for bodybuilders in the off-season. Sports 7(7):154",
+  morton2018: "Morton et al. (2018). Protein supplementation and resistance training gains: meta-analysis. Br J Sports Med 52:376–384",
+  barakat2020: "Barakat et al. (2020). Body recomposition: can trained individuals build muscle and lose fat at the same time? Strength Cond J 42(5)",
+  katch: "Katch–McArdle resting energy equation (370 + 21.6 × fat-free mass)",
+  energy7700: "~7,700 kcal per kg of body-mass change (classic approximation; real-world adjustment is iterative)",
+};
 
-export function calcCalories({ weight, height, age, gender, activity, burnKcal, goalDirection, targetWeight, targetDate, now }) {
-  if (!weight || !height || !age) return null;
+// Goal types the user picks in the goal form.
+export const GOAL_TYPES = [
+  { value: "cut", label: "Lose fat" },
+  { value: "build", label: "Build muscle" },
+  { value: "recomp", label: "Recomposition (lose fat + build muscle)" },
+];
 
-  const bmr = gender === "female"
-    ? 10 * weight + 6.25 * height - 5 * age - 161
-    : 10 * weight + 6.25 * height - 5 * age + 5;
+// Weekly body-weight change bands, % of body weight per week.
+// cut: 0.5–1.0 %/wk loss to retain muscle (Helms 2014)
+// build: 0.25–0.5 %/wk gain for novice–intermediate lifters (Iraki 2019)
+// recomp: roughly stable weight — maintenance to a small deficit (Barakat 2020)
+export const RATE_BANDS = {
+  cut: { min: -1.0, max: -0.5, source: "helms2014" },
+  build: { min: 0.25, max: 0.5, source: "iraki2019" },
+  recomp: { min: -0.5, max: 0.1, source: "barakat2020" },
+};
+
+// Changes smaller than these, between two InBody scans, are treated as
+// measurement noise (hydration, food, time of day move BIA readings).
+export const NOISE = { smmKg: 0.5, fmKg: 1.0 };
+
+const KCAL_PER_KG = 7700;
+const DAY_MS = 86400000;
+const round50 = (n) => Math.round(n / 50) * 50;
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+const dayMs = (d) => new Date(d + "T00:00:00Z").getTime();
+
+// Protein range in grams/day for a goal type.
+// cut / recomp with a known fat-free mass: 2.3–3.1 g/kg FFM (Helms 2014, energy deficit)
+// otherwise: 1.6–2.2 g/kg body weight (Morton 2018; Iraki 2019)
+export function proteinRange(goalType, weight, ffm) {
+  if (!weight) return null;
+  if ((goalType === "cut" || goalType === "recomp") && ffm) {
+    return { low: Math.round(ffm * 2.3), high: Math.round(ffm * 3.1), basis: "2.3–3.1 g/kg fat-free mass", source: "helms2014" };
+  }
+  return { low: Math.round(weight * 1.6), high: Math.round(weight * 2.2), basis: "1.6–2.2 g/kg body weight", source: goalType === "build" ? "iraki2019" : "morton2018" };
+}
+
+// Map goal type → calorie direction used by the calculator.
+export const directionFor = (goalType) =>
+  goalType === "cut" ? "lose" : goalType === "build" ? "gain" : goalType === "recomp" ? "recomp" : "maintain";
+
+// Starting-point calorie estimate. The coach then corrects it from real results.
+export function calcCalories({ weight, height, age, gender, activity, dayBurn, burnKcal, ffm, goalDirection, targetWeight, targetDate, now }) {
+  if (!weight) return null;
+
+  let bmr, bmrMethod;
+  if (ffm) {
+    bmr = 370 + 21.6 * ffm; // Katch–McArdle, uses InBody fat-free mass
+    bmrMethod = "Katch–McArdle (from your InBody fat-free mass)";
+  } else if (height && age) {
+    bmr = gender === "female"
+      ? 10 * weight + 6.25 * height - 5 * age - 161
+      : 10 * weight + 6.25 * height - 5 * age + 5;
+    bmrMethod = "Mifflin–St Jeor";
+  } else {
+    return null;
+  }
 
   const activityMap = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, veryActive: 1.9 };
   const tdeeFormula = bmr * (activityMap[activity] || 1.55);
 
-  const tdee = burnKcal
-    ? Math.round(tdeeFormula * 0.6 + (bmr * 1.2 + burnKcal) * 0.4)
-    : Math.round(tdeeFormula);
+  // dayBurn = your logged whole-day total (Apple Watch active + resting).
+  // Wrist devices misjudge energy, so it is blended with the formula rather than trusted alone.
+  const measured = dayBurn || null;
+  const tdee = measured
+    ? Math.round(tdeeFormula * 0.6 + measured * 0.4)
+    : burnKcal
+      ? Math.round(tdeeFormula * 0.6 + (bmr * 1.2 + burnKcal) * 0.4)
+      : Math.round(tdeeFormula);
 
+  // Deficit / surplus sized from the evidence-based weekly rate, not a fixed number.
   let adjustment = 0;
+  let ratePct = 0;
   if (goalDirection === "lose") {
+    ratePct = 0.75; // middle of 0.5–1.0 %/wk
     if (targetWeight && targetDate) {
-      const daysLeft = Math.max(1, Math.ceil((new Date(targetDate).getTime() - (now ?? Date.now())) / 86400000));
-      const kgToLose = Math.max(0, weight - targetWeight);
-      adjustment = -Math.min(750, Math.round((kgToLose * 7700) / daysLeft));
-    } else {
-      adjustment = -500;
+      const weeksLeft = Math.max(1, (new Date(targetDate).getTime() - (now ?? Date.now())) / (DAY_MS * 7));
+      const needed = ((weight - targetWeight) / weeksLeft / weight) * 100;
+      if (needed > 0) ratePct = clamp(needed, 0.5, 1.0);
     }
+    adjustment = -round50((weight * ratePct / 100) * KCAL_PER_KG / 7);
   } else if (goalDirection === "gain") {
-    adjustment = 300;
+    ratePct = 0.375; // middle of 0.25–0.5 %/wk
+    adjustment = round50((weight * ratePct / 100) * KCAL_PER_KG / 7);
   } else if (goalDirection === "recomp") {
-    adjustment = -250;
+    adjustment = -250; // small deficit; large deficits blunt muscle gain
   }
 
+  const goalType = goalDirection === "lose" ? "cut" : goalDirection === "gain" ? "build" : goalDirection === "recomp" ? "recomp" : null;
+  const pr = proteinRange(goalType, weight, ffm) || { low: Math.round(weight * 1.6), high: Math.round(weight * 2.2) };
   const target = tdee + adjustment;
-  const protein = Math.round(weight * (goalDirection === "recomp" ? 2.2 : 2.0));
-  const fat = Math.round(weight * 0.9);
+  const protein = Math.round((pr.low + pr.high) / 2);
+  const fat = Math.round(weight * 0.9); // inside 0.5–1.5 g/kg (Iraki 2019)
   const carbs = Math.max(0, Math.round((target - protein * 4 - fat * 9) / 4));
 
-  return { tdee, target, adjustment, protein, fat, carbs, bmr: Math.round(bmr) };
+  return { tdee, target, adjustment, ratePct, protein, proteinRange: pr, fat, carbs, bmr: Math.round(bmr), bmrMethod };
+}
+
+// ─── GOAL BASELINE ───────────────────────────────────────────────────────────
+
+// The goal's own start date. Older goals have none, so fall back to when the
+// goal was saved — never to the first reading ever logged, which is what made
+// pace compare months of old progress against the new goal's clock.
+export function goalStartDate(goal) {
+  if (!goal) return null;
+  return normalizeDate(goal.start_date) || normalizeDate(goal.created_at) || null;
+}
+
+// The reading closest to a date (ties → the earlier one). That value is the
+// goal's starting point for pace.
+export function baselineAt(series, field, date) {
+  const pts = (series || [])
+    .filter((p) => p && normalizeDate(p.date) && coerceNumber(p[field]) != null)
+    .map((p) => ({ date: normalizeDate(p.date), value: coerceNumber(p[field]) }))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  if (!pts.length) return null;
+  if (!date) return pts[0];
+  const target = dayMs(date);
+  let best = pts[0], bestGap = Infinity;
+  for (const p of pts) {
+    const gap = Math.abs(dayMs(p.date) - target);
+    if (gap < bestGap || (gap === bestGap && p.date < best.date)) { best = p; bestGap = gap; }
+  }
+  return best;
+}
+
+// ─── INBODY-DRIVEN COACH ─────────────────────────────────────────────────────
+
+// Absolute tissue masses. Muscle % rises when fat drops even if no muscle is
+// gained, so the coach judges muscle in kg, not %.
+export function composition(scan) {
+  const weight = coerceNumber(scan?.weight);
+  if (weight == null) return null;
+  const bf = coerceNumber(scan?.body_fat);
+  const smmPct = coerceNumber(scan?.muscle_mass);
+  const fm = bf != null ? +(weight * bf / 100).toFixed(2) : null;
+  return {
+    date: normalizeDate(scan.date),
+    weight, bf, smmPct, fm,
+    ffm: fm != null ? +(weight - fm).toFixed(2) : null,
+    smmKg: smmPct != null ? +(weight * smmPct / 100).toFixed(2) : null,
+  };
+}
+
+// Weekly weight trend from a least-squares line over recent weigh-ins —
+// averages out day-to-day water swings (Iraki 2019: use weekly averages).
+export function weightTrend(series, now = Date.now(), windowDays = 28) {
+  const since = now - windowDays * DAY_MS;
+  const pts = (series || [])
+    .map((p) => ({ t: dayMs(normalizeDate(p?.date) || ""), w: coerceNumber(p?.weight) }))
+    .filter((p) => isFinite(p.t) && p.w != null && p.t >= since && p.t <= now + DAY_MS);
+  if (pts.length < 3) return null;
+  const span = (Math.max(...pts.map((p) => p.t)) - Math.min(...pts.map((p) => p.t))) / DAY_MS;
+  if (span < 10) return null;
+  const n = pts.length;
+  const mt = pts.reduce((a, p) => a + p.t, 0) / n;
+  const mw = pts.reduce((a, p) => a + p.w, 0) / n;
+  let num = 0, den = 0;
+  for (const p of pts) { num += (p.t - mt) * (p.w - mw); den += (p.t - mt) ** 2; }
+  if (!den) return null;
+  const kgPerWeek = (num / den) * DAY_MS * 7;
+  return { kgPerWeek: +kgPerWeek.toFixed(2), points: n, spanDays: Math.round(span) };
+}
+
+const step = (gapKgPerWeek) => clamp(round50(Math.abs(gapKgPerWeek) * KCAL_PER_KG / 7), 100, 300);
+
+// Reads the scans + weigh-ins against the goal type and says what to change.
+// Output is plain data; the UI renders it.
+export function coachAnalysis({ goalType, goal, scans, weights, now = Date.now() }) {
+  const type = goalType || goal?.goal_type || null;
+  const sorted = (scans || [])
+    .map(composition).filter(Boolean)
+    .filter((c) => c.date)
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (!sorted.length) return { status: "no-data", findings: [], actions: [], kcalAdjust: 0, sourcesUsed: [] };
+
+  const L = sorted[sorted.length - 1];
+  // Compare against a scan at least 2 weeks older — closer scans are mostly noise.
+  const P = [...sorted].reverse().find((c) => dayMs(L.date) - dayMs(c.date) >= 14 * DAY_MS) || null;
+  const days = P ? Math.round((dayMs(L.date) - dayMs(P.date)) / DAY_MS) : null;
+
+  const findings = [];
+  const actions = [];
+  const used = new Set();
+  let kcalAdjust = 0;
+
+  if (!type) {
+    return {
+      status: "no-goal", findings: [{ tone: "info", text: "Pick a goal type in Weight → Set your targets so the analysis knows what to optimise for." }],
+      actions: [], kcalAdjust: 0, latest: L, prev: P, sourcesUsed: [],
+    };
+  }
+
+  const band = RATE_BANDS[type];
+  used.add(band.source);
+
+  // ── Weight trend vs the evidence band (and vs the goal date, for a cut) ──
+  const series = mergeWeightSeries(weights, scans);
+  let trend = weightTrend(series, now);
+  let trendSource = "weigh-ins";
+  if (!trend && P) {
+    trend = { kgPerWeek: +((L.weight - P.weight) / (days / 7)).toFixed(2), points: 2, spanDays: days };
+    trendSource = "scans";
+  }
+  const ratePct = trend ? +((trend.kgPerWeek / L.weight) * 100).toFixed(2) : null;
+
+  let minPct = band.min, maxPct = band.max;
+  if (type === "cut" && goal?.target_weight != null && goal?.target_date) {
+    const weeksLeft = (dayMs(normalizeDate(goal.target_date)) - now) / (DAY_MS * 7);
+    if (weeksLeft > 0) {
+      const neededPct = ((goal.target_weight - L.weight) / weeksLeft / L.weight) * 100; // negative for loss
+      if (neededPct < band.min) {
+        const weeksAtMax = ((L.weight - goal.target_weight) / (L.weight * 0.0075));
+        const d = new Date(now + weeksAtMax * 7 * DAY_MS).toISOString().slice(0, 10);
+        findings.push({ tone: "warn", text: `Reaching ${goal.target_weight} kg by ${normalizeDate(goal.target_date)} needs ${Math.abs(neededPct).toFixed(1)}%/week — faster than the 1%/week ceiling for keeping muscle. A realistic date at 0.75%/week is around ${d}.` });
+        actions.push({ kind: "goal", text: `Move the target date to around ${d} rather than cutting harder.` });
+      } else if (neededPct < band.max) {
+        maxPct = Math.max(band.min, neededPct); // needs faster than 0.5%/wk to land on time
+      }
+    }
+  }
+
+  const fmtPct = (x) => `${x > 0 ? "+" : ""}${x.toFixed(2)}%`;
+  const kgWk = (pct) => (pct / 100) * L.weight;
+
+  if (ratePct == null) {
+    findings.push({ tone: "info", text: "Not enough weigh-ins to read a trend yet. Weigh in at least 3 times across 2 weeks (same time, morning, before food)." });
+  } else {
+    const bandTxt = `${band.min}% to ${band.max}% per week`;
+    const where = `Weight is changing ${fmtPct(ratePct)} per week (${trend.kgPerWeek > 0 ? "+" : ""}${trend.kgPerWeek} kg, from ${trendSource}).`;
+
+    if (type === "cut") {
+      if (ratePct > maxPct) {
+        const gap = kgWk(maxPct - ratePct); // kg/wk short of the slowest acceptable loss
+        const s = step(gap);
+        kcalAdjust = -s;
+        findings.push({ tone: "warn", text: `${where} That is slower than the ${Math.abs(maxPct).toFixed(2)}%/week needed (evidence band ${bandTxt}).` });
+        actions.push({ kind: "calories", text: `Eat about ${s} kcal/day less than you do now — preferably from carbs or fat, not protein. Re-check after 2 weeks.` });
+      } else if (ratePct < band.min) {
+        findings.push({ tone: "warn", text: `${where} That is faster than 1%/week, where muscle loss becomes likely.` });
+        kcalAdjust = 150;
+        actions.push({ kind: "calories", text: "Add about 150 kcal/day to slow the loss to under 1%/week." });
+      } else {
+        findings.push({ tone: "ok", text: `${where} Inside the evidence band for fat loss while keeping muscle (${bandTxt}).` });
+      }
+    } else if (type === "build") {
+      if (ratePct < band.min) {
+        const s = step(kgWk(band.min - ratePct));
+        kcalAdjust = s;
+        findings.push({ tone: "warn", text: `${where} Below the ${band.min}%/week gain that supports muscle growth (${bandTxt}).` });
+        actions.push({ kind: "calories", text: `Eat about ${s} kcal/day more than you do now. Re-check after 2 weeks.` });
+      } else if (ratePct > band.max) {
+        const s = step(kgWk(ratePct - band.max));
+        kcalAdjust = -s;
+        findings.push({ tone: "warn", text: `${where} Faster than ${band.max}%/week — the extra is mostly fat.` });
+        actions.push({ kind: "calories", text: `Trim about ${s} kcal/day to slow the gain.` });
+      } else {
+        findings.push({ tone: "ok", text: `${where} Inside the evidence band for lean gain (${bandTxt}).` });
+      }
+    } else if (type === "recomp") {
+      if (ratePct < band.min) {
+        findings.push({ tone: "warn", text: `${where} That is a real cut, not a recomposition — muscle gain stalls in larger deficits.` });
+        kcalAdjust = 150;
+        actions.push({ kind: "calories", text: "Add about 150 kcal/day to bring weight closer to stable." });
+      } else if (ratePct > band.max) {
+        findings.push({ tone: "warn", text: `${where} Weight is climbing — recomposition works best at maintenance or a small deficit.` });
+        kcalAdjust = -150;
+        actions.push({ kind: "calories", text: "Eat about 150 kcal/day less." });
+      } else {
+        findings.push({ tone: "ok", text: `${where} Roughly stable, which suits recomposition.` });
+      }
+    }
+  }
+
+  // ── Body composition between scans (kg, not %) ──
+  const dSmm = P && L.smmKg != null && P.smmKg != null ? +(L.smmKg - P.smmKg).toFixed(2) : null;
+  const dFm = P && L.fm != null && P.fm != null ? +(L.fm - P.fm).toFixed(2) : null;
+
+  if (!P) {
+    const nextIn = 14 - Math.round((now - dayMs(L.date)) / DAY_MS);
+    findings.push({ tone: "info", text: `Body-composition changes need two scans at least 2 weeks apart.${nextIn > 0 ? ` Next useful scan in about ${nextIn} days.` : " Your next scan will unlock this."}` });
+  } else {
+    const smmTxt = dSmm == null ? null : `Muscle ${dSmm > 0 ? "+" : ""}${dSmm} kg`;
+    const fmTxt = dFm == null ? null : `fat ${dFm > 0 ? "+" : ""}${dFm} kg`;
+    const summary = [smmTxt, fmTxt].filter(Boolean).join(", ");
+    if (summary) findings.push({ tone: "info", text: `${summary} over ${days} days (since ${P.date}). Judged in kg — muscle % can rise just because fat fell.` });
+
+    const pr = proteinRange(type, L.weight, L.ffm);
+    used.add(pr.source);
+
+    const muscleDown = dSmm != null && dSmm <= -NOISE.smmKg;
+    const muscleFlat = dSmm != null && dSmm < 0.25 && !muscleDown;
+    const fatUp = dFm != null && dFm >= NOISE.fmKg;
+    const fatFlat = dFm != null && dFm > -NOISE.fmKg && !fatUp;
+
+    if (muscleDown) {
+      findings.push({ tone: "bad", text: `Muscle dropped ${Math.abs(dSmm)} kg — beyond normal scan noise (±${NOISE.smmKg} kg).` });
+      actions.push({ kind: "protein", text: `Raise protein to the top of ${pr.low}–${pr.high} g/day (${pr.basis}).` });
+      actions.push({ kind: "training", text: "Keep lifting heavy with the same weekly volume — cutting training while dieting is the fastest way to lose muscle." });
+      if (type === "cut" && kcalAdjust < 0) {
+        // Losing muscle while weight is barely moving points at protein/training,
+        // not the deficit — cutting harder now would make it worse.
+        kcalAdjust = 0;
+        for (let i = actions.length - 1; i >= 0; i--) if (actions[i].kind === "calories") actions.splice(i, 1);
+        actions.push({ kind: "calories", text: "Hold calories where they are for now. Fix protein and training first, re-scan in 2–4 weeks, then cut further if weight is still slow." });
+      } else if (type === "cut" && kcalAdjust === 0) {
+        kcalAdjust = 100;
+        actions.push({ kind: "calories", text: "Ease the deficit by about 100 kcal/day." });
+      }
+      if (type === "recomp" && kcalAdjust <= 0) { kcalAdjust = 150; actions.push({ kind: "calories", text: "Move to maintenance: about 150 kcal/day more." }); }
+    }
+
+    if ((type === "build" || type === "recomp") && muscleFlat && days >= 28) {
+      findings.push({ tone: "warn", text: `Muscle hasn't moved meaningfully in ${days} days.` });
+      actions.push({ kind: "protein", text: `Make sure protein reaches ${pr.low}–${pr.high} g/day (${pr.basis}) — spread over 3–6 meals.` });
+      actions.push({ kind: "training", text: "Add load or reps week to week on your main lifts (progressive overload)." });
+      if (type === "build" && kcalAdjust === 0) { kcalAdjust = 150; actions.push({ kind: "calories", text: "If protein is already there, add about 150 kcal/day." }); }
+    }
+
+    if (fatUp && (type === "build" || type === "recomp")) {
+      findings.push({ tone: "warn", text: `Fat up ${dFm} kg — more than the muscle gained.` });
+      if (kcalAdjust >= 0) { kcalAdjust = -150; actions.push({ kind: "calories", text: "Cut about 150 kcal/day to limit fat gain." }); }
+    }
+
+    if (type === "cut" && fatFlat && !muscleDown && days >= 21 && kcalAdjust === 0) {
+      findings.push({ tone: "warn", text: `Fat mass barely moved in ${days} days.` });
+      kcalAdjust = -150;
+      actions.push({ kind: "calories", text: "Eat about 150 kcal/day less, and keep protein high." });
+    }
+
+    if (type === "recomp" && dFm != null && dFm <= -NOISE.fmKg && dSmm != null && dSmm >= 0.25) {
+      findings.push({ tone: "ok", text: "Fat down and muscle up at the same time — recomposition is working. Keep everything as it is." });
+    }
+  }
+
+  // Later rules refine earlier ones: keep only the final calorie instruction so
+  // the advice never says "eat less" and "eat more" at the same time.
+  const calIdx = actions.map((a, i) => (a.kind === "calories" ? i : -1)).filter((i) => i >= 0);
+  calIdx.slice(0, -1).reverse().forEach((i) => actions.splice(i, 1));
+
+  // Protein target always shown.
+  const pr = proteinRange(type, L.weight, L.ffm);
+  used.add(pr.source);
+  if (!actions.some((a) => a.kind === "protein")) {
+    actions.push({ kind: "protein", text: `Protein: ${pr.low}–${pr.high} g/day (${pr.basis}).` });
+  }
+  if (!actions.some((a) => a.kind === "calories")) {
+    actions.push({ kind: "calories", text: "Calories: no change — keep doing what you're doing." });
+  }
+  if (actions.some((a) => a.kind === "calories" && /kcal\/day/.test(a.text))) used.add("energy7700");
+
+  const tones = findings.map((f) => f.tone);
+  const status = tones.includes("bad") ? "bad" : tones.includes("warn") ? "warn" : tones.includes("ok") ? "ok" : "info";
+
+  return {
+    status, findings, actions, kcalAdjust,
+    latest: L, prev: P, days, trend, ratePct, band: { min: minPct, max: maxPct },
+    protein: pr, sourcesUsed: [...used],
+  };
 }
 
 // ─── AUTH / SESSION ──────────────────────────────────────────────────────────
@@ -465,9 +799,29 @@ export function weekSummary(sessions, now) {
     const t = new Date(s.date).getTime();
     return isFinite(t) && t >= since;
   });
+  const day = averageDayBurn(sessions, 7, now);
   return {
     count: inWeek.length,
     minutes: Math.round(inWeek.reduce((a, s) => a + (coerceNumber(s.duration_min) || 0), 0)),
     kcal: Math.round(inWeek.reduce((a, s) => a + (coerceNumber(s.kcal) || 0), 0)),
+    dayBurnAvg: day ? day.avg : null,
   };
+}
+
+// Whole-day energy (Apple Watch active + resting) logged with sessions.
+// One value per date (the latest entry wins); averaged over the days logged.
+export function averageDayBurn(sessions, days = 14, now) {
+  const since = (now ?? Date.now()) - days * 86400000;
+  const byDate = new Map();
+  (sessions || []).forEach((s) => {
+    const v = coerceNumber(s?.day_kcal);
+    const d = normalizeDate(s?.date);
+    if (v == null || v <= 0 || !d) return;
+    const t = new Date(d + "T00:00:00").getTime();
+    if (!isFinite(t) || t < since) return;
+    byDate.set(d, v);
+  });
+  if (!byDate.size) return null;
+  const vals = [...byDate.values()];
+  return { avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length), days: vals.length };
 }

@@ -3,10 +3,12 @@ import {
   todayISO, fmt,
   parseScanResponse, mergeWeightSeries, chartLabels,
   computePace, analyseMetric, calcCalories,
-  averageDailyBurn, weekSummary,
+  weekSummary,
   tokenNeedsRefresh, isJwtError, isFatalRefreshFailure,
   EMPTY_DATA, mergeLoadedData, parseCachedData,
   SESSION_MUSCLES, workoutMuscleTabs,
+  averageDayBurn, directionFor, goalStartDate, baselineAt, composition,
+  coachAnalysis, GOAL_TYPES, SOURCES,
 } from "./logic";
 
 // ─── SUPABASE CONFIG ─────────────────────────────────────────────────────────
@@ -413,7 +415,7 @@ function PaceBar({ label, curr, start, target, startDate, targetDate, goodDirect
   );
 }
 
-// ─── SESSION CARD (muscles dropdown + duration + kcal) ───────────────────────
+// ─── SESSION CARD (muscles dropdown + duration + whole-day burn) ───────────────────────
 const MUSCLE_LIST = SESSION_MUSCLES;
 
 function SessionCard({ sessions, userId, onRefresh, T }) {
@@ -421,7 +423,7 @@ function SessionCard({ sessions, userId, onRefresh, T }) {
   const last = sorted[0];
 
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ date: todayISO(), duration_min: "", kcal: "", muscles: [] });
+  const [form, setForm] = useState({ date: todayISO(), duration_min: "", day_kcal: "", muscles: [] });
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
 
@@ -443,11 +445,12 @@ function SessionCard({ sessions, userId, onRefresh, T }) {
       user_id: userId,
       date: form.date,
       duration_min: form.duration_min ? +form.duration_min : null,
-      kcal: form.kcal ? +form.kcal : null,
+      // Whole-day total (Apple Watch active + resting), not the workout alone
+      day_kcal: form.day_kcal ? Math.round(+form.day_kcal) : null,
       muscles: muscles.join(", "),
     });
     if (error) { setSaving(false); return; }   // keep the form so nothing is lost
-    setForm({ date: todayISO(), duration_min: "", kcal: "", muscles: [] });
+    setForm({ date: todayISO(), duration_min: "", day_kcal: "", muscles: [] });
     setEditing(false);
     setOpen(false);
     setSaving(false);
@@ -474,8 +477,8 @@ function SessionCard({ sessions, userId, onRefresh, T }) {
               <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.15 }}>{last.duration_min ?? "—"}<span style={{ fontSize: 11, color: T.n600 }}> min</span></div>
             </div>
             <div style={{ background: T.accent100, borderRadius: 10, padding: "9px 10px" }}>
-              <div style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.07em", color: T.n700 }}>Calories</div>
-              <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.15 }}>{last.kcal ?? "—"}<span style={{ fontSize: 11, color: T.n600 }}> kcal</span></div>
+              <div style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.07em", color: T.n700 }}>{last.day_kcal != null ? "Burned that day" : "Workout calories"}</div>
+              <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.15 }}>{last.day_kcal ?? last.kcal ?? "—"}<span style={{ fontSize: 11, color: T.n600 }}> kcal</span></div>
             </div>
           </div>
         </>
@@ -521,7 +524,7 @@ function SessionCard({ sessions, userId, onRefresh, T }) {
 
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10 }}>
             <div><label style={lbl}>Duration (min)</label><input style={inp} type="number" placeholder="e.g. 58" value={form.duration_min} onChange={(e) => setForm((f) => ({ ...f, duration_min: e.target.value }))} /></div>
-            <div><label style={lbl}>Calories (kcal)</label><input style={inp} type="number" placeholder="e.g. 472" value={form.kcal} onChange={(e) => setForm((f) => ({ ...f, kcal: e.target.value }))} /></div>
+            <div><label style={lbl}>Burned today (kcal)</label><input style={inp} type="number" inputMode="numeric" placeholder="e.g. 2850" value={form.day_kcal} onChange={(e) => setForm((f) => ({ ...f, day_kcal: e.target.value }))} /></div>
           </div>
           <div><label style={lbl}>Date</label><input style={inp} type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></div>
 
@@ -542,7 +545,7 @@ function SessionCard({ sessions, userId, onRefresh, T }) {
       )}
 
       <div style={{ fontSize: 10.5, color: T.n600, lineHeight: 1.5 }}>
-        Read these off your Apple Watch workout summary. A web app can't reach Apple Health directly.
+        "Burned today" is your whole day, not just the workout: on iPhone open Fitness → Activity and add Active + Resting energy (or Health → Browse → Activity). Log it at the end of the day for the most accurate number.
       </div>
     </div>
   );
@@ -636,15 +639,15 @@ function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
   const latestIb = sortedIb[sortedIb.length - 1];
   const prevIb = sortedIb[sortedIb.length - 2];
 
-  // Baselines for pace: the first scan that actually recorded each metric
-  const firstBf  = sortedIb.find((s) => s.body_fat != null);
-  const firstMus = sortedIb.find((s) => s.muscle_mass != null);
-  const firstIb = {
-    body_fat: firstBf?.body_fat,
-    bfDate:   firstBf?.date,
-    muscle:   firstMus?.muscle_mass,
-    musDate:  firstMus?.date,
-  };
+  // Pace runs on the goal's own clock: from the goal's start date, using the
+  // reading closest to that date as the starting value. (It used to start from
+  // the first reading ever logged, which made new goals look "behind".)
+  const goalStart = goalStartDate(goal);
+  const baseW = baselineAt(sortedW, "weight", goalStart);
+  const baseBf = baselineAt(sortedIb, "body_fat", goalStart);
+  const baseMus = baselineAt(sortedIb, "muscle_mass", goalStart);
+
+  const coach = coachAnalysis({ goal, scans: inbody, weights, now: Date.now() });
 
   const card = { background: T.surface, borderRadius: T.radius, padding: 16, display: "flex", flexDirection: "column", gap: 10 };
 
@@ -718,6 +721,9 @@ function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
         </div>
       )}
 
+      {/* ── Coach (InBody-driven) ── */}
+      {coach.status !== "no-data" && <CoachCard coach={coach} T={T} compact />}
+
       {/* ── Goal pace ── */}
       {goal && goal.target_date && (goal.target_weight != null || goal.target_body_fat != null || goal.target_muscle != null) && (
         <div style={card}>
@@ -725,13 +731,18 @@ function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
             <Kicker T={T}>Goal pace</Kicker>
             <span style={{ fontSize: 11, color: T.n700 }}>{daysLeft} days left</span>
           </div>
+          {goalStart && (
+            <div style={{ fontSize: 11, color: T.n600, marginTop: -4 }}>
+              Started {fmt(goalStart)} → {fmt(goal.target_date)}{!goal.start_date ? " (save the goal again to set an exact start date)" : ""}
+            </div>
+          )}
 
           {goal.target_weight != null && (
             <PaceBar
               label="Weight" unit=" kg" T={T} goodDirection={-1}
               curr={latest?.weight}
-              start={sortedW[0]?.weight}
-              startDate={sortedW[0]?.date}
+              start={baseW?.value}
+              startDate={goalStart}
               target={goal.target_weight}
               targetDate={goal.target_date}
             />
@@ -741,8 +752,8 @@ function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
             <PaceBar
               label="Body fat" unit="%" T={T} goodDirection={-1}
               curr={latestIb?.body_fat}
-              start={firstIb.body_fat}
-              startDate={firstIb.bfDate}
+              start={baseBf?.value}
+              startDate={goalStart}
               target={goal.target_body_fat}
               targetDate={goal.target_date}
             />
@@ -752,8 +763,8 @@ function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
             <PaceBar
               label="Muscle" unit="%" T={T} goodDirection={1}
               curr={latestIb?.muscle_mass}
-              start={firstIb.muscle}
-              startDate={firstIb.musDate}
+              start={baseMus?.value}
+              startDate={goalStart}
               target={goal.target_muscle}
               targetDate={goal.target_date}
             />
@@ -769,7 +780,9 @@ function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
             {[
               { label: "Sessions", val: week.count, unit: "" },
               { label: "Time", val: week.minutes, unit: "min" },
-              { label: "Burned", val: week.kcal, unit: "kcal" },
+              week.dayBurnAvg != null
+                ? { label: "Avg day burn", val: week.dayBurnAvg, unit: "kcal" }
+                : { label: "Burned", val: week.kcal, unit: "kcal" },
             ].map((s) => (
               <div key={s.label} style={{ background: T.accent100, borderRadius: 10, padding: "9px 8px" }}>
                 <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.06em", color: T.n700 }}>{s.label}</div>
@@ -786,14 +799,83 @@ function HomeTab({ weights, inbody, sessions, goal, name, sessionsProps, T }) {
   );
 }
 
+// ─── COACH CARD (InBody-driven recommendations) ───────────────────────────
+function CoachCard({ coach, T, compact = false }) {
+  if (!coach || coach.status === "no-data") return null;
+  const tone = { ok: T.ok, warn: T.warn, bad: T.bad, info: T.n600 };
+  const headline = {
+    ok: "On track", warn: "Adjust", bad: "Act now", info: "Building a baseline", "no-goal": "Set a goal type",
+  }[coach.status] || "Analysis";
+  const c = tone[coach.status] || T.n600;
+  const kindLabel = { calories: "Calories", protein: "Protein", training: "Training", goal: "Goal" };
+  const actions = compact ? coach.actions.filter((a) => a.kind !== "protein" || coach.status !== "ok").slice(0, 3) : coach.actions;
+  const findings = compact ? coach.findings.filter((f) => f.tone !== "info").slice(0, 2) : coach.findings;
+
+  return (
+    <div style={{ background: T.surface, borderRadius: T.radius, padding: 16, display: "flex", flexDirection: "column", gap: 10, border: `1px solid ${c}55` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <Kicker T={T}>Coach{coach.latest ? ` · scan ${fmt(coach.latest.date)}` : ""}</Kicker>
+        <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: c, border: `1px solid ${c}`, background: `${c}1a`, borderRadius: 20, padding: "3px 9px", marginTop: -8 }}>
+          {headline}
+        </span>
+      </div>
+
+      {findings.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          {findings.map((f, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, lineHeight: 1.5, color: T.text }}>
+              <span style={{ width: 7, height: 7, borderRadius: 4, background: tone[f.tone] || T.n600, flex: "none", marginTop: 6 }} />
+              <span>{f.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {actions.length > 0 && (
+        <div style={{ background: T.bg, borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 7 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.n600 }}>What to change</div>
+          {actions.map((a, i) => (
+            <div key={i} style={{ fontSize: 12.5, lineHeight: 1.5, color: T.text }}>
+              <strong style={{ color: T.accent }}>{kindLabel[a.kind] || "Note"}:</strong> {a.text.replace(/^(Calories|Protein): /, "")}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {compact ? (
+        <div style={{ fontSize: 10.5, color: T.n600 }}>Full breakdown and sources on the InBody tab.</div>
+      ) : (
+        <details style={{ fontSize: 11, color: T.n600, lineHeight: 1.5 }}>
+          <summary style={{ cursor: "pointer", fontWeight: 600 }}>Where these numbers come from</summary>
+          <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+            {(coach.sourcesUsed || []).map((k) => SOURCES[k] && <li key={k} style={{ marginBottom: 4 }}>{SOURCES[k]}</li>)}
+          </ul>
+          <div style={{ marginTop: 6 }}>
+            Scan under the same conditions each time (morning, before food and training) — InBody readings move with hydration.
+            Changes under ±0.5 kg muscle or ±1 kg fat between scans are treated as noise. General guidance, not medical advice.
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 // ─── CALORIE CARD ────────────────────────────────────────────────────────────
+// Starting estimate from your InBody fat-free mass (Katch–McArdle) and logged
+// whole-day burn; the coach then corrects it from how your body actually responds.
 function CalorieCard({ weights, inbody, goal, sessions, T }) {
   const latest = mergeWeightSeries(weights, inbody).slice(-1)[0];
+  const latestScan = [...inbody].sort((a, b) => new Date(a.date) - new Date(b.date)).map(composition).filter(Boolean).slice(-1)[0];
+  const ffm = latestScan?.ffm || null;
+  const day = averageDayBurn(sessions); // { avg, days } over last 14 days
+  const coach = coachAnalysis({ goal, scans: inbody, weights, now: Date.now() });
 
-  // Average daily burn over the last 14 days, from logged sessions
-  const avgBurn = averageDailyBurn(sessions);
-
-  const [stats, setStats] = useState({ age: "", height: "", gender: "male", activity: "moderate", goalDirection: "lose" });
+  const saved = (() => { try { return JSON.parse(store.get("gauge_calc_stats") || "null"); } catch { return null; } })();
+  const [stats, setStats] = useState(() => ({
+    age: "", height: "", gender: "male", activity: "moderate",
+    ...(saved || {}),
+    goalDirection: directionFor(goal?.goal_type) !== "maintain" ? directionFor(goal?.goal_type) : (saved?.goalDirection || "recomp"),
+  }));
   const [result, setResult] = useState(null);
   const set = (k) => (e) => setStats((s) => ({ ...s, [k]: e.target.value }));
 
@@ -802,13 +884,15 @@ function CalorieCard({ weights, inbody, goal, sessions, T }) {
   const lbl = { fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: T.n600, marginBottom: 4, display: "block" };
 
   const calculate = () => {
+    store.set("gauge_calc_stats", JSON.stringify(stats));
     setResult(calcCalories({
       weight: latest?.weight,
-      height: +stats.height,
-      age: +stats.age,
+      height: +stats.height || null,
+      age: +stats.age || null,
       gender: stats.gender,
       activity: stats.activity,
-      burnKcal: avgBurn,
+      ffm,
+      dayBurn: day?.avg,
       goalDirection: stats.goalDirection,
       targetWeight: goal?.target_weight,
       targetDate: goal?.target_date,
@@ -816,41 +900,45 @@ function CalorieCard({ weights, inbody, goal, sessions, T }) {
   };
 
   const dirColor = stats.goalDirection === "lose" ? T.bad : T.ok;
+  const needsAgeHeight = !ffm;
 
   return (
     <div style={card}>
-      <Kicker T={T}>Calorie analysis</Kicker>
+      <Kicker T={T}>Calorie &amp; protein targets</Kicker>
 
       {!latest && <div style={{ fontSize: 12, color: T.n600 }}>Log at least one weight entry first.</div>}
 
       {latest && (
         <>
-          <div style={{ fontSize: 12, color: T.n600 }}>
-            Current weight: <strong style={{ color: T.text }}>{latest.weight} kg</strong>
-            {goal && <> · Target: <strong style={{ color: T.text }}>{goal.target_weight} kg</strong></>}
+          <div style={{ fontSize: 12, color: T.n600, lineHeight: 1.5 }}>
+            Weight <strong style={{ color: T.text }}>{latest.weight} kg</strong>
+            {ffm && <> · Fat-free mass <strong style={{ color: T.text }}>{ffm} kg</strong> (InBody {fmt(latestScan.date)})</>}
           </div>
 
-          {avgBurn ? (
-            <div style={{ fontSize: 11.5, color: T.ok, background: T.accent100, borderRadius: 8, padding: "8px 10px" }}>
-              Using your logged sessions: <strong>{avgBurn} kcal/day</strong> average burn over the last 14 days.
+          {day ? (
+            <div style={{ fontSize: 11.5, color: T.ok, background: T.accent100, borderRadius: 8, padding: "8px 10px", lineHeight: 1.5 }}>
+              Your logged whole-day burn: <strong>{day.avg.toLocaleString()} kcal/day</strong> ({day.days} day{day.days > 1 ? "s" : ""} in the last 14).
+              {" "}Logged on training days only, so it runs a little high — it's blended with the formula.
             </div>
           ) : (
             <div style={{ fontSize: 11.5, color: T.n600, background: T.bg, borderRadius: 8, padding: "8px 10px" }}>
-              Log sessions on the Home tab and this will use your real burn instead of an estimate.
+              Log "Burned today" with your sessions on Home and this will use your real burn.
             </div>
           )}
 
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10 }}>
-            <div><label style={lbl}>Age</label><input style={inp} type="number" placeholder="e.g. 30" value={stats.age} onChange={set("age")} /></div>
-            <div><label style={lbl}>Height (cm)</label><input style={inp} type="number" placeholder="e.g. 175" value={stats.height} onChange={set("height")} /></div>
-            <div>
-              <label style={lbl}>Gender</label>
-              <select style={inp} value={stats.gender} onChange={set("gender")}>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-              </select>
-            </div>
-            <div>
+            {needsAgeHeight && <div><label style={lbl}>Age</label><input style={inp} type="number" placeholder="e.g. 30" value={stats.age} onChange={set("age")} /></div>}
+            {needsAgeHeight && <div><label style={lbl}>Height (cm)</label><input style={inp} type="number" placeholder="e.g. 175" value={stats.height} onChange={set("height")} /></div>}
+            {needsAgeHeight && (
+              <div>
+                <label style={lbl}>Gender</label>
+                <select style={inp} value={stats.gender} onChange={set("gender")}>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                </select>
+              </div>
+            )}
+            <div style={needsAgeHeight ? {} : { gridColumn: "1 / -1" }}>
               <label style={lbl}>Activity level</label>
               <select style={inp} value={stats.activity} onChange={set("activity")}>
                 <option value="sedentary">Sedentary</option>
@@ -863,9 +951,9 @@ function CalorieCard({ weights, inbody, goal, sessions, T }) {
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={lbl}>Goal</label>
               <select style={inp} value={stats.goalDirection} onChange={set("goalDirection")}>
-                <option value="recomp">Build muscle &amp; lose fat</option>
+                <option value="recomp">Recomposition (lose fat + build muscle)</option>
                 <option value="lose">Lose fat</option>
-                <option value="gain">Gain muscle</option>
+                <option value="gain">Build muscle</option>
                 <option value="maintain">Maintain</option>
               </select>
             </div>
@@ -879,7 +967,7 @@ function CalorieCard({ weights, inbody, goal, sessions, T }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 12, borderTop: `1px solid ${T.divider}` }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                 <div>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: T.n600 }}>Daily target</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: T.n600 }}>Starting daily target</div>
                   <div style={{ fontSize: 38, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1, color: T.accent }}>
                     {result.target.toLocaleString()}<span style={{ fontSize: 15, color: T.n600, marginLeft: 4 }}>kcal</span>
                   </div>
@@ -906,8 +994,18 @@ function CalorieCard({ weights, inbody, goal, sessions, T }) {
                 ))}
               </div>
 
+              {coach.kcalAdjust !== 0 && coach.status !== "no-goal" && (
+                <div style={{ fontSize: 12, lineHeight: 1.5, borderRadius: 8, padding: "8px 10px", background: `${T.warn}1a`, border: `1px solid ${T.warn}`, color: T.text }}>
+                  <strong>Your InBody results say:</strong> {coach.kcalAdjust < 0 ? `eat about ${Math.abs(coach.kcalAdjust)} kcal/day less` : `eat about ${coach.kcalAdjust} kcal/day more`} than you are now.
+                  Real results beat the formula — follow this over the starting target.
+                </div>
+              )}
+
               <div style={{ fontSize: 10.5, color: T.n600, lineHeight: 1.5 }}>
-                Mifflin-St Jeor BMR {result.bmr} kcal{avgBurn ? `, blended with your logged ${avgBurn} kcal/day burn` : ""}. {stats.goalDirection === "recomp" ? "Recomposition uses a small 250 kcal deficit with protein at 2.2 g/kg — a steep cut costs lean mass." : "Protein at 2 g/kg to protect muscle."}
+                {result.bmrMethod}: resting burn {result.bmr} kcal{day ? `, blended with your logged ${day.avg} kcal/day` : ""}.
+                {result.ratePct ? ` Deficit/surplus sized for ${result.ratePct.toFixed(2)}% of body weight per week.` : ""}
+                {result.proteinRange?.basis ? ` Protein range ${result.proteinRange.low}–${result.proteinRange.high} g (${result.proteinRange.basis}).` : ""}
+                {" "}This is a starting point; the Coach adjusts it every 2–4 weeks from your scans.
               </div>
             </div>
           )}
@@ -920,7 +1018,13 @@ function CalorieCard({ weights, inbody, goal, sessions, T }) {
 // ─── WEIGHT TAB ──────────────────────────────────────────────────────────────
 function WeightTab({ weights, inbody, goal, sessions, userId, onRefresh, T }) {
   const [wForm, setWForm] = useState({ weight: "", date: todayISO() });
-  const [gForm, setGForm] = useState({ target_weight: goal?.target_weight || "", target_date: goal?.target_date || "", target_body_fat: goal?.target_body_fat || "", target_muscle: goal?.target_muscle || "" });
+  const [gForm, setGForm] = useState({
+    goal_type: goal?.goal_type || "",
+    start_date: goal?.start_date || todayISO(),
+    target_weight: goal?.target_weight || "", target_date: goal?.target_date || "",
+    target_body_fat: goal?.target_body_fat || "", target_muscle: goal?.target_muscle || "",
+  });
+  const [goalMsg, setGoalMsg] = useState("");
   const [saving, setSaving] = useState(false);
   const sorted = mergeWeightSeries(weights, inbody);
   const card = { background: T.surface, borderRadius: T.radius, padding: 16, display: "flex", flexDirection: "column", gap: 6 };
@@ -940,10 +1044,15 @@ function WeightTab({ weights, inbody, goal, sessions, userId, onRefresh, T }) {
   const saveGoal = async () => {
     // A date plus at least one target is enough
     const hasTarget = gForm.target_weight || gForm.target_body_fat || gForm.target_muscle;
-    if (!gForm.target_date || !hasTarget) return;
+    if (!gForm.goal_type) { setGoalMsg("Pick a goal type — the analysis depends on it."); return; }
+    if (!gForm.start_date || !gForm.target_date || !hasTarget) { setGoalMsg("Add a start date, a target date and at least one target."); return; }
+    if (gForm.target_date <= gForm.start_date) { setGoalMsg("Target date must be after the start date."); return; }
+    setGoalMsg("");
     setSaving(true);
     const { error } = await sb.insert("goals", {
       user_id: userId,
+      goal_type: gForm.goal_type,
+      start_date: gForm.start_date,
       target_date: gForm.target_date,
       target_weight:   gForm.target_weight   ? +gForm.target_weight   : null,
       target_body_fat: gForm.target_body_fat ? +gForm.target_body_fat : null,
@@ -977,14 +1086,26 @@ function WeightTab({ weights, inbody, goal, sessions, userId, onRefresh, T }) {
           Fill in only what you care about. Leave a field blank to skip that target — you don't need a weight goal to track body recomposition.
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10, marginTop: 4, marginBottom: 12 }}>
-          <div><label style={lbl}>Target weight (kg)</label><input style={inp} type="number" step="0.1" placeholder="optional" value={gForm.target_weight} onChange={(e) => setGForm((f) => ({ ...f, target_weight: e.target.value }))} /></div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={lbl}>Goal type</label>
+            <select style={inp} value={gForm.goal_type} onChange={(e) => setGForm((f) => ({ ...f, goal_type: e.target.value }))}>
+              <option value="">Choose…</option>
+              {GOAL_TYPES.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+            </select>
+          </div>
+          <div><label style={lbl}>Start date</label><input style={inp} type="date" value={gForm.start_date} onChange={(e) => setGForm((f) => ({ ...f, start_date: e.target.value }))} /></div>
           <div><label style={lbl}>Target date</label><input style={inp} type="date" value={gForm.target_date} onChange={(e) => setGForm((f) => ({ ...f, target_date: e.target.value }))} /></div>
+          <div><label style={lbl}>Target weight (kg)</label><input style={inp} type="number" step="0.1" placeholder="optional" value={gForm.target_weight} onChange={(e) => setGForm((f) => ({ ...f, target_weight: e.target.value }))} /></div>
           <div><label style={lbl}>Target body fat (%)</label><input style={inp} type="number" step="0.1" placeholder="optional" value={gForm.target_body_fat} onChange={(e) => setGForm((f) => ({ ...f, target_body_fat: e.target.value }))} /></div>
           <div><label style={lbl}>Target muscle (%)</label><input style={inp} type="number" step="0.1" placeholder="optional" value={gForm.target_muscle} onChange={(e) => setGForm((f) => ({ ...f, target_muscle: e.target.value }))} /></div>
         </div>
         <button onClick={saveGoal} disabled={saving} style={{ minHeight: 44, fontFamily: "inherit", fontSize: 13, fontWeight: 700, border: `1px solid ${T.accent400}`, borderRadius: 10, background: T.accent100, color: T.accent600, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>
           Save goal
         </button>
+        {goalMsg && <div style={{ fontSize: 12, color: T.bad, marginTop: 6 }}>{goalMsg}</div>}
+        <div style={{ fontSize: 10.5, color: T.n600, lineHeight: 1.5, marginTop: 6 }}>
+          Pace is measured from the start date: your reading closest to that day is the starting point.
+        </div>
       </div>
 
       <CalorieCard weights={weights} inbody={inbody} goal={goal} sessions={sessions} T={T} />
@@ -1099,12 +1220,13 @@ function MetricBlock({ label, color, T, data, field, curr, prev, first, target, 
 }
 
 // ─── INBODY TAB ──────────────────────────────────────────────────────────────
-function InbodyTab({ inbody, goal, userId, onRefresh, T }) {
+function InbodyTab({ inbody, weights, goal, userId, onRefresh, T }) {
   const [status, setStatus] = useState("idle"); // idle | reading | confirm | saving | error
   const [editPending, setEditPending] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [manualForm, setManualForm] = useState({ date: todayISO(), weight: "", body_fat: "", muscle_mass: "" });
-  const [showManual, setShowManual] = useState(false);
+  const [mode, setMode] = useState(() => store.get("gauge_scan_mode") || "upload"); // "upload" | "manual"
+  const pickMode = (m) => { setMode(m); store.set("gauge_scan_mode", m); if (status === "error") setStatus("idle"); };
   const fileRef = React.useRef();
 
   const sorted = [...inbody].sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -1223,7 +1345,6 @@ If a value is not found in the scan, use null. Return only the JSON object.`,
     if (w) await sb.insert("weight_entries", { user_id: userId, date: manualForm.date, weight: w });
 
     setManualForm({ date: todayISO(), weight: "", body_fat: "", muscle_mass: "" });
-    setShowManual(false);
     setStatus("idle");
     await onRefresh();
   };
@@ -1261,10 +1382,13 @@ If a value is not found in the scan, use null. Return only the JSON object.`,
         </div>
       )}
 
+      {/* InBody-driven coach: what the numbers mean and what to change */}
+      {latest && <CoachCard coach={coachAnalysis({ goal, scans: inbody, weights, now: Date.now() })} T={T} />}
+
       {/* Per-metric analysis: weight, body fat, muscle */}
       {latest && (
         <div style={card}>
-          <Kicker T={T}>Analysis</Kicker>
+          <Kicker T={T}>Trends</Kicker>
           <div style={{ fontSize: 11.5, color: T.n600, lineHeight: 1.5 }}>
             {prev
               ? `Compared against your scan on ${fmt(prev.date)}.`
@@ -1298,84 +1422,84 @@ If a value is not found in the scan, use null. Return only the JSON object.`,
             goodDirection={1}
           />
 
-          {/* Recomposition read: fat down while muscle up */}
-          {prev && latest.body_fat != null && prev.body_fat != null &&
-           latest.muscle_mass != null && prev.muscle_mass != null && (() => {
-            const fatD = +(latest.body_fat - prev.body_fat).toFixed(1);
-            const musD = +(latest.muscle_mass - prev.muscle_mass).toFixed(1);
-            const recomp = fatD < 0 && musD > 0;
-            const both   = fatD > 0 && musD < 0;
-            return (
-              <div style={{ marginTop: 14, borderRadius: 10, padding: "12px 14px", background: recomp ? `${T.ok}1a` : both ? `${T.bad}1a` : T.bg, border: `1px solid ${recomp ? T.ok : both ? T.bad : T.divider}` }}>
-                <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: recomp ? T.ok : both ? T.bad : T.n600, marginBottom: 5 }}>
-                  Overall
-                </div>
-                <div style={{ fontSize: 12.5, color: T.text, lineHeight: 1.55 }}>
-                  {recomp && `Body recomposition is working — fat down ${Math.abs(fatD)}% and muscle up ${musD}% at the same time. That is the hardest combination to achieve, and it is why the scale alone would understate your progress.`}
-                  {both && `Fat up ${fatD}% and muscle down ${Math.abs(musD)}% since the last scan. Worth reviewing protein intake and training volume before the next one.`}
-                  {!recomp && !both && `Fat ${fatD > 0 ? "up" : fatD < 0 ? "down" : "flat"} ${Math.abs(fatD)}%, muscle ${musD > 0 ? "up" : musD < 0 ? "down" : "flat"} ${Math.abs(musD)}%. Mixed movement — one more scan will show whether it is a trend or noise.`}
-                </div>
-              </div>
-            );
-          })()}
         </div>
       )}
 
-      {/* Upload card */}
+      {/* Add a scan: upload OR type the numbers — both first-class */}
       <div style={card}>
-        <Kicker T={T}>Upload InBody scan</Kicker>
-        <div style={{ fontSize: 12, color: T.n600, lineHeight: 1.5 }}>
-          Take a photo of your InBody printout or upload the PDF — Claude will read the numbers automatically.
+        <Kicker T={T}>Add InBody scan</Kicker>
+
+        <div style={{ display: "flex", gap: 6, padding: 4, borderRadius: 12, background: T.bg }}>
+          {[["upload", "Upload scan"], ["manual", "Enter manually"]].map(([m, label]) => (
+            <button key={m} onClick={() => pickMode(m)} style={{ flex: 1, minHeight: 40, border: "none", borderRadius: 9, fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, cursor: "pointer", background: mode === m ? T.accent : "transparent", color: mode === m ? "#fff" : T.n600 }}>
+              {label}
+            </button>
+          ))}
         </div>
 
-        {status === "idle" || status === "error" ? (
+        {mode === "upload" && (
           <>
-            <input ref={fileRef} type="file" accept="image/*,application/pdf" style={{ display: "none" }} onChange={handleFile} />
-            <button onClick={() => fileRef.current?.click()} style={{ minHeight: 56, fontFamily: "inherit", fontSize: 14, fontWeight: 700, border: `2px dashed ${T.accent400}`, borderRadius: 10, background: T.accent100, color: T.accent600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg>
-              Upload scan (photo or PDF)
-            </button>
-            {status === "error" && <div style={{ fontSize: 12, color: T.bad, background: "rgba(179,64,44,0.08)", borderRadius: 8, padding: "8px 12px" }}>{errorMsg}</div>}
+            <div style={{ fontSize: 12, color: T.n600, lineHeight: 1.5 }}>
+              Take a photo of your InBody printout or upload the PDF — the numbers are read automatically and you confirm them before saving.
+            </div>
+
+            {status === "idle" || status === "error" ? (
+              <>
+                <input ref={fileRef} type="file" accept="image/*,application/pdf" style={{ display: "none" }} onChange={handleFile} />
+                <button onClick={() => fileRef.current?.click()} style={{ minHeight: 56, fontFamily: "inherit", fontSize: 14, fontWeight: 700, border: `2px dashed ${T.accent400}`, borderRadius: 10, background: T.accent100, color: T.accent600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                  <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg>
+                  Upload scan (photo or PDF)
+                </button>
+                {status === "error" && (
+                  <div style={{ fontSize: 12, color: T.bad, background: "rgba(179,64,44,0.08)", borderRadius: 8, padding: "8px 12px", lineHeight: 1.5 }}>
+                    {errorMsg}
+                    <div style={{ marginTop: 6 }}>
+                      <button onClick={() => pickMode("manual")} style={{ background: "none", border: "none", padding: 0, color: T.accent, fontFamily: "inherit", fontSize: 12, fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>
+                        Enter the numbers manually instead
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : status === "reading" ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "20px 0" }}>
+                <div style={{ width: 36, height: 36, border: `3px solid ${T.accent}`, borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                <div style={{ fontSize: 13, color: T.n600 }}>Reading your scan…</div>
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+              </div>
+            ) : status === "confirm" && editPending ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ fontSize: 12, color: T.ok, fontWeight: 600 }}>✓ Scan read — review and confirm</div>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10 }}>
+                  <div><label style={lbl}>Date</label><input style={inp} type="date" value={editPending.date || ""} onChange={(e) => setEditPending(p => ({ ...p, date: e.target.value }))} /></div>
+                  <div><label style={lbl}>Weight (kg)</label><input style={inp} type="number" step="0.1" value={editPending.weight ?? ""} onChange={(e) => setEditPending(p => ({ ...p, weight: e.target.value }))} /></div>
+                  <div><label style={lbl}>Body fat (%)</label><input style={inp} type="number" step="0.1" value={editPending.body_fat ?? ""} onChange={(e) => setEditPending(p => ({ ...p, body_fat: e.target.value }))} /></div>
+                  <div><label style={lbl}>Muscle (%)</label><input style={inp} type="number" step="0.1" value={editPending.muscle_mass ?? ""} onChange={(e) => setEditPending(p => ({ ...p, muscle_mass: e.target.value }))} /></div>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={confirmSave} style={{ flex: 1, minHeight: 48, fontFamily: "inherit", fontSize: 14, fontWeight: 700, border: "none", borderRadius: 10, background: T.accent, color: "#fff", cursor: "pointer", boxShadow: `0 6px 16px ${T.glow}` }}>Save scan</button>
+                  <button onClick={() => { setEditPending(null); setStatus("idle"); }} style={{ minHeight: 48, padding: "0 16px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, border: `1px solid ${T.divider}`, borderRadius: 10, background: "transparent", color: T.n600, cursor: "pointer" }}>Cancel</button>
+                </div>
+              </div>
+            ) : status === "saving" ? (
+              <div style={{ fontSize: 13, color: T.n600, textAlign: "center", padding: "12px 0" }}>Saving…</div>
+            ) : null}
           </>
-        ) : status === "reading" ? (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "20px 0" }}>
-            <div style={{ width: 36, height: 36, border: `3px solid ${T.accent}`, borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-            <div style={{ fontSize: 13, color: T.n600 }}>Reading your scan…</div>
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-          </div>
-        ) : status === "confirm" && editPending ? (
+        )}
+
+        {mode === "manual" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div style={{ fontSize: 12, color: T.ok, fontWeight: 600 }}>✓ Scan read — review and confirm</div>
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10 }}>
-              <div><label style={lbl}>Date</label><input style={inp} type="date" value={editPending.date || ""} onChange={(e) => setEditPending(p => ({ ...p, date: e.target.value }))} /></div>
-              <div><label style={lbl}>Weight (kg)</label><input style={inp} type="number" step="0.1" value={editPending.weight ?? ""} onChange={(e) => setEditPending(p => ({ ...p, weight: e.target.value }))} /></div>
-              <div><label style={lbl}>Body fat (%)</label><input style={inp} type="number" step="0.1" value={editPending.body_fat ?? ""} onChange={(e) => setEditPending(p => ({ ...p, body_fat: e.target.value }))} /></div>
-              <div><label style={lbl}>Muscle (%)</label><input style={inp} type="number" step="0.1" value={editPending.muscle_mass ?? ""} onChange={(e) => setEditPending(p => ({ ...p, muscle_mass: e.target.value }))} /></div>
+            <div style={{ fontSize: 12, color: T.n600, lineHeight: 1.5 }}>
+              Type the values from your InBody sheet. Muscle is Skeletal Muscle Mass as a % of body weight — if the sheet shows kg, divide by your weight and × 100.
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={confirmSave} style={{ flex: 1, minHeight: 48, fontFamily: "inherit", fontSize: 14, fontWeight: 700, border: "none", borderRadius: 10, background: T.accent, color: "#fff", cursor: "pointer", boxShadow: `0 6px 16px ${T.glow}` }}>Save scan</button>
-              <button onClick={() => { setEditPending(null); setStatus("idle"); }} style={{ minHeight: 48, padding: "0 16px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, border: `1px solid ${T.divider}`, borderRadius: 10, background: "transparent", color: T.n600, cursor: "pointer" }}>Cancel</button>
-            </div>
-          </div>
-        ) : status === "saving" ? (
-          <div style={{ fontSize: 13, color: T.n600, textAlign: "center", padding: "12px 0" }}>Saving…</div>
-        ) : null}
-
-        {/* Manual entry toggle */}
-        <button onClick={() => setShowManual(v => !v)} style={{ background: "none", border: "none", color: T.n600, fontFamily: "inherit", fontSize: 12, cursor: "pointer", textDecoration: "underline", padding: 0, textAlign: "left" }}>
-          {showManual ? "Hide manual entry" : "Enter numbers manually instead"}
-        </button>
-
-        {showManual && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 8, borderTop: `1px solid ${T.divider}` }}>
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 10 }}>
               <div><label style={lbl}>Date</label><input style={inp} type="date" value={manualForm.date} onChange={(e) => setManualForm(f => ({ ...f, date: e.target.value }))} /></div>
-              <div><label style={lbl}>Weight (kg)</label><input style={inp} type="number" step="0.1" placeholder="e.g. 84.0" value={manualForm.weight} onChange={(e) => setManualForm(f => ({ ...f, weight: e.target.value }))} /></div>
-              <div><label style={lbl}>Body fat (%)</label><input style={inp} type="number" step="0.1" placeholder="e.g. 22.0" value={manualForm.body_fat} onChange={(e) => setManualForm(f => ({ ...f, body_fat: e.target.value }))} /></div>
-              <div><label style={lbl}>Muscle (%)</label><input style={inp} type="number" step="0.1" placeholder="e.g. 42.0" value={manualForm.muscle_mass} onChange={(e) => setManualForm(f => ({ ...f, muscle_mass: e.target.value }))} /></div>
+              <div><label style={lbl}>Weight (kg)</label><input style={inp} type="number" step="0.1" inputMode="decimal" placeholder="e.g. 84.0" value={manualForm.weight} onChange={(e) => setManualForm(f => ({ ...f, weight: e.target.value }))} /></div>
+              <div><label style={lbl}>Body fat (%)</label><input style={inp} type="number" step="0.1" inputMode="decimal" placeholder="e.g. 22.0" value={manualForm.body_fat} onChange={(e) => setManualForm(f => ({ ...f, body_fat: e.target.value }))} /></div>
+              <div><label style={lbl}>Muscle (%)</label><input style={inp} type="number" step="0.1" inputMode="decimal" placeholder="e.g. 42.0" value={manualForm.muscle_mass} onChange={(e) => setManualForm(f => ({ ...f, muscle_mass: e.target.value }))} /></div>
             </div>
-            <button onClick={saveManual} style={{ minHeight: 44, fontFamily: "inherit", fontSize: 13, fontWeight: 700, border: "none", borderRadius: 10, background: T.accent100, color: T.accent600, cursor: "pointer" }}>
-              Save manually
+            <button onClick={saveManual} disabled={status === "saving"} style={{ minHeight: 48, fontFamily: "inherit", fontSize: 14, fontWeight: 700, border: "none", borderRadius: 10, background: T.accent, color: "#fff", cursor: "pointer", boxShadow: `0 6px 16px ${T.glow}`, opacity: status === "saving" ? 0.6 : 1 }}>
+              {status === "saving" ? "Saving…" : "Save scan"}
             </button>
           </div>
         )}
@@ -1807,7 +1931,7 @@ export default function App() {
         <div className="gauge-scroll" style={{ flex: "1 1 auto", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "18px 20px 28px" }}>
           {tab === "home"         && <HomeTab weights={data.weights} inbody={data.inbody} sessions={data.sessions} goal={data.goal} name={userName} sessionsProps={{ userId, onRefresh: refresh }} T={T} />}
           {tab === "weight"       && <WeightTab weights={data.weights} inbody={data.inbody} goal={data.goal} sessions={data.sessions} userId={userId} onRefresh={refresh} T={T} />}
-          {tab === "inbody"       && <InbodyTab inbody={data.inbody} goal={data.goal} userId={userId} onRefresh={refresh} T={T} />}
+          {tab === "inbody" && <InbodyTab inbody={data.inbody} weights={data.weights} goal={data.goal} userId={userId} onRefresh={refresh} T={T} />}
           {tab === "measurements" && <MeasurementsTab measurements={data.measurements} userId={userId} onRefresh={refresh} T={T} />}
           {tab === "workouts"     && <WorkoutsTab logs={data.logs} userId={userId} onRefresh={refresh} T={T} />}
         </div>

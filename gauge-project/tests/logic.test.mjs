@@ -7,6 +7,8 @@ import {
   tokenExpiry, tokenNeedsRefresh, isJwtError, isFatalRefreshFailure,
   EMPTY_DATA, mergeLoadedData, parseCachedData,
   SESSION_MUSCLES, WORKOUT_MUSCLES, workoutMuscleTabs,
+  proteinRange, directionFor, goalStartDate, baselineAt, composition,
+  weightTrend, coachAnalysis, averageDayBurn, RATE_BANDS, SOURCES,
 } from "../src/logic.js";
 
 let passed = 0, failed = 0;
@@ -90,10 +92,11 @@ test("analyseMetric describes direction", () => {
   assert.equal(a.delta, -1);
 });
 
-test("calcCalories: recomp uses 250 deficit and 2.2 g/kg protein", () => {
+test("calcCalories: recomp uses 250 deficit and protein in the 1.6–2.2 g/kg range", () => {
   const c = calcCalories({ weight: 90, height: 180, age: 40, gender: "male", activity: "moderate", goalDirection: "recomp" });
   assert.equal(c.adjustment, -250);
-  assert.equal(c.protein, 198);
+  assert.equal(c.protein, 171); // midpoint of 144–198 g
+  assert.deepEqual([c.proteinRange.low, c.proteinRange.high], [144, 198]);
   assert.equal(calcCalories({ weight: 90 }), null);
 });
 
@@ -104,7 +107,7 @@ test("sessions: averageDailyBurn + weekSummary", () => {
     { date: new Date(NOW - 30 * DAY).toISOString(), kcal: 999 },
   ];
   assert.equal(averageDailyBurn(sessions, 14, NOW), 100);
-  assert.deepEqual(weekSummary(sessions, NOW), { count: 2, minutes: 90, kcal: 1400 });
+  assert.deepEqual(weekSummary(sessions, NOW), { count: 2, minutes: 90, kcal: 1400, dayBurnAvg: null });
 });
 
 // ─── NEW: session never silently dies ────────────────────────────────────────
@@ -204,6 +207,193 @@ test("workout tabs: Biceps/Triceps; legacy Arms only while old sets exist", () =
   assert.equal(withLegacy[withLegacy.length - 1], "Arms");
   assert.ok(withLegacy.includes("Biceps") && withLegacy.includes("Triceps"));
   assert.ok(!WORKOUT_MUSCLES.includes("Arms"));
+});
+
+// ─── NEW: goal start date + baseline (pace fix) ──────────────────────────────
+const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
+const daysAgo = (n) => iso(NOW - n * DAY);
+// weigh-ins every `every` days from `fromDaysAgo` to today, changing `perWeek` kg/week
+const series = (fromDaysAgo, startW, perWeek, every = 2) => {
+  const out = [];
+  for (let d = fromDaysAgo; d >= 0; d -= every) {
+    out.push({ date: daysAgo(d), weight: +(startW + perWeek * ((fromDaysAgo - d) / 7)).toFixed(2) });
+  }
+  return out;
+};
+
+test("goalStartDate: start_date, else created_at, else null", () => {
+  assert.equal(goalStartDate({ start_date: "2026-09-01", created_at: "2026-08-01T10:00:00Z" }), "2026-09-01");
+  assert.equal(goalStartDate({ created_at: "2026-08-15T22:10:00+00:00" }), "2026-08-15");
+  assert.equal(goalStartDate({}), null);
+  assert.equal(goalStartDate(null), null);
+});
+
+test("baselineAt: reading closest to the goal start, not the first ever", () => {
+  const s = [
+    { date: "2026-05-01", weight: 95 }, // months before the goal — must NOT be the baseline
+    { date: "2026-08-28", weight: 90 },
+    { date: "2026-09-04", weight: 89.4 },
+  ];
+  assert.deepEqual(baselineAt(s, "weight", "2026-08-30"), { date: "2026-08-28", value: 90 });
+  assert.deepEqual(baselineAt(s, "weight", "2026-09-03"), { date: "2026-09-04", value: 89.4 });
+  assert.deepEqual(baselineAt(s, "weight", null), { date: "2026-05-01", value: 95 });
+  assert.equal(baselineAt([], "weight", "2026-09-01"), null);
+  // tie → earlier reading
+  assert.equal(baselineAt([{ date: "2026-09-01", weight: 1 }, { date: "2026-09-05", weight: 2 }], "weight", "2026-09-03").value, 1);
+});
+
+test("pace uses the goal's clock: old history no longer inflates elapsed time", () => {
+  // Goal set 10 days ago with a 60-day window; old readings from months ago exist.
+  const start = daysAgo(10), end = iso(NOW + 50 * DAY);
+  const p = computePace({ curr: 89, start: 90, target: 85, startDate: start, targetDate: end, goodDirection: -1, now: NOW });
+  assert.equal(p.status, "Just started"); // 10 days in — not "Behind"
+  assert.ok(p.elapsed > 15 && p.elapsed < 20, `elapsed ${p.elapsed}`); // ~10 of 60 days
+});
+
+// ─── NEW: InBody-driven coach ────────────────────────────────────────────────
+test("composition: fat, fat-free and muscle in kg", () => {
+  assert.deepEqual(composition({ date: "2026-09-01", weight: 90, body_fat: 25, muscle_mass: 40 }),
+    { date: "2026-09-01", weight: 90, bf: 25, smmPct: 40, fm: 22.5, ffm: 67.5, smmKg: 36 });
+  assert.equal(composition({ date: "2026-09-01" }), null);
+});
+
+test("weightTrend: regression over recent weigh-ins; needs 3+ points over 10+ days", () => {
+  const t = weightTrend(series(28, 92, -0.9), NOW);
+  assert.ok(Math.abs(t.kgPerWeek + 0.9) < 0.05, `got ${t.kgPerWeek}`);
+  assert.equal(weightTrend(series(6, 92, -0.9), NOW), null); // span < 10 days
+  assert.equal(weightTrend([{ date: daysAgo(20), weight: 90 }, { date: daysAgo(0), weight: 89 }], NOW), null);
+});
+
+test("proteinRange follows the sources", () => {
+  assert.deepEqual(proteinRange("cut", 90, 67.5), { low: 155, high: 209, basis: "2.3–3.1 g/kg fat-free mass", source: "helms2014" });
+  assert.deepEqual([proteinRange("build", 90).low, proteinRange("build", 90).high], [144, 198]);
+  assert.equal(proteinRange("build", 90).source, "iraki2019");
+  assert.equal(directionFor("cut"), "lose");
+  assert.equal(directionFor("build"), "gain");
+});
+
+const scan = (dAgo, weight, body_fat, muscle_mass) => ({ date: daysAgo(dAgo), weight, body_fat, muscle_mass });
+
+test("coach · cut losing too slowly → eat less", () => {
+  const weights = series(28, 90.8, -0.2);
+  const r = coachAnalysis({ goalType: "cut", scans: [scan(28, 90.8, 25, 40), scan(0, 90, 24.8, 40.3)], weights, now: NOW });
+  assert.ok(r.kcalAdjust < 0 && r.kcalAdjust >= -300, `kcal ${r.kcalAdjust}`);
+  assert.ok(r.actions.some((a) => a.kind === "calories" && /less/.test(a.text)));
+  assert.equal(r.status, "warn");
+  assert.ok(r.sourcesUsed.includes("helms2014"));
+});
+
+test("coach · cut inside 0.5–1%/wk → no calorie change", () => {
+  const weights = series(28, 92.8, -0.7);
+  const r = coachAnalysis({ goalType: "cut", scans: [scan(28, 92.8, 25, 40), scan(0, 90, 23.6, 41.1)], weights, now: NOW });
+  assert.equal(r.kcalAdjust, 0);
+  assert.ok(r.findings.some((f) => f.tone === "ok"));
+});
+
+test("coach · cut too fast → add calories", () => {
+  const weights = series(28, 94.8, -1.2);
+  const r = coachAnalysis({ goalType: "cut", scans: [scan(0, 90, 24, 40)], weights, now: NOW });
+  assert.equal(r.kcalAdjust, 150);
+});
+
+test("coach · cut target date too aggressive → suggests a realistic date", () => {
+  const weights = series(28, 91, -0.7);
+  const goal = { goal_type: "cut", target_weight: 80, target_date: iso(NOW + 21 * DAY) };
+  const r = coachAnalysis({ goal, scans: [scan(0, 90, 24, 40)], weights, now: NOW });
+  assert.ok(r.actions.some((a) => a.kind === "goal"));
+});
+
+test("coach · cut with muscle loss beyond noise → protein to the top of range", () => {
+  const weights = series(28, 92.8, -0.7);
+  // 40% of 92.8 = 37.12 kg → 39% of 90 = 35.1 kg : −2 kg muscle
+  const r = coachAnalysis({ goalType: "cut", scans: [scan(28, 92.8, 25, 40), scan(0, 90, 24.5, 39)], weights, now: NOW });
+  assert.equal(r.status, "bad");
+  assert.ok(r.actions.some((a) => a.kind === "protein" && /top/.test(a.text)));
+  assert.ok(r.actions.some((a) => a.kind === "training"));
+  assert.ok(r.kcalAdjust > 0);
+});
+
+test("coach · build not gaining + muscle flat 35 days → more protein and calories", () => {
+  const weights = series(35, 80, 0, 3);
+  const r = coachAnalysis({ goalType: "build", scans: [scan(35, 80, 15, 45), scan(0, 80, 15, 45.1)], weights, now: NOW });
+  assert.ok(r.kcalAdjust > 0);
+  assert.ok(r.actions.some((a) => a.kind === "protein" && /1\.6–2\.2/.test(a.text)));
+  assert.ok(r.findings.some((f) => /hasn't moved/.test(f.text)));
+});
+
+test("coach · build gaining too fast → trim", () => {
+  const weights = series(28, 78, 0.8);
+  const r = coachAnalysis({ goalType: "build", scans: [scan(0, 81.2, 16, 44)], weights, now: NOW });
+  assert.ok(r.kcalAdjust < 0);
+});
+
+test("coach · recomposition working → keep going", () => {
+  const weights = series(35, 85, 0);
+  // fat 85*0.22=18.7 → 85*0.20=17.0 (−1.7 kg); muscle 85*0.42=35.7 → 85*0.43=36.55 (+0.85 kg)
+  const r = coachAnalysis({ goalType: "recomp", scans: [scan(35, 85, 22, 42), scan(0, 85, 20, 43)], weights, now: NOW });
+  assert.equal(r.kcalAdjust, 0);
+  assert.ok(r.findings.some((f) => /recomposition is working/.test(f.text)));
+});
+
+test("coach · no goal type / no scans / scans too close", () => {
+  assert.equal(coachAnalysis({ scans: [scan(0, 90, 24, 40)], weights: [], now: NOW }).status, "no-goal");
+  assert.equal(coachAnalysis({ goalType: "cut", scans: [], weights: [], now: NOW }).status, "no-data");
+  const r = coachAnalysis({ goalType: "cut", scans: [scan(5, 90.5, 24, 40), scan(0, 90, 24, 40)], weights: [], now: NOW });
+  assert.equal(r.prev, null);
+  assert.ok(r.findings.some((f) => /2 weeks apart/.test(f.text)));
+});
+
+test("coach bands match the cited ranges", () => {
+  assert.deepEqual([RATE_BANDS.cut.min, RATE_BANDS.cut.max], [-1.0, -0.5]);
+  assert.deepEqual([RATE_BANDS.build.min, RATE_BANDS.build.max], [0.25, 0.5]);
+  assert.ok(SOURCES.helms2014 && SOURCES.iraki2019 && SOURCES.morton2018);
+});
+
+test("coach · cut too slow AND losing muscle → hold calories, fix protein/training first", () => {
+  const weights = series(28, 92, -0.2);
+  const r = coachAnalysis({ goalType: "cut", scans: [scan(28, 92, 25, 40), scan(0, 91.2, 24.8, 39.2)], weights, now: NOW });
+  assert.equal(r.kcalAdjust, 0);
+  const cal = r.actions.filter((a) => a.kind === "calories");
+  assert.equal(cal.length, 1);
+  assert.match(cal[0].text, /Hold calories/);
+});
+
+test("coach · never gives two calorie instructions", () => {
+  const cases = [
+    ["cut", series(28, 92, -0.2), [scan(28, 92, 25, 40), scan(0, 91.2, 24.8, 39.2)]],
+    ["build", series(28, 78, 0.8), [scan(35, 78, 15, 45), scan(0, 81.2, 18, 44)]],
+    ["recomp", series(35, 84, 0.5), [scan(35, 84, 22, 42), scan(0, 86.5, 23.5, 40.5)]],
+    ["recomp", series(35, 88, -1.0), [scan(35, 88, 22, 42), scan(0, 83, 21, 41)]],
+  ];
+  for (const [goalType, weights, scans] of cases) {
+    const r = coachAnalysis({ goalType, scans, weights, now: NOW });
+    assert.equal(r.actions.filter((a) => a.kind === "calories").length, 1, goalType);
+  }
+});
+
+// ─── NEW: whole-day burn ─────────────────────────────────────────────────────
+test("averageDayBurn: one value per day, recent only, ignores empty", () => {
+  const s = [
+    { date: daysAgo(1), day_kcal: 2800 },
+    { date: daysAgo(1), day_kcal: 2900 }, // same day → latest wins
+    { date: daysAgo(3), day_kcal: "2500 kcal" },
+    { date: daysAgo(4), day_kcal: 0 },
+    { date: daysAgo(4), kcal: 600 }, // old per-session field is not a day total
+    { date: daysAgo(30), day_kcal: 4000 }, // outside window
+  ];
+  assert.deepEqual(averageDayBurn(s, 14, NOW), { avg: 2700, days: 2 });
+  assert.equal(averageDayBurn([], 14, NOW), null);
+});
+
+test("calcCalories: InBody fat-free mass → Katch–McArdle, no age/height needed", () => {
+  const c = calcCalories({ weight: 90, ffm: 67.5, activity: "moderate", goalDirection: "lose" });
+  assert.equal(c.bmr, Math.round(370 + 21.6 * 67.5));
+  assert.match(c.bmrMethod, /Katch/);
+  assert.equal(c.adjustment, -750); // 0.75%/wk of 90 kg ≈ 743 → 750
+  assert.deepEqual([c.proteinRange.low, c.proteinRange.high], [155, 209]);
+  const withBurn = calcCalories({ weight: 90, ffm: 67.5, activity: "moderate", dayBurn: 3000, goalDirection: "maintain" });
+  assert.equal(withBurn.tdee, Math.round((370 + 21.6 * 67.5) * 1.55 * 0.6 + 3000 * 0.4));
+  assert.equal(calcCalories({ weight: 90, activity: "moderate" }), null);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
