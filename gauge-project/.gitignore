@@ -1,2 +1,4 @@
 node_modules/
 build/
+# The repo has never had a lockfile; Vercel installs from package.json.
+package-lock.json
