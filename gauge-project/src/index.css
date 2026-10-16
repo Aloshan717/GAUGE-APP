@@ -6,7 +6,7 @@ html, body, #root {
   padding: 0;
   width: 100%;
   min-height: 100%;
-  background: #161b1f;          /* matches the dark page background */
+  background: #000000;          /* matches the dark page background (App updates it per theme) */
   overscroll-behavior: none;     /* no white rubber-band bounce on iOS */
 }
 
@@ -46,7 +46,7 @@ body {
     max-width: 420px;
     height: min(880px, calc(100dvh - 56px));
     border-radius: 24px;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06);
     padding-top: 0;
   }
 }
@@ -111,7 +111,38 @@ select {
 
 /* Placeholders must read as hints, never as saved values */
 input::placeholder {
-  color: #6b7780;
+  color: var(--muted, #6b7780);
   opacity: 1;
   font-weight: 400;
 }
+
+/* ── Interaction ───────────────────────────────────────── */
+button { -webkit-user-select: none; user-select: none; }
+.g-press { transition: transform 0.12s ease, opacity 0.12s ease, background-color 0.15s ease, border-color 0.15s ease; }
+.g-press:active:not(:disabled) { transform: scale(0.97); }
+.g-input { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+.g-input:focus { border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-soft); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Horizontal chip rows scroll without a visible bar */
+.g-hscroll { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.g-hscroll::-webkit-scrollbar { display: none; }
+
+/* ── Motion ────────────────────────────────────────────── */
+@keyframes g-spin  { to { transform: rotate(360deg); } }
+@keyframes g-fade  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes g-rise  { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes g-up    { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes g-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+.g-fadein { animation: g-rise 0.25s ease both; }
+.g-sheet  { animation: g-up 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .g-fadein, .g-sheet { animation: none; }
+  .g-press:active:not(:disabled) { transform: none; }
+}
+
+details > summary { list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: "▸ "; }
+details[open] > summary::before { content: "▾ "; }

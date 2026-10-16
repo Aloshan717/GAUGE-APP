@@ -9,6 +9,9 @@ import {
   SESSION_MUSCLES, WORKOUT_MUSCLES, workoutMuscleTabs,
   proteinRange, directionFor, goalStartDate, baselineAt, composition,
   weightTrend, coachAnalysis, averageDayBurn, RATE_BANDS, SOURCES,
+  parseScanReading, musclePercent, scanHttpError, fitWithin,
+  ewmaTrend, filterRange, weightDirection, weekStrip,
+  exerciseNames, exerciseHistory, personalBestIds, greeting, dailyVolume,
 } from "../src/logic.js";
 
 let passed = 0, failed = 0;
@@ -394,6 +397,142 @@ test("calcCalories: InBody fat-free mass → Katch–McArdle, no age/height need
   const withBurn = calcCalories({ weight: 90, ffm: 67.5, activity: "moderate", dayBurn: 3000, goalDirection: "maintain" });
   assert.equal(withBurn.tdee, Math.round((370 + 21.6 * 67.5) * 1.55 * 0.6 + 3000 * 0.4));
   assert.equal(calcCalories({ weight: 90, activity: "moderate" }), null);
+});
+
+// ─── scan reading (api/scan → parseScanReading) ──────────────────────────────
+const reading = (o) => ({
+  is_body_composition_report: true, scan_date: "2026-10-10", weight_unit: "kg",
+  weight: 84.2, percent_body_fat: 21.4, body_fat_mass: 18.0, skeletal_muscle_mass: 37.9, notes: "", ...o,
+});
+
+test("parseScanReading: SMM kg → muscle % of body weight", () => {
+  const r = parseScanReading(reading(), "2026-01-01");
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.data, { date: "2026-10-10", weight: 84.2, body_fat: 21.4, muscle_mass: 45 });
+  assert.equal(r.smmKg, 37.9);
+  assert.ok(r.notes.some((n) => /37.9 kg ÷ 84.2 kg/.test(n)));
+});
+
+test("parseScanReading: lb sheets are converted to kg", () => {
+  const r = parseScanReading(reading({ weight_unit: "lb", weight: 185.6, skeletal_muscle_mass: 83.6, body_fat_mass: 39.7 }), "2026-01-01");
+  assert.equal(r.data.weight, 84.2);
+  assert.equal(r.data.muscle_mass, 45);
+  assert.ok(r.notes.some((n) => /lb/.test(n)));
+});
+
+test("parseScanReading: PBF missing → from fat mass; date missing → fallback", () => {
+  const r = parseScanReading(reading({ percent_body_fat: null, scan_date: null }), "2026-01-01");
+  assert.equal(r.data.body_fat, 21.4); // 18.0 / 84.2
+  assert.equal(r.data.date, "2026-01-01");
+  assert.ok(r.notes.some((n) => /using today/.test(n)));
+});
+
+test("parseScanReading: InBody dotted dates, string numbers, misreads dropped", () => {
+  const r = parseScanReading(reading({ scan_date: "2026.10.10", weight: "84.2", percent_body_fat: 214 }), "x");
+  assert.equal(r.data.date, "2026-10-10");
+  assert.equal(r.data.weight, 84.2);
+  assert.equal(r.data.body_fat, 21.4); // 214 % ignored, rebuilt from fat mass
+});
+
+test("parseScanReading: not a scan / nothing readable / empty", () => {
+  assert.equal(parseScanReading(reading({ is_body_composition_report: false }), "x").ok, false);
+  assert.equal(parseScanReading(reading({ weight: null, percent_body_fat: null, body_fat_mass: null, skeletal_muscle_mass: null }), "x").ok, false);
+  assert.equal(parseScanReading(null, "x").ok, false);
+  const onlySmm = parseScanReading(reading({ weight: null, percent_body_fat: 20, body_fat_mass: null }), "x");
+  assert.equal(onlySmm.data.muscle_mass, null);
+  assert.equal(onlySmm.data.body_fat, 20);
+});
+
+test("musclePercent: kg needs a weight; % passes through", () => {
+  assert.equal(musclePercent("37.9", "kg", "84.2"), 45);
+  assert.equal(musclePercent("45", "%", ""), 45);
+  assert.equal(musclePercent("37.9", "kg", ""), null);
+  assert.equal(musclePercent("", "kg", "80"), null);
+});
+
+test("scanHttpError: JSON error first, then the HTTP status", () => {
+  assert.equal(scanHttpError(500, { error: "ANTHROPIC_API_KEY is not set" }), "ANTHROPIC_API_KEY is not set");
+  assert.match(scanHttpError(413, null), /too large/);
+  assert.match(scanHttpError(504, null), /too long/);
+  assert.match(scanHttpError(404, null), /isn't available/);
+  assert.match(scanHttpError(null, null), /network/);
+});
+
+test("fitWithin: downscales the long side only, never upscales", () => {
+  assert.deepEqual(fitWithin(4032, 3024, 2400), { width: 2400, height: 1800 });
+  assert.deepEqual(fitWithin(3024, 4032, 2400), { width: 1800, height: 2400 });
+  assert.deepEqual(fitWithin(1200, 900, 2400), { width: 1200, height: 900 });
+  assert.deepEqual(fitWithin(0, 900, 2400), { width: 0, height: 0 });
+});
+
+// ─── redesign helpers ────────────────────────────────────────────────────────
+test("ewmaTrend: smooths noise, respects gaps, keeps rows", () => {
+  const t = ewmaTrend([
+    { date: "2026-09-01", weight: 90 }, { date: "2026-09-02", weight: 91 },
+    { date: "2026-09-12", weight: 88 },
+  ]);
+  assert.equal(t.length, 3);
+  assert.equal(t[0].trend, 90);
+  assert.equal(t[1].trend, 90.1);                 // 10% of the way
+  assert.ok(t[2].trend < 89.5 && t[2].trend > 88); // 10-day gap moves it much further
+});
+
+test("filterRange: keeps the window, falls back to the latest point", () => {
+  const s = [{ date: "2026-01-01" }, { date: "2026-09-20" }, { date: "2026-09-25" }];
+  assert.equal(filterRange(s, "1M", NOW).length, 2);
+  assert.equal(filterRange(s, "ALL", NOW).length, 3);
+  assert.deepEqual(filterRange([{ date: "2025-01-01" }], "1M", NOW), [{ date: "2025-01-01" }]);
+});
+
+test("weightDirection: from target vs start, else goal type", () => {
+  assert.equal(weightDirection({ target_weight: 80 }, 90), -1);
+  assert.equal(weightDirection({ target_weight: 80 }, 72), 1);
+  assert.equal(weightDirection({ goal_type: "build" }, null), 1);
+  assert.equal(weightDirection(null, null), -1);
+});
+
+test("weekStrip: 7 days ending today, trained days marked", () => {
+  const w = weekStrip([{ date: "2026-09-26" }, { date: "2026-09-21" }, { date: "2026-09-01" }], NOW);
+  assert.equal(w.length, 7);
+  assert.equal(w[6].date, "2026-09-26");
+  assert.equal(w[6].today, true);
+  assert.deepEqual(w.filter((d) => d.trained).map((d) => d.date), ["2026-09-21", "2026-09-26"]);
+  assert.equal(w[6].label, "S"); // 26 Sep 2026 is a Saturday
+});
+
+test("exercise history: names by recency, last session, best set, PR ids", () => {
+  const logs = [
+    { id: 1, muscle_group: "Chest", exercise: "Bench press", weight_kg: 70, reps: 8, date: "2026-09-10" },
+    { id: 2, muscle_group: "Chest", exercise: "bench press ", weight_kg: 75, reps: 5, date: "2026-09-17" },
+    { id: 3, muscle_group: "Chest", exercise: "Bench press", weight_kg: 72.5, reps: 6, date: "2026-09-17" },
+    { id: 4, muscle_group: "Chest", exercise: "Incline DB", weight_kg: 26, reps: 10, date: "2026-09-12" },
+    { id: 5, muscle_group: "Back", exercise: "Row", weight_kg: 60, reps: 10, date: "2026-09-20" },
+  ];
+  assert.deepEqual(exerciseNames(logs, "Chest"), ["bench press", "Incline DB"]);
+  const h = exerciseHistory(logs, "Bench Press");
+  assert.equal(h.lastDate, "2026-09-17");
+  assert.equal(h.last.length, 2);
+  assert.deepEqual([h.best.weight_kg, h.best.reps], [75, 5]);
+  assert.equal(exerciseHistory(logs, "Bench press", "2026-09-17").lastDate, "2026-09-10");
+  assert.equal(exerciseHistory(logs, "Squat"), null);
+  assert.deepEqual([...personalBestIds(logs)].sort(), [2, 4, 5]);
+});
+
+test("dailyVolume: one point per day, summed over sets, filtered by muscle", () => {
+  const logs = [
+    { muscle_group: "Chest", weight_kg: 70, reps: 8, date: "2026-09-10" },
+    { muscle_group: "Chest", weight_kg: 72.5, reps: 6, date: "2026-09-10" },
+    { muscle_group: "Back", weight_kg: 60, reps: 10, date: "2026-09-10" },
+    { muscle_group: "Chest", weight_kg: 75, reps: 5, date: "2026-09-03" },
+  ];
+  assert.deepEqual(dailyVolume(logs, "Chest"), [{ date: "2026-09-03", volume: 375 }, { date: "2026-09-10", volume: 995 }]);
+  assert.deepEqual(dailyVolume([], "Chest"), []);
+});
+
+test("greeting by hour", () => {
+  assert.equal(greeting(8), "Good morning");
+  assert.equal(greeting(14), "Good afternoon");
+  assert.equal(greeting(21), "Good evening");
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -134,6 +134,99 @@ export function parseScanResponse(apiResponse, fallbackDate) {
   return { ok: true, data };
 }
 
+// /api/scan returns the numbers exactly as printed on the sheet. Units and the
+// muscle percentage are worked out here, not by the model: the old prompt asked
+// the model for "muscle as a % of body weight", which made it guess between the
+// printed SMM in kg and its own arithmetic.
+const LB_TO_KG = 0.45359237;
+const round1 = (n) => Math.round(n * 10) / 10;
+
+export function parseScanReading(reading, fallbackDate) {
+  if (!reading || typeof reading !== "object") {
+    return { ok: false, error: "The reader returned nothing. Try again, or enter the numbers manually." };
+  }
+  if (reading.is_body_composition_report === false) {
+    return { ok: false, error: "That doesn't look like an InBody result sheet. Upload the printed result page (or its PDF), or enter the numbers manually." };
+  }
+
+  const notes = [];
+  const lb = reading.weight_unit === "lb";
+  const mass = (v) => {
+    const n = coerceNumber(v);
+    if (n == null || n <= 0) return null;
+    return lb ? round1(n * LB_TO_KG) : n;
+  };
+
+  let weight = mass(reading.weight);
+  const fatMass = mass(reading.body_fat_mass);
+  const smmKg = mass(reading.skeletal_muscle_mass);
+  let bodyFat = coerceNumber(reading.percent_body_fat);
+  if (lb && (weight != null || smmKg != null)) notes.push("Converted from lb to kg.");
+
+  // Readings outside these ranges are misreads, not people.
+  if (weight != null && (weight < 25 || weight > 350)) { notes.push(`Ignored weight ${weight} kg — doesn't look right.`); weight = null; }
+  if (bodyFat != null && (bodyFat < 2 || bodyFat > 75)) { notes.push(`Ignored body fat ${bodyFat}% — doesn't look right.`); bodyFat = null; }
+
+  if (bodyFat == null && fatMass != null && weight) {
+    bodyFat = round1((fatMass / weight) * 100);
+    notes.push(`Body fat % worked out from fat mass ${fatMass} kg ÷ ${weight} kg.`);
+  }
+
+  let muscle = null;
+  if (smmKg != null && weight) {
+    muscle = round1((smmKg / weight) * 100);
+    if (muscle < 10 || muscle > 75) { notes.push(`Ignored muscle ${smmKg} kg — doesn't fit a ${weight} kg body weight.`); muscle = null; }
+    else notes.push(`Muscle % = skeletal muscle ${smmKg} kg ÷ ${weight} kg.`);
+  } else if (smmKg != null) {
+    notes.push(`Skeletal muscle ${smmKg} kg found, but no weight to turn it into a %.`);
+  }
+
+  const date = normalizeDate(reading.scan_date);
+  if (!date) notes.push("No scan date found — using today. Change it below if needed.");
+
+  const data = {
+    date: date || fallbackDate,
+    weight,
+    body_fat: bodyFat != null ? round1(bodyFat) : null,
+    muscle_mass: muscle,
+  };
+  if (typeof reading.notes === "string" && reading.notes.trim()) notes.push(reading.notes.trim());
+
+  if (data.weight == null && data.body_fat == null && data.muscle_mass == null) {
+    return { ok: false, error: "Couldn't read the numbers on that sheet. Try a sharper, straight-on photo of the whole page, or enter them manually." };
+  }
+  return { ok: true, data, smmKg, notes };
+}
+
+// Manual entry: InBody prints skeletal muscle in kg, the app stores % of weight.
+export function musclePercent(value, unit, weight) {
+  const v = coerceNumber(value);
+  if (v == null) return null;
+  if (unit !== "kg") return v;
+  const w = coerceNumber(weight);
+  if (!w) return null;
+  return round1((v / w) * 100);
+}
+
+// What the person sees when /api/scan fails. Vercel answers some failures
+// (too large, timed out) with plain text, not JSON, so the status matters.
+export function scanHttpError(status, body) {
+  const msg = body && typeof body === "object" ? body.error : null;
+  if (msg) return typeof msg === "string" ? msg : (msg.message || "Reader failed.");
+  if (status === 413) return "That file is too large to send. Use a photo of the page instead of the PDF.";
+  if (status === 504 || status === 408) return "Reading the scan took too long. Try again.";
+  if (status === 404) return "The scan reader isn't available on this deployment (api/scan is missing).";
+  if (status === 401) return "You're signed out. Sign in again, then retry.";
+  return `The scan reader failed (error ${status ?? "network"}). Try again, or enter the numbers manually.`;
+}
+
+// Downscale target that keeps the aspect ratio and never upscales.
+export function fitWithin(width, height, maxSide) {
+  if (!(width > 0) || !(height > 0)) return { width: 0, height: 0 };
+  const scale = Math.min(1, maxSide / Math.max(width, height));
+  return { width: Math.round(width * scale), height: Math.round(height * scale) };
+}
+
 // ─── WEIGHT SERIES ───────────────────────────────────────────────────────────
 
 // A weigh-in is a weigh-in, whether typed in or read off a scan. Merging both
@@ -149,6 +242,49 @@ export function mergeWeightSeries(weights, inbody) {
     if (v != null && w.date) byDate.set(w.date, { date: w.date, weight: v, source: "manual", id: w.id });
   });
   return [...byDate.values()].sort((a, b) => new Date(a.date) - new Date(b.date));
+}
+
+// Trend weight: an exponentially weighted average that accounts for uneven
+// gaps between weigh-ins (10% per day). It shows the direction under the
+// day-to-day water swings, the way MacroFactor / Hacker's Diet trend lines do.
+export function ewmaTrend(series, field = "weight", alphaPerDay = 0.1) {
+  let trend = null, lastT = null;
+  return (series || []).map((p) => {
+    const v = coerceNumber(p?.[field]);
+    const t = new Date((normalizeDate(p?.date) || "") + "T00:00:00Z").getTime();
+    if (v == null || !isFinite(t)) return { ...p, trend: trend };
+    if (trend == null) trend = v;
+    else {
+      const days = Math.max(0, (t - lastT) / 86400000);
+      const a = 1 - Math.pow(1 - alphaPerDay, Math.max(1, days));
+      trend = trend + a * (v - trend);
+    }
+    lastT = t;
+    return { ...p, trend: Math.round(trend * 100) / 100 };
+  });
+}
+
+export const RANGES = [
+  { id: "1M", days: 31 }, { id: "3M", days: 92 }, { id: "6M", days: 183 }, { id: "ALL", days: null },
+];
+
+// Points inside a time range ending today. Always keeps at least the latest point.
+export function filterRange(series, rangeId, now = Date.now()) {
+  const r = RANGES.find((x) => x.id === rangeId);
+  const list = series || [];
+  if (!r || r.days == null) return list;
+  const since = now - r.days * 86400000;
+  const inRange = list.filter((p) => new Date(p.date + "T00:00:00").getTime() >= since);
+  return inRange.length ? inRange : list.slice(-1);
+}
+
+// Weight's good direction comes from the goal: down for a cut, up for a build.
+// It used to be "down" for everyone, so a build goal read as "Target reached".
+export function weightDirection(goal, start) {
+  const target = coerceNumber(goal?.target_weight);
+  const s = coerceNumber(start);
+  if (target != null && s != null && target !== s) return target > s ? 1 : -1;
+  return goal?.goal_type === "build" ? 1 : -1;
 }
 
 // ─── CHART AXIS ──────────────────────────────────────────────────────────────
@@ -824,4 +960,82 @@ export function averageDayBurn(sessions, days = 14, now) {
   if (!byDate.size) return null;
   const vals = [...byDate.values()];
   return { avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length), days: vals.length };
+}
+
+// The last 7 days, oldest first, marking the days with a logged session.
+// Dates use the same UTC calendar as todayISO(), so "today" always matches.
+export function weekStrip(sessions, now = Date.now()) {
+  const trained = new Set((sessions || []).map((s) => normalizeDate(s?.date)).filter(Boolean));
+  const out = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now - i * 86400000);
+    const iso = d.toISOString().slice(0, 10);
+    out.push({ date: iso, label: "SMTWTFS"[d.getUTCDay()], trained: trained.has(iso), today: i === 0 });
+  }
+  return out;
+}
+
+// ─── EXERCISES ───────────────────────────────────────────────────────────────
+
+const exKey = (s) => String(s || "").trim().toLowerCase();
+
+// Exercise names already used for a muscle group, most recent first.
+export function exerciseNames(logs, muscle) {
+  const seen = new Map();
+  [...(logs || [])]
+    .filter((l) => l && (!muscle || l.muscle_group === muscle) && String(l.exercise || "").trim())
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    .forEach((l) => { const k = exKey(l.exercise); if (!seen.has(k)) seen.set(k, String(l.exercise).trim()); });
+  return [...seen.values()];
+}
+
+// What you did last time on an exercise and your heaviest set, so the next set
+// can be filled from it (Hevy-style "previous" values).
+export function exerciseHistory(logs, exercise, beforeDate = null) {
+  const k = exKey(exercise);
+  if (!k) return null;
+  const rows = (logs || []).filter((l) => l && exKey(l.exercise) === k && coerceNumber(l.weight_kg) != null);
+  if (!rows.length) return null;
+  const earlier = beforeDate ? rows.filter((l) => l.date < beforeDate) : rows;
+  const lastDate = earlier.reduce((m, l) => (l.date > m ? l.date : m), "");
+  const last = lastDate ? earlier.filter((l) => l.date === lastDate).map((l) => ({ weight_kg: +l.weight_kg, reps: +l.reps })) : [];
+  const best = rows.reduce((b, l) => (!b || +l.weight_kg > +b.weight_kg || (+l.weight_kg === +b.weight_kg && +l.reps > +b.reps) ? l : b), null);
+  return { lastDate: lastDate || null, last, best: { weight_kg: +best.weight_kg, reps: +best.reps, date: best.date, id: best.id } };
+}
+
+// Ids of the sets that are each exercise's heaviest (ties → more reps, then earliest).
+export function personalBestIds(logs) {
+  const best = new Map();
+  (logs || []).forEach((l) => {
+    const k = exKey(l?.exercise);
+    const w = coerceNumber(l?.weight_kg);
+    if (!k || w == null) return;
+    const b = best.get(k);
+    const r = +l.reps || 0;
+    if (!b || w > b.w || (w === b.w && r > b.r) || (w === b.w && r === b.r && l.date < b.date)) {
+      best.set(k, { w, r, date: l.date, id: l.id });
+    }
+  });
+  return new Set([...best.values()].map((b) => b.id));
+}
+
+// Total volume (kg × reps, summed over sets) per training day for one muscle
+// group. One point per day — per-set points made the chart zig-zag.
+export function dailyVolume(logs, muscle) {
+  const byDate = new Map();
+  (logs || []).forEach((l) => {
+    if (!l || (muscle && l.muscle_group !== muscle)) return;
+    const d = normalizeDate(l.date);
+    const w = coerceNumber(l.weight_kg), r = coerceNumber(l.reps);
+    if (!d || w == null || r == null) return;
+    byDate.set(d, (byDate.get(d) || 0) + w * r);
+  });
+  return [...byDate.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([date, volume]) => ({ date, volume: Math.round(volume) }));
+}
+
+export function greeting(hour) {
+  if (hour < 5) return "Good evening";
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
 }
