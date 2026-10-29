@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import {
   fmt, mergeWeightSeries, analyseMetric, weightTrend, filterRange, RANGES,
-  goalStartDate, baselineAt, weightDirection,
+  goalStartDate, baselineAt, weightDirection, withMuscleKg, goalMuscleKg, scanMuscleKg,
 } from "../logic";
 import { sb, store } from "../api";
 import {
@@ -134,7 +134,7 @@ function MetricBlock({ label, color, T, data, field, curr, prev, first, target, 
 
 function InbodyView({ T, data, onRefresh, openSheet }) {
   const { inbody, goal } = data;
-  const sorted = [...inbody].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const sorted = withMuscleKg(inbody).sort((a, b) => new Date(a.date) - new Date(b.date));
   const latest = sorted[sorted.length - 1];
   const prev = sorted[sorted.length - 2];
   const del = async (id) => { await sb.delete("inbody_scans", id); await onRefresh(); };
@@ -165,7 +165,7 @@ function InbodyView({ T, data, onRefresh, openSheet }) {
             {[
               { label: "Weight", val: latest.weight, unit: "kg", pv: prev?.weight, good: 0, c: T.accent },
               { label: "Body fat", val: latest.body_fat, unit: "%", pv: prev?.body_fat, good: -1, c: T.fat },
-              { label: "Muscle", val: latest.muscle_mass, unit: "%", pv: prev?.muscle_mass, good: 1, c: T.muscle },
+              { label: "Muscle Mass", val: latest.muscle_kg, unit: "kg", pv: prev?.muscle_kg, good: 1, c: T.muscle },
             ].map((b) => (
               <div key={b.label} style={{ background: T.surface2, borderRadius: 14, padding: "10px 12px", borderTop: `2px solid ${b.c}`, minWidth: 0 }}>
                 <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.n600 }}>{b.label}</div>
@@ -192,10 +192,10 @@ function InbodyView({ T, data, onRefresh, openSheet }) {
             data={sorted.filter((s) => s.body_fat != null)}
             curr={latest.body_fat} prev={prev?.body_fat} first={sorted.find((s) => s.body_fat != null)?.body_fat}
             target={goal?.target_body_fat} targetDate={goal?.target_date} goodDirection={-1} />
-          <MetricBlock label="Muscle" field="muscle_mass" unit="%" color={T.muscle} T={T}
-            data={sorted.filter((s) => s.muscle_mass != null)}
-            curr={latest.muscle_mass} prev={prev?.muscle_mass} first={sorted.find((s) => s.muscle_mass != null)?.muscle_mass}
-            target={goal?.target_muscle} targetDate={goal?.target_date} goodDirection={1} />
+          <MetricBlock label="Muscle Mass" field="muscle_kg" unit=" kg" color={T.muscle} T={T}
+            data={sorted.filter((s) => s.muscle_kg != null)}
+            curr={latest.muscle_kg} prev={prev?.muscle_kg} first={sorted.find((s) => s.muscle_kg != null)?.muscle_kg}
+            target={goalMuscleKg(goal, latest.weight)} targetDate={goal?.target_date} goodDirection={1} />
         </Card>
       )}
 
@@ -206,7 +206,7 @@ function InbodyView({ T, data, onRefresh, openSheet }) {
             {[...inbody].sort((a, b) => new Date(b.date) - new Date(a.date)).map((s, i, arr) => (
               <Row key={s.id} T={T} last={i === arr.length - 1}
                 title={fmt(s.date)}
-                sub={<span style={{ fontVariantNumeric: "tabular-nums" }}>{s.weight != null ? `${s.weight} kg` : "—"} · {s.body_fat != null ? `${s.body_fat}% fat` : "—"} · {s.muscle_mass != null ? `${s.muscle_mass}% muscle` : "—"}</span>}
+                sub={<span style={{ fontVariantNumeric: "tabular-nums" }}>{s.weight != null ? `${s.weight} kg` : "—"} · {s.body_fat != null ? `${s.body_fat}% fat` : "—"} · {scanMuscleKg(s) != null ? `${scanMuscleKg(s)} kg muscle mass` : "—"}</span>}
                 right={<DelBtn T={T} onClick={() => del(s.id)} />} />
             ))}
           </div>

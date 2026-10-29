@@ -159,8 +159,16 @@ export const sb = {
   },
 
   // Returns { data, error }. On failure the caller keeps the form filled in.
-  async insert(table, data) {
-    const res = await this.request(`/rest/v1/${table}`, { method: "POST", body: data });
+  // `optional`: columns added by a newer SQL migration. If the database doesn't
+  // have them yet, the row is saved again without them instead of failing.
+  async insert(table, data, { optional = [] } = {}) {
+    let res = await this.request(`/rest/v1/${table}`, { method: "POST", body: data });
+    const missing = optional.filter((k) => k in data);
+    if (!res.ok && missing.length && /PGRST204|column/i.test(`${res.body?.code || ""} ${res.body?.message || ""}`)) {
+      const slim = { ...data };
+      missing.forEach((k) => delete slim[k]);
+      res = await this.request(`/rest/v1/${table}`, { method: "POST", body: slim });
+    }
     if (res.ok) return { data: res.body, error: null };
     const error = errText(res);
     notify(error);

@@ -84,7 +84,7 @@ export function ScanForm({ T, userId, onRefresh, onDone, initialMode }) {
   const [errorMsg, setErrorMsg] = useState("");
   const [pending, setPending] = useState(null);
   const [notes, setNotes] = useState([]);
-  const [manual, setManual] = useState({ date: todayISO(), weight: "", body_fat: "", muscle: "", muscleUnit: "kg" });
+  const [manual, setManual] = useState({ date: todayISO(), weight: "", body_fat: "", muscle_kg: "" });
   const [manualMsg, setManualMsg] = useState("");
   const pickRef = useRef();
   const cameraRef = useRef();
@@ -113,14 +113,18 @@ export function ScanForm({ T, userId, onRefresh, onDone, initialMode }) {
     }
   };
 
+  // Muscle Mass is entered and kept in kg (smm_kg). muscle_mass keeps the
+  // % of body weight too, so older app versions and the coach still work.
   const saveScan = async (d) => {
     const date = d.date || todayISO();
     const w = d.weight ? +d.weight : null;
+    const kg = d.muscle_kg ? +d.muscle_kg : null;
     const { error } = await sb.insert("inbody_scans", {
       user_id: userId, date, weight: w,
       body_fat: d.body_fat ? +d.body_fat : null,
-      muscle_mass: d.muscle_mass ? +d.muscle_mass : null,
-    });
+      muscle_mass: kg != null ? musclePercent(kg, "kg", w) : null,
+      smm_kg: kg,
+    }, { optional: ["smm_kg"] });
     if (error) return false;
     // A scan is also a weigh-in — log it so Today and Body never disagree
     if (w) await sb.insert("weight_entries", { user_id: userId, date, weight: w });
@@ -128,6 +132,7 @@ export function ScanForm({ T, userId, onRefresh, onDone, initialMode }) {
   };
 
   const confirmSave = async () => {
+    if (pending.muscle_kg && !pending.weight) { setNotes((n) => ["Add the weight too — Muscle Mass is saved with it.", ...n]); return; }
     setStatus("saving");
     if (!(await saveScan(pending))) { setStatus("confirm"); return; }   // keep the reading
     await onRefresh();
@@ -136,11 +141,10 @@ export function ScanForm({ T, userId, onRefresh, onDone, initialMode }) {
 
   const saveManual = async () => {
     if (!manual.date) return;
-    const muscle = manual.muscle ? musclePercent(manual.muscle, manual.muscleUnit, manual.weight) : null;
-    if (manual.muscle && muscle == null) { setManualMsg("Enter your weight too — it's needed to turn muscle kg into %."); return; }
+    if (manual.muscle_kg && !manual.weight) { setManualMsg("Enter your weight too — Muscle Mass is saved with it."); return; }
     setManualMsg("");
     setStatus("saving");
-    const ok = await saveScan({ date: manual.date, weight: manual.weight, body_fat: manual.body_fat, muscle_mass: muscle });
+    const ok = await saveScan(manual);
     if (!ok) { setStatus("idle"); return; }   // form stays filled in
     await onRefresh();
     onDone();
@@ -148,7 +152,6 @@ export function ScanForm({ T, userId, onRefresh, onDone, initialMode }) {
 
   const setM = (k) => (e) => setManual((f) => ({ ...f, [k]: e.target.value }));
   const setP = (k) => (e) => setPending((p) => ({ ...p, [k]: e.target.value }));
-  const musclePreview = manual.muscle && manual.muscleUnit === "kg" ? musclePercent(manual.muscle, "kg", manual.weight) : null;
 
   return (
     <>
@@ -208,7 +211,7 @@ export function ScanForm({ T, userId, onRefresh, onDone, initialMode }) {
                 <Field T={T} label="Date"><Input T={T} type="date" value={pending.date || ""} onChange={setP("date")} /></Field>
                 <Field T={T} label="Weight (kg)"><Input T={T} type="number" step="0.1" inputMode="decimal" value={pending.weight ?? ""} onChange={setP("weight")} /></Field>
                 <Field T={T} label="Body fat (%)"><Input T={T} type="number" step="0.1" inputMode="decimal" value={pending.body_fat ?? ""} onChange={setP("body_fat")} /></Field>
-                <Field T={T} label="Muscle (%)"><Input T={T} type="number" step="0.1" inputMode="decimal" value={pending.muscle_mass ?? ""} onChange={setP("muscle_mass")} /></Field>
+                <Field T={T} label="Muscle Mass (kg)"><Input T={T} type="number" step="0.1" inputMode="decimal" value={pending.muscle_kg ?? ""} onChange={setP("muscle_kg")} /></Field>
               </FormGrid>
               {notes.length > 0 && (
                 <div style={{ background: T.surface2, borderRadius: 12, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
@@ -226,16 +229,15 @@ export function ScanForm({ T, userId, onRefresh, onDone, initialMode }) {
 
       {mode === "manual" && (
         <>
-          <Muted T={T}>Copy the values from your InBody sheet. Skeletal Muscle Mass can be typed in kg (as printed) — it's turned into % of body weight for you.</Muted>
+          <Muted T={T}>Copy the values from your InBody sheet. Muscle Mass is the Skeletal Muscle Mass (SMM) in kg, as printed.</Muted>
           <FormGrid>
             <Field T={T} label="Date"><Input T={T} type="date" value={manual.date} onChange={setM("date")} /></Field>
             <Field T={T} label="Weight (kg)"><Input T={T} type="number" step="0.1" inputMode="decimal" placeholder="e.g. 84.0" value={manual.weight} onChange={setM("weight")} /></Field>
             <Field T={T} label="Body fat (%)"><Input T={T} type="number" step="0.1" inputMode="decimal" placeholder="PBF, e.g. 22.0" value={manual.body_fat} onChange={setM("body_fat")} /></Field>
-            <Field T={T} label={`Muscle (${manual.muscleUnit === "kg" ? "SMM kg" : "%"})`} hint={musclePreview != null ? `= ${musclePreview}% of body weight` : null}>
-              <Input T={T} type="number" step="0.1" inputMode="decimal" placeholder={manual.muscleUnit === "kg" ? "e.g. 37.9" : "e.g. 45.0"} value={manual.muscle} onChange={setM("muscle")} />
+            <Field T={T} label="Muscle Mass (kg)">
+              <Input T={T} type="number" step="0.1" inputMode="decimal" placeholder="SMM, e.g. 37.9" value={manual.muscle_kg} onChange={setM("muscle_kg")} />
             </Field>
           </FormGrid>
-          <Segmented T={T} size="sm" value={manual.muscleUnit} onChange={(u) => setManual((f) => ({ ...f, muscleUnit: u }))} options={[["kg", "Muscle in kg (SMM)"], ["%", "Muscle in %"]]} />
           {manualMsg && <div style={{ fontSize: 12.5, color: T.bad }}>{manualMsg}</div>}
           <Btn T={T} full icon="check" onClick={saveManual} disabled={status === "saving"}>{status === "saving" ? "Saving…" : "Save scan"}</Btn>
         </>

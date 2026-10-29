@@ -176,9 +176,9 @@ export function parseScanReading(reading, fallbackDate) {
   if (smmKg != null && weight) {
     muscle = round1((smmKg / weight) * 100);
     if (muscle < 10 || muscle > 75) { notes.push(`Ignored muscle ${smmKg} kg — doesn't fit a ${weight} kg body weight.`); muscle = null; }
-    else notes.push(`Muscle % = skeletal muscle ${smmKg} kg ÷ ${weight} kg.`);
+    else notes.push(`Muscle Mass = skeletal muscle mass (SMM) ${smmKg} kg.`);
   } else if (smmKg != null) {
-    notes.push(`Skeletal muscle ${smmKg} kg found, but no weight to turn it into a %.`);
+    notes.push(`Skeletal muscle ${smmKg} kg found, but no weight was read — add the weight to keep it.`);
   }
 
   const date = normalizeDate(reading.scan_date);
@@ -189,6 +189,7 @@ export function parseScanReading(reading, fallbackDate) {
     weight,
     body_fat: bodyFat != null ? round1(bodyFat) : null,
     muscle_mass: muscle,
+    muscle_kg: muscle != null ? smmKg : null,
   };
   if (typeof reading.notes === "string" && reading.notes.trim()) notes.push(reading.notes.trim());
 
@@ -196,6 +197,30 @@ export function parseScanReading(reading, fallbackDate) {
     return { ok: false, error: "Couldn't read the numbers on that sheet. Try a sharper, straight-on photo of the whole page, or enter them manually." };
   }
   return { ok: true, data, smmKg, notes };
+}
+
+// ─── MUSCLE MASS (kg) ────────────────────────────────────────────────────────
+// Muscle is shown as Muscle Mass in kg, exactly as InBody prints it. Scans saved
+// before the smm_kg column existed only have muscle_mass (% of body weight),
+// so their kg is rebuilt from that % and the scan's own weight.
+export function scanMuscleKg(scan) {
+  const kg = coerceNumber(scan?.smm_kg);
+  if (kg != null) return kg;
+  const pct = coerceNumber(scan?.muscle_mass), w = coerceNumber(scan?.weight);
+  return pct != null && w ? round1((w * pct) / 100) : null;
+}
+
+// Scans with a muscle_kg field added, for charts and baselines.
+export const withMuscleKg = (scans) => (scans || []).map((s) => ({ ...s, muscle_kg: scanMuscleKg(s) }));
+
+// Goal muscle target in kg. Older goals stored a % target; it is turned into kg
+// against the goal's target weight, else the latest weight.
+export function goalMuscleKg(goal, refWeight) {
+  const kg = coerceNumber(goal?.target_muscle_kg);
+  if (kg != null) return kg;
+  const pct = coerceNumber(goal?.target_muscle);
+  const w = coerceNumber(goal?.target_weight) ?? coerceNumber(refWeight);
+  return pct != null && w ? round1((w * pct) / 100) : null;
 }
 
 // Manual entry: InBody prints skeletal muscle in kg, the app stores % of weight.
@@ -585,12 +610,13 @@ export function composition(scan) {
   if (weight == null) return null;
   const bf = coerceNumber(scan?.body_fat);
   const smmPct = coerceNumber(scan?.muscle_mass);
+  const storedKg = coerceNumber(scan?.smm_kg);
   const fm = bf != null ? +(weight * bf / 100).toFixed(2) : null;
   return {
     date: normalizeDate(scan.date),
     weight, bf, smmPct, fm,
     ffm: fm != null ? +(weight - fm).toFixed(2) : null,
-    smmKg: smmPct != null ? +(weight * smmPct / 100).toFixed(2) : null,
+    smmKg: storedKg != null ? storedKg : smmPct != null ? +(weight * smmPct / 100).toFixed(2) : null,
   };
 }
 

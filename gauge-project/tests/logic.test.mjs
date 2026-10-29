@@ -11,7 +11,7 @@ import {
   weightTrend, coachAnalysis, averageDayBurn, RATE_BANDS, SOURCES,
   parseScanReading, musclePercent, scanHttpError, fitWithin,
   ewmaTrend, filterRange, weightDirection, weekStrip,
-  exerciseNames, exerciseHistory, personalBestIds, greeting, dailyVolume,
+  exerciseNames, exerciseHistory, personalBestIds, greeting, dailyVolume, scanMuscleKg, withMuscleKg, goalMuscleKg,
 } from "../src/logic.js";
 
 let passed = 0, failed = 0;
@@ -408,9 +408,9 @@ const reading = (o) => ({
 test("parseScanReading: SMM kg → muscle % of body weight", () => {
   const r = parseScanReading(reading(), "2026-01-01");
   assert.equal(r.ok, true);
-  assert.deepEqual(r.data, { date: "2026-10-10", weight: 84.2, body_fat: 21.4, muscle_mass: 45 });
+  assert.deepEqual(r.data, { date: "2026-10-10", weight: 84.2, body_fat: 21.4, muscle_mass: 45, muscle_kg: 37.9 });
   assert.equal(r.smmKg, 37.9);
-  assert.ok(r.notes.some((n) => /37.9 kg ÷ 84.2 kg/.test(n)));
+  assert.ok(r.notes.some((n) => /SMM\) 37.9 kg/.test(n)));
 });
 
 test("parseScanReading: lb sheets are converted to kg", () => {
@@ -527,6 +527,19 @@ test("dailyVolume: one point per day, summed over sets, filtered by muscle", () 
   ];
   assert.deepEqual(dailyVolume(logs, "Chest"), [{ date: "2026-09-03", volume: 375 }, { date: "2026-09-10", volume: 995 }]);
   assert.deepEqual(dailyVolume([], "Chest"), []);
+});
+
+test("Muscle Mass kg: stored kg first, else rebuilt from the old %", () => {
+  assert.equal(scanMuscleKg({ smm_kg: 37.9, muscle_mass: 45, weight: 84.2 }), 37.9);
+  assert.equal(scanMuscleKg({ muscle_mass: 45, weight: 84.2 }), 37.9);
+  assert.equal(scanMuscleKg({ muscle_mass: 45, weight: null }), null);
+  assert.deepEqual(withMuscleKg([{ muscle_mass: 50, weight: 80 }]).map((s) => s.muscle_kg), [40]);
+  assert.equal(goalMuscleKg({ target_muscle_kg: 39 }, 80), 39);
+  assert.equal(goalMuscleKg({ target_muscle: 45, target_weight: 82 }, 90), 36.9);
+  assert.equal(goalMuscleKg({ target_muscle: 45 }, 84.2), 37.9);
+  assert.equal(goalMuscleKg({ target_muscle: 45 }, null), null);
+  // the coach uses the stored kg when there is one
+  assert.equal(composition({ date: "2026-10-01", weight: 84.2, body_fat: 20, muscle_mass: 45, smm_kg: 38.4 }).smmKg, 38.4);
 });
 
 test("greeting by hour", () => {

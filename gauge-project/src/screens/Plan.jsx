@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import {
   todayISO, fmt, mergeWeightSeries, calcCalories, averageDayBurn, directionFor,
-  composition, coachAnalysis, GOAL_TYPES, SOURCES,
+  composition, coachAnalysis, GOAL_TYPES, SOURCES, goalMuscleKg, musclePercent,
 } from "../logic";
 import { sb, store } from "../api";
 import { Card, CardHead, ScreenTitle, Btn, Field, Input, Select, FormGrid, Muted, Big, Grid, Tag, Icon } from "../ui";
@@ -75,13 +75,14 @@ export function CoachCard({ coach, T, compact = false, onMore }) {
 }
 
 // ─── GOAL ────────────────────────────────────────────────────────────────────
-function GoalCard({ T, goal, userId, onRefresh }) {
+function GoalCard({ T, goal, userId, onRefresh, refWeight }) {
+  const goalMusKg = goalMuscleKg(goal, refWeight);
   const [editing, setEditing] = useState(!goal);
   const [gForm, setGForm] = useState({
     goal_type: goal?.goal_type || "",
     start_date: goal?.start_date || todayISO(),
     target_weight: goal?.target_weight || "", target_date: goal?.target_date || "",
-    target_body_fat: goal?.target_body_fat || "", target_muscle: goal?.target_muscle || "",
+    target_body_fat: goal?.target_body_fat || "", target_muscle_kg: goalMusKg ?? "",
   });
   const [goalMsg, setGoalMsg] = useState("");
   const [saving, setSaving] = useState(false);
@@ -89,7 +90,7 @@ function GoalCard({ T, goal, userId, onRefresh }) {
 
   const saveGoal = async () => {
     // A date plus at least one target is enough
-    const hasTarget = gForm.target_weight || gForm.target_body_fat || gForm.target_muscle;
+    const hasTarget = gForm.target_weight || gForm.target_body_fat || gForm.target_muscle_kg;
     if (!gForm.goal_type) { setGoalMsg("Pick a goal type — the analysis depends on it."); return; }
     if (!gForm.start_date || !gForm.target_date || !hasTarget) { setGoalMsg("Add a start date, a target date and at least one target."); return; }
     if (gForm.target_date <= gForm.start_date) { setGoalMsg("Target date must be after the start date."); return; }
@@ -102,8 +103,10 @@ function GoalCard({ T, goal, userId, onRefresh }) {
       target_date: gForm.target_date,
       target_weight:   gForm.target_weight   ? +gForm.target_weight   : null,
       target_body_fat: gForm.target_body_fat ? +gForm.target_body_fat : null,
-      target_muscle:   gForm.target_muscle   ? +gForm.target_muscle   : null,
-    });
+      // Muscle target is Muscle Mass in kg; the % column is kept filled for older versions.
+      target_muscle_kg: gForm.target_muscle_kg ? +gForm.target_muscle_kg : null,
+      target_muscle: gForm.target_muscle_kg ? musclePercent(gForm.target_muscle_kg, "kg", gForm.target_weight || refWeight) : null,
+    }, { optional: ["target_muscle_kg"] });
     if (error) { setSaving(false); return; }
     await onRefresh();
     setSaving(false);
@@ -133,7 +136,7 @@ function GoalCard({ T, goal, userId, onRefresh }) {
             )}
           </div>
           <Grid cols={3}>
-            {[["Weight", goal.target_weight, "kg", T.accent], ["Body fat", goal.target_body_fat, "%", T.fat], ["Muscle", goal.target_muscle, "%", T.muscle]].map(([l, v, u, c]) => (
+            {[["Weight", goal.target_weight, "kg", T.accent], ["Body fat", goal.target_body_fat, "%", T.fat], ["Muscle Mass", goalMusKg, "kg", T.muscle]].map(([l, v, u, c]) => (
               <div key={l} style={{ background: T.surface2, borderRadius: 14, padding: "10px 12px", borderTop: `2px solid ${v != null ? c : T.surface3}` }}>
                 <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.n600 }}>{l}</div>
                 <Big T={T} value={v} unit={u} size={24} color={v != null ? T.text : T.n500} />
@@ -158,7 +161,7 @@ function GoalCard({ T, goal, userId, onRefresh }) {
             <Field T={T} label="Target date"><Input T={T} type="date" value={gForm.target_date} onChange={set("target_date")} /></Field>
             <Field T={T} label="Target weight (kg)"><Input T={T} type="number" step="0.1" inputMode="decimal" placeholder="optional" value={gForm.target_weight} onChange={set("target_weight")} /></Field>
             <Field T={T} label="Target body fat (%)"><Input T={T} type="number" step="0.1" inputMode="decimal" placeholder="optional" value={gForm.target_body_fat} onChange={set("target_body_fat")} /></Field>
-            <Field T={T} label="Target muscle (%)"><Input T={T} type="number" step="0.1" inputMode="decimal" placeholder="optional" value={gForm.target_muscle} onChange={set("target_muscle")} /></Field>
+            <Field T={T} label="Target Muscle Mass (kg)"><Input T={T} type="number" step="0.1" inputMode="decimal" placeholder="optional" value={gForm.target_muscle_kg} onChange={set("target_muscle_kg")} /></Field>
           </FormGrid>
           {goalMsg && <div style={{ fontSize: 12.5, color: T.bad }}>{goalMsg}</div>}
           <div style={{ display: "flex", gap: 8 }}>
@@ -322,7 +325,7 @@ export default function PlanTab({ T, data, userId, onRefresh }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <ScreenTitle T={T} title="Plan" sub="Goal, coaching and nutrition" />
       {/* key: reset the form whenever a newer goal arrives */}
-      <GoalCard key={goal?.id || "none"} T={T} goal={goal} userId={userId} onRefresh={onRefresh} />
+      <GoalCard key={goal?.id || "none"} T={T} goal={goal} userId={userId} onRefresh={onRefresh} refWeight={mergeWeightSeries(weights, inbody).slice(-1)[0]?.weight} />
       {coach.status !== "no-data"
         ? <CoachCard coach={coach} T={T} />
         : <Card T={T}><CardHead T={T} icon="bolt" color={T.accent} label="Coach" /><Muted T={T}>Add an InBody scan and the coach reads it against your goal: what's working, and what to change in calories, protein and training.</Muted></Card>}
