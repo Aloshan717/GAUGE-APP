@@ -2,12 +2,12 @@
 import React, { useState } from "react";
 import {
   fmt, mergeWeightSeries, analyseMetric, weightTrend, filterRange, RANGES,
-  goalStartDate, baselineAt, weightDirection, withMuscleKg, goalMuscleKg, scanMuscleKg,
+  goalTracks, withMuscleKg, scanMuscleKg,
 } from "../logic";
 import { sb, store } from "../api";
 import {
   Card, CardHead, ScreenTitle, Segmented, Chips, Btn, Big, Delta, Muted, Row, Tag, DelBtn, Empty, Grid,
-  TrendChart, Icon, useShowMore,
+  TrendChart, Icon, useShowMore, PaceMeter,
 } from "../ui";
 
 // ─── WEIGHT ──────────────────────────────────────────────────────────────────
@@ -19,8 +19,7 @@ function WeightView({ T, data, onRefresh, openSheet }) {
   const latest = sorted[sorted.length - 1];
   const shown = filterRange(sorted, range);
   const trend = weightTrend(sorted);
-  const baseW = baselineAt(sorted, "weight", goalStartDate(goal));
-  const dir = weightDirection(goal, baseW?.value);
+  const dir = goalTracks({ goal, weights, scans: inbody }).weight.direction;
   const del = async (id) => { await sb.delete("weight_entries", id); await onRefresh(); };
   const history = [...sorted].reverse();
   const [historyRows, moreHistory] = useShowMore(T, history, 8);
@@ -94,10 +93,12 @@ function WeightView({ T, data, onRefresh, openSheet }) {
 }
 
 // ─── INBODY ──────────────────────────────────────────────────────────────────
-function MetricBlock({ label, color, T, data, field, curr, prev, first, target, targetDate, goodDirection, unit }) {
-  const analysis = analyseMetric({ label, curr, prev, first, target, targetDate, goodDirection, unit });
+function MetricBlock({ label, color, T, data, field, curr, prev, first, goodDirection, unit, track }) {
+  // Change lines only (since last scan / since first scan). Everything about
+  // the target comes from the shared goal track, the same one Today uses.
+  const analysis = analyseMetric({ label, curr, prev, first, target: null, goodDirection, unit });
   if (!analysis) return null;
-  const { lines, delta, progress } = analysis;
+  const { lines, delta } = analysis;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 14, borderTop: `1px solid ${T.divider}` }}>
@@ -112,29 +113,30 @@ function MetricBlock({ label, color, T, data, field, curr, prev, first, target, 
       </div>
 
       <TrendChart data={data} field={field} color={color} T={T} h={130} goodDirection={goodDirection} unit={unit}
-        target={target != null ? { value: target, date: targetDate } : null} footer={false} />
-
-      {progress !== null && (
-        <div>
-          <div style={{ height: 6, borderRadius: 4, background: T.surface3 }}>
-            <div style={{ height: 6, borderRadius: 4, background: color, width: `${progress.toFixed(1)}%`, transition: "width 0.5s" }} />
-          </div>
-          <div style={{ fontSize: 11, color: T.n600, marginTop: 5 }}>{progress.toFixed(0)}% of the way to target</div>
-        </div>
-      )}
+        target={track?.target != null ? { value: track.target, date: track.targetDate } : null} footer={false} />
 
       <div style={{ background: T.surface2, borderRadius: 12, padding: "10px 12px", borderLeft: `3px solid ${color}` }}>
         {lines.map((l, i) => (
           <div key={i} style={{ fontSize: 12.5, color: i === 0 ? T.text : T.n700, lineHeight: 1.55, fontWeight: i === 0 ? 600 : 400 }}>{l}</div>
         ))}
       </div>
+
+      {track?.pace && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.n600 }}>
+            Goal progress → {track.target}{unit}
+          </div>
+          <PaceMeter T={T} pace={track.pace} start={track.start} startDate={track.startDate} curr={track.curr} unit={unit} />
+        </div>
+      )}
     </div>
   );
 }
 
 function InbodyView({ T, data, onRefresh, openSheet }) {
-  const { inbody, goal } = data;
+  const { inbody, goal, weights } = data;
   const sorted = withMuscleKg(inbody).sort((a, b) => new Date(a.date) - new Date(b.date));
+  const tracks = goalTracks({ goal, weights, scans: inbody });
   const latest = sorted[sorted.length - 1];
   const prev = sorted[sorted.length - 2];
   const del = async (id) => { await sb.delete("inbody_scans", id); await onRefresh(); };
@@ -183,19 +185,18 @@ function InbodyView({ T, data, onRefresh, openSheet }) {
           <Muted T={T} style={{ marginTop: -6 }}>
             {prev ? `Compared against your scan on ${fmt(prev.date)}.` : "Add a second scan and each metric will show what changed."}
           </Muted>
-          <MetricBlock label="Weight" field="weight" unit=" kg" color={T.accent} T={T}
+          <MetricBlock label="Weight" field="weight" unit=" kg" color={T.accent} T={T} track={tracks.weight}
             data={sorted.filter((s) => s.weight != null)}
             curr={latest.weight} prev={prev?.weight} first={sorted.find((s) => s.weight != null)?.weight}
-            target={goal?.target_weight} targetDate={goal?.target_date}
-            goodDirection={weightDirection(goal, sorted.find((s) => s.weight != null)?.weight)} />
-          <MetricBlock label="Body fat" field="body_fat" unit="%" color={T.fat} T={T}
+            goodDirection={tracks.weight.direction} />
+          <MetricBlock label="Body fat" field="body_fat" unit="%" color={T.fat} T={T} track={tracks.bodyFat}
             data={sorted.filter((s) => s.body_fat != null)}
             curr={latest.body_fat} prev={prev?.body_fat} first={sorted.find((s) => s.body_fat != null)?.body_fat}
-            target={goal?.target_body_fat} targetDate={goal?.target_date} goodDirection={-1} />
-          <MetricBlock label="Muscle Mass" field="muscle_kg" unit=" kg" color={T.muscle} T={T}
+            goodDirection={-1} />
+          <MetricBlock label="Muscle Mass" field="muscle_kg" unit=" kg" color={T.muscle} T={T} track={tracks.muscle}
             data={sorted.filter((s) => s.muscle_kg != null)}
             curr={latest.muscle_kg} prev={prev?.muscle_kg} first={sorted.find((s) => s.muscle_kg != null)?.muscle_kg}
-            target={goalMuscleKg(goal, latest.weight)} targetDate={goal?.target_date} goodDirection={1} />
+            goodDirection={1} />
         </Card>
       )}
 

@@ -159,7 +159,9 @@ export function parseScanReading(reading, fallbackDate) {
 
   let weight = mass(reading.weight);
   const fatMass = mass(reading.body_fat_mass);
-  const smmKg = mass(reading.skeletal_muscle_mass);
+  const pickedMuscle = pickMuscleReading(reading);
+  let smmKg = pickedMuscle?.unit === "%" ? null
+    : pickedMuscle ? (pickedMuscle.unit === "lb" ? round1(pickedMuscle.value * LB_TO_KG) : pickedMuscle.value) : null;
   let bodyFat = coerceNumber(reading.percent_body_fat);
   if (lb && (weight != null || smmKg != null)) notes.push("Converted from lb to kg.");
 
@@ -172,13 +174,22 @@ export function parseScanReading(reading, fallbackDate) {
     notes.push(`Body fat % worked out from fat mass ${fatMass} kg ÷ ${weight} kg.`);
   }
 
+  // A muscle % on the sheet (some devices print only that) → kg via the weight.
+  if (pickedMuscle?.unit === "%" && weight) smmKg = round1((weight * pickedMuscle.value) / 100);
+  const otherLabel = !!(pickedMuscle && pickedMuscle.label && !/^skeletal muscle mass$/i.test(pickedMuscle.label));
+  if (otherLabel) {
+    notes.push(`Muscle Mass taken from "${pickedMuscle.label}" (${pickedMuscle.value}${pickedMuscle.unit === "%" ? "%" : ` ${pickedMuscle.unit}`}).`);
+  }
+
   let muscle = null;
   if (smmKg != null && weight) {
     muscle = round1((smmKg / weight) * 100);
     if (muscle < 10 || muscle > 75) { notes.push(`Ignored muscle ${smmKg} kg — doesn't fit a ${weight} kg body weight.`); muscle = null; }
-    else notes.push(`Muscle Mass = skeletal muscle mass (SMM) ${smmKg} kg.`);
+    else if (!otherLabel) notes.push(`Muscle Mass = skeletal muscle mass (SMM) ${smmKg} kg.`);
   } else if (smmKg != null) {
     notes.push(`Skeletal muscle ${smmKg} kg found, but no weight was read — add the weight to keep it.`);
+  } else {
+    notes.push("Muscle Mass wasn't found on the sheet — type it in below (Skeletal Muscle Mass, kg).");
   }
 
   const date = normalizeDate(reading.scan_date);
@@ -189,11 +200,12 @@ export function parseScanReading(reading, fallbackDate) {
     weight,
     body_fat: bodyFat != null ? round1(bodyFat) : null,
     muscle_mass: muscle,
-    muscle_kg: muscle != null ? smmKg : null,
+    // Kept even without a weight so the confirm screen shows what was read.
+    muscle_kg: smmKg != null && (muscle != null || !weight) ? smmKg : null,
   };
   if (typeof reading.notes === "string" && reading.notes.trim()) notes.push(reading.notes.trim());
 
-  if (data.weight == null && data.body_fat == null && data.muscle_mass == null) {
+  if (data.weight == null && data.body_fat == null && data.muscle_mass == null && data.muscle_kg == null) {
     return { ok: false, error: "Couldn't read the numbers on that sheet. Try a sharper, straight-on photo of the whole page, or enter them manually." };
   }
   return { ok: true, data, smmKg, notes };
@@ -221,6 +233,23 @@ export function goalMuscleKg(goal, refWeight) {
   const pct = coerceNumber(goal?.target_muscle);
   const w = coerceNumber(goal?.target_weight) ?? coerceNumber(refWeight);
   return pct != null && w ? round1((w * pct) / 100) : null;
+}
+
+// Which printed number is the Muscle Mass. Skeletal muscle first (that is what
+// InBody tracks), then anything called "Muscle Mass"; never lean / fat-free mass,
+// which is a different, much larger number.
+const NOT_MUSCLE = /soft|lean|fat.?free|ffm|slm|lbm|dry|water|protein|segment|arm|leg|trunk|خال|الرخو|ماء/i;
+export function pickMuscleReading(reading) {
+  const direct = coerceNumber(reading?.skeletal_muscle_mass);
+  const unit = reading?.weight_unit === "lb" ? "lb" : "kg";
+  if (direct != null && direct > 0) return { value: direct, unit, label: "Skeletal Muscle Mass" };
+  const list = (Array.isArray(reading?.muscle_readings) ? reading.muscle_readings : [])
+    .map((r) => ({ label: String(r?.label || "").trim(), value: coerceNumber(r?.value), unit: ["kg", "lb", "%"].includes(r?.unit) ? r.unit : unit }))
+    .filter((r) => r.value != null && r.value > 0 && r.label && !NOT_MUSCLE.test(r.label));
+  const rank = (r) => (/skeletal|smm|هيكل/i.test(r.label) ? 0 : /muscle mass|كتلة العضل/i.test(r.label) ? 1 : /muscle|عضل/i.test(r.label) ? 2 : 9)
+    + (r.unit === "%" ? 0.5 : 0);   // prefer a mass over a % with the same label
+  const best = list.filter((r) => rank(r) < 9).sort((a, b) => rank(a) - rank(b))[0];
+  return best || null;
 }
 
 // Manual entry: InBody prints skeletal muscle in kg, the app stores % of weight.
@@ -350,7 +379,10 @@ export function chartLabels(tMin, tMax, stamps = [], targetT = null) {
 
 // Progress only means something against time. 30% done is good at week 2 and
 // bad at week 10, so we compare progress made against time elapsed.
-export function computePace({ curr, start, target, startDate, targetDate, goodDirection, now }) {
+// currDate: the date of the `curr` reading. Progress is compared with the time
+// that had passed by THAT date, so a scan from two weeks ago isn't judged
+// against today's clock (which made you look behind between scans).
+export function computePace({ curr, start, target, startDate, targetDate, goodDirection, now, currDate }) {
   if (curr == null || target == null || !targetDate) return null;
 
   const nowMs = now ?? Date.now();
@@ -367,13 +399,18 @@ export function computePace({ curr, start, target, startDate, targetDate, goodDi
   if (reached) progress = 100;
   progress = Math.max(0, Math.min(100, progress));
 
+  const tRead = currDate ? new Date(currDate + "T00:00:00").getTime() : NaN;
+  const asOf = isFinite(tRead) ? Math.min(nowMs, tRead) : nowMs;
+
   let elapsed = null;
   if (tStart != null && tEnd > tStart) {
-    elapsed = Math.max(0, Math.min(100, ((nowMs - tStart) / (tEnd - tStart)) * 100));
+    elapsed = Math.max(0, Math.min(100, ((asOf - tStart) / (tEnd - tStart)) * 100));
   }
 
   const daysLeft = Math.ceil((tEnd - nowMs) / 86400000);
-  const daysElapsed = tStart != null ? Math.floor((nowMs - tStart) / 86400000) : 0;
+  const daysElapsed = tStart != null ? Math.max(0, Math.floor((asOf - tStart) / 86400000)) : 0;
+  const stale = isFinite(tRead) && nowMs - tRead >= 2 * 86400000;
+  const asOfTxt = stale ? ` (as of your ${fmt(currDate)} reading)` : "";
   const remaining = Math.abs(+(target - curr).toFixed(1));
   const perWeek = daysLeft > 0 ? +(remaining / (daysLeft / 7)).toFixed(2) : null;
 
@@ -384,36 +421,37 @@ export function computePace({ curr, start, target, startDate, targetDate, goodDi
   } else if (daysLeft < 0) {
     status = "Date passed"; color = "bad";
     note = `Target date has passed with ${remaining} still to go — worth setting a new date.`;
-  } else if (moved * goodDirection < 0) {
-    status = "Wrong direction"; color = "bad";
-    note = `Moved away from the target since you started. ${daysLeft} days left.`;
   } else if (elapsed == null || elapsed < 15 || daysElapsed < 14) {
     // Judging pace off a fortnight or less means judging measurement noise.
-    // InBody readings swing up to a full point on hydration alone.
+    // InBody readings swing up to a full point on hydration alone — so a small
+    // move the wrong way here is not called "Wrong direction".
     status = "Just started"; color = "neutral";
     note = daysElapsed < 14
       ? `${daysElapsed} days in — too early to read a trend. ${daysLeft} days to go.`
       : `Too early to judge pace reliably. ${daysLeft} days to go.`;
+  } else if (moved * goodDirection < 0) {
+    status = "Wrong direction"; color = "bad";
+    note = `Moved away from the target since you started${asOfTxt}. ${daysLeft} days left.`;
   } else {
     const ratio = progress / elapsed;
     if (ratio >= 0.95) {
       status = "On track"; color = "ok";
-      note = `${progress.toFixed(0)}% done with ${elapsed.toFixed(0)}% of the time used.${perWeek ? ` ${perWeek}/wk keeps you on pace.` : ""}`;
+      note = `${progress.toFixed(0)}% done with ${elapsed.toFixed(0)}% of the time used${asOfTxt}.${perWeek ? ` ${perWeek}/wk keeps you on pace.` : ""}`;
     } else if (ratio >= 0.75) {
       status = "Slightly behind"; color = "warn";
-      note = `${progress.toFixed(0)}% done but ${elapsed.toFixed(0)}% of the time is gone.${perWeek ? ` Needs ${perWeek}/wk to catch up.` : ""}`;
+      note = `${progress.toFixed(0)}% done but ${elapsed.toFixed(0)}% of the time is gone${asOfTxt}.${perWeek ? ` Needs ${perWeek}/wk to catch up.` : ""}`;
     } else {
       status = "Behind"; color = "bad";
-      note = `Only ${progress.toFixed(0)}% done with ${elapsed.toFixed(0)}% of the time used.${perWeek ? ` Would need ${perWeek}/wk from here.` : ""}`;
+      note = `Only ${progress.toFixed(0)}% done with ${elapsed.toFixed(0)}% of the time used${asOfTxt}.${perWeek ? ` Would need ${perWeek}/wk from here.` : ""}`;
     }
   }
 
-  return { progress, elapsed, status, color, note, daysLeft, reached, perWeek };
+  return { progress, elapsed, status, color, note, daysLeft, reached, perWeek, remaining };
 }
 
 // ─── METRIC ANALYSIS ─────────────────────────────────────────────────────────
 
-export function analyseMetric({ label, curr, prev, first, target, targetDate, goodDirection, unit, now }) {
+export function analyseMetric({ label, curr, prev, first, start, target, targetDate, goodDirection, unit, now }) {
   if (curr == null) return null;
 
   const lines = [];
@@ -444,8 +482,11 @@ export function analyseMetric({ label, curr, prev, first, target, targetDate, go
       progress = 100;
     } else {
       lines.push(`${Math.abs(remaining)}${unit} to go to reach ${target}${unit}.`);
-      if (first != null && target !== first) {
-        progress = Math.max(0, Math.min(100, (Math.abs(curr - first) / Math.abs(target - first)) * 100));
+      // Signed: moving away from the target is 0%, not progress. Measured from
+      // the goal's starting value when given, else the first reading.
+      const base = start != null ? start : first;
+      if (base != null && target !== base) {
+        progress = Math.max(0, Math.min(100, ((curr - base) / (target - base)) * 100));
       }
       if (targetDate) {
         const weeksLeft = (new Date(targetDate).getTime() - (now ?? Date.now())) / (86400000 * 7);
@@ -599,6 +640,46 @@ export function baselineAt(series, field, date) {
     if (gap < bestGap || (gap === bestGap && p.date < best.date)) { best = p; bestGap = gap; }
   }
   return best;
+}
+
+// ─── GOAL PROGRESS (one source for every screen) ────────────────────────────
+// Weight, body fat and Muscle Mass progress against the goal. Today's rings and
+// pace bars and the InBody tab all read this, so they can never disagree.
+// - Start value: the reading closest to the goal's start date.
+// - Pace clock starts at the goal start, or at that first reading if it came later.
+// - Progress is judged at the date of the latest reading (see computePace).
+// - The Muscle Mass target is converted with the same weight everywhere.
+export function goalTracks({ goal, weights, scans, now = Date.now() }) {
+  const weightSeries = mergeWeightSeries(weights, scans);
+  const scanSeries = withMuscleKg(scans)
+    .filter((s) => normalizeDate(s?.date))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const goalStart = goalStartDate(goal);
+  const latestWeight = weightSeries.length ? weightSeries[weightSeries.length - 1].weight : null;
+
+  const track = (key, label, unit, series, field, target, direction) => {
+    const pts = series.filter((p) => coerceNumber(p[field]) != null);
+    const last = pts[pts.length - 1], prev = pts[pts.length - 2];
+    const curr = last ? coerceNumber(last[field]) : null;
+    const base = baselineAt(pts, field, goalStart);
+    const dir = typeof direction === "function" ? direction(base?.value) : direction;
+    const startDate = base && goalStart && base.date > goalStart ? base.date : goalStart;
+    const pace = curr != null && target != null && goal?.target_date
+      ? computePace({ curr, start: base?.value, target, startDate, targetDate: goal.target_date, goodDirection: dir, currDate: last.date, now })
+      : null;
+    return {
+      key, label, unit, field, points: pts, curr, currDate: last?.date || null,
+      prev: prev ? coerceNumber(prev[field]) : null,
+      start: base?.value ?? null, startDate, target, targetDate: goal?.target_date || null, direction: dir, pace,
+    };
+  };
+
+  return {
+    goalStart,
+    weight: track("weight", "Weight", "kg", weightSeries, "weight", coerceNumber(goal?.target_weight), (s) => weightDirection(goal, s)),
+    bodyFat: track("bodyFat", "Body fat", "%", scanSeries, "body_fat", coerceNumber(goal?.target_body_fat), -1),
+    muscle: track("muscle", "Muscle Mass", "kg", scanSeries, "muscle_kg", goalMuscleKg(goal, latestWeight), 1),
+  };
 }
 
 // ─── INBODY-DRIVEN COACH ─────────────────────────────────────────────────────

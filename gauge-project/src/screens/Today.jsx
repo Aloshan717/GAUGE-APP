@@ -2,8 +2,7 @@
 // what the coach says to change, pace, this week, last session.
 import React from "react";
 import {
-  fmt, mergeWeightSeries, computePace, weekSummary, weekStrip, coachAnalysis,
-  goalStartDate, baselineAt, weightDirection, greeting, GOAL_TYPES, withMuscleKg, goalMuscleKg,
+  fmt, weekSummary, weekStrip, coachAnalysis, greeting, GOAL_TYPES, goalTracks,
 } from "../logic";
 import { Card, CardHead, ScreenTitle, Ring, Delta, Btn, Muted, StatTile, Grid, WeekStrip, Empty, Icon, PaceBar, Tag } from "../ui";
 import { NUM_FONT } from "../theme";
@@ -30,28 +29,13 @@ function Dial({ T, label, value, unit, delta, deltaGood, pace, color, target, on
 
 export default function TodayTab({ T, data, name, go, openSheet }) {
   const { weights, inbody, sessions, goal } = data;
-  const sortedW = mergeWeightSeries(weights, inbody);
-  const latest = sortedW[sortedW.length - 1];
-  const prevW = sortedW[sortedW.length - 2];
-  const sortedIb = withMuscleKg(inbody).sort((a, b) => new Date(a.date) - new Date(b.date));
-  const latestIb = sortedIb[sortedIb.length - 1];
-  const prevIb = sortedIb[sortedIb.length - 2];
-
-  // Pace runs on the goal's own clock: from the goal's start date, using the
-  // reading closest to that date as the starting value.
-  const goalStart = goalStartDate(goal);
-  const baseW = baselineAt(sortedW, "weight", goalStart);
-  const baseBf = baselineAt(sortedIb, "body_fat", goalStart);
-  const baseMus = baselineAt(sortedIb, "muscle_kg", goalStart);
-  const targetMusKg = goalMuscleKg(goal, latest?.weight);
-  const wDir = weightDirection(goal, baseW?.value);
-
-  const pace = (curr, start, target, dir) => goal?.target_date && target != null && curr != null
-    ? computePace({ curr, start, target, startDate: goalStart, targetDate: goal.target_date, goodDirection: dir })
-    : null;
-  const pW = pace(latest?.weight, baseW?.value, goal?.target_weight, wDir);
-  const pBf = pace(latestIb?.body_fat, baseBf?.value, goal?.target_body_fat, -1);
-  const pMu = pace(latestIb?.muscle_kg, baseMus?.value, targetMusKg, 1);
+  // One calculation for every goal number (shared with the InBody tab).
+  const tracks = goalTracks({ goal, weights, scans: inbody });
+  const { weight: tW, bodyFat: tBf, muscle: tMu, goalStart } = tracks;
+  const latestScanDate = [...inbody].map((x) => x.date).sort().slice(-1)[0];
+  const wDir = tW.direction;
+  const pW = tW.pace, pBf = tBf.pace, pMu = tMu.pace;
+  const dlt = (t) => (t.curr != null && t.prev != null ? t.curr - t.prev : null);
 
   const coach = coachAnalysis({ goal, scans: inbody, weights, now: Date.now() });
   const daysLeft = goal?.target_date ? Math.max(0, Math.ceil((new Date(goal.target_date) - new Date()) / 86400000)) : null;
@@ -69,25 +53,22 @@ export default function TodayTab({ T, data, name, go, openSheet }) {
         title={`${greeting(new Date().getHours())}${first ? `, ${first}` : ""}`} />
 
       {/* ── Dials ── */}
-      {latest || latestIb ? (
+      {tW.curr != null || latestScanDate ? (
         <Card T={T} pad={16} style={{ gap: 14 }}>
           <CardHead T={T} label={goal ? (goalLabel || "Your goal") : "Your numbers"}
             right={goal?.target_date
               ? <Tag T={T} color={T.accent}>{daysLeft} days left</Tag>
               : <button type="button" onClick={() => go("plan")} style={{ border: "none", background: "transparent", color: T.accent, fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, cursor: "pointer", padding: 0 }}>Set a goal →</button>} />
           <Grid cols={3} gap={4}>
-            <Dial T={T} label="Weight" unit="kg" color={T.accent} value={latest?.weight}
-              delta={latest && prevW ? latest.weight - prevW.weight : null} deltaGood={wDir}
-              pace={pW} target={goal?.target_weight} onClick={() => go("body", "weight")} />
-            <Dial T={T} label="Body fat" unit="%" color={T.fat} value={latestIb?.body_fat}
-              delta={latestIb?.body_fat != null && prevIb?.body_fat != null ? latestIb.body_fat - prevIb.body_fat : null} deltaGood={-1}
-              pace={pBf} target={goal?.target_body_fat} onClick={() => go("body", "inbody")} />
-            <Dial T={T} label="Muscle Mass" unit="kg" color={T.muscle} value={latestIb?.muscle_kg}
-              delta={latestIb?.muscle_kg != null && prevIb?.muscle_kg != null ? latestIb.muscle_kg - prevIb.muscle_kg : null} deltaGood={1}
-              pace={pMu} target={targetMusKg} onClick={() => go("body", "inbody")} />
+            <Dial T={T} label="Weight" unit="kg" color={T.accent} value={tW.curr}
+              delta={dlt(tW)} deltaGood={wDir} pace={pW} target={tW.target} onClick={() => go("body", "weight")} />
+            <Dial T={T} label="Body fat" unit="%" color={T.fat} value={tBf.curr}
+              delta={dlt(tBf)} deltaGood={-1} pace={pBf} target={tBf.target} onClick={() => go("body", "inbody")} />
+            <Dial T={T} label="Muscle Mass" unit="kg" color={T.muscle} value={tMu.curr}
+              delta={dlt(tMu)} deltaGood={1} pace={pMu} target={tMu.target} onClick={() => go("body", "inbody")} />
           </Grid>
           <Muted T={T} style={{ fontSize: 11, textAlign: "center" }}>
-            {latestIb ? `Latest scan ${fmt(latestIb.date)} · changes vs the previous reading` : "Add an InBody scan to fill body fat and muscle mass"}
+            {latestScanDate ? `Latest scan ${fmt(latestScanDate)} · changes vs the previous reading` : "Add an InBody scan to fill body fat and muscle mass"}
             {hasPace ? " · ring = progress, tick = where you should be" : ""}
           </Muted>
         </Card>
@@ -106,9 +87,9 @@ export default function TodayTab({ T, data, name, go, openSheet }) {
         <Card T={T}>
           <CardHead T={T} icon="calendar" label="Goal pace" right={<span style={{ fontSize: 11.5, color: T.n600 }}>{fmt(goalStart)} → {fmt(goal.target_date)}</span>} />
           {!goal.start_date && <Muted T={T} style={{ marginTop: -6 }}>Save the goal again in Plan to set an exact start date.</Muted>}
-          {goal.target_weight != null && <PaceBar T={T} label="Weight" unit=" kg" color={T.accent} goodDirection={wDir} curr={latest?.weight} start={baseW?.value} startDate={goalStart} target={goal.target_weight} targetDate={goal.target_date} />}
-          {goal.target_body_fat != null && <PaceBar T={T} label="Body fat" unit="%" color={T.fat} goodDirection={-1} curr={latestIb?.body_fat} start={baseBf?.value} startDate={goalStart} target={goal.target_body_fat} targetDate={goal.target_date} />}
-          {targetMusKg != null && <PaceBar T={T} label="Muscle Mass" unit=" kg" color={T.muscle} goodDirection={1} curr={latestIb?.muscle_kg} start={baseMus?.value} startDate={goalStart} target={targetMusKg} targetDate={goal.target_date} />}
+          {[[tW, " kg", T.accent], [tBf, "%", T.fat], [tMu, " kg", T.muscle]].map(([t, u, c]) => (
+            <PaceBar key={t.key} T={T} label={t.label} unit={u} color={c} curr={t.curr} target={t.target} pace={t.pace} start={t.start} startDate={t.startDate} />
+          ))}
         </Card>
       )}
 

@@ -11,7 +11,7 @@ import {
   weightTrend, coachAnalysis, averageDayBurn, RATE_BANDS, SOURCES,
   parseScanReading, musclePercent, scanHttpError, fitWithin,
   ewmaTrend, filterRange, weightDirection, weekStrip,
-  exerciseNames, exerciseHistory, personalBestIds, greeting, dailyVolume, scanMuscleKg, withMuscleKg, goalMuscleKg,
+  exerciseNames, exerciseHistory, personalBestIds, greeting, dailyVolume, scanMuscleKg, withMuscleKg, goalMuscleKg, goalTracks, pickMuscleReading,
 } from "../src/logic.js";
 
 let passed = 0, failed = 0;
@@ -546,6 +546,96 @@ test("greeting by hour", () => {
   assert.equal(greeting(8), "Good morning");
   assert.equal(greeting(14), "Good afternoon");
   assert.equal(greeting(21), "Good evening");
+});
+
+// ─── Muscle Mass reading: labels other than "Skeletal Muscle Mass" ───────────
+test("scan: muscle printed as 'Muscle Mass' (no SMM field) is read", () => {
+  const r = parseScanReading(reading({ skeletal_muscle_mass: null, weight: 85.15, muscle_readings: [
+    { label: "Soft Lean Mass", value: 63.9, unit: "kg" },
+    { label: "Muscle Mass", value: 43.7, unit: "kg" },
+  ] }), "x");
+  assert.equal(r.data.muscle_kg, 43.7);
+  assert.equal(r.data.muscle_mass, 51.3);
+  assert.ok(r.notes.some((n) => /"Muscle Mass"/.test(n)));
+});
+
+test("scan: Arabic label, lb unit, and % only sheets", () => {
+  const ar = parseScanReading(reading({ skeletal_muscle_mass: null, muscle_readings: [{ label: "كتلة العضلات الهيكلية", value: 37.9, unit: "kg" }] }), "x");
+  assert.equal(ar.data.muscle_kg, 37.9);
+  const lb = parseScanReading(reading({ weight_unit: "lb", weight: 185.6, body_fat_mass: 39.7, skeletal_muscle_mass: null, muscle_readings: [{ label: "SMM", value: 83.6, unit: "lb" }] }), "x");
+  assert.equal(lb.data.muscle_kg, 37.9);
+  const pct = parseScanReading(reading({ skeletal_muscle_mass: null, muscle_readings: [{ label: "Muscle %", value: 45, unit: "%" }] }), "x");
+  assert.equal(pct.data.muscle_kg, 37.9);   // 45% of 84.2 kg
+  assert.equal(pct.data.muscle_mass, 45);
+});
+
+test("scan: never takes lean / fat-free mass as muscle; says so when missing", () => {
+  assert.equal(pickMuscleReading({ skeletal_muscle_mass: null, muscle_readings: [{ label: "Fat Free Mass", value: 66, unit: "kg" }, { label: "Lean Body Mass", value: 66, unit: "kg" }] }), null);
+  const r = parseScanReading(reading({ skeletal_muscle_mass: null, muscle_readings: [] }), "x");
+  assert.equal(r.ok, true);
+  assert.equal(r.data.muscle_kg, null);
+  assert.ok(r.notes.some((n) => /wasn't found/.test(n)));
+  // SMM field wins over a "Muscle Mass" reading
+  assert.equal(pickMuscleReading({ skeletal_muscle_mass: 37.9, muscle_readings: [{ label: "Muscle Mass", value: 60, unit: "kg" }] }).value, 37.9);
+});
+
+test("scan: muscle kept on the confirm screen even if weight wasn't read", () => {
+  const r = parseScanReading(reading({ weight: null, body_fat_mass: null }), "x");
+  assert.equal(r.data.muscle_kg, 37.9);
+  assert.equal(r.data.muscle_mass, null);
+});
+
+// ─── Goal progress ──────────────────────────────────────────────────────────
+test("pace: early noise the wrong way is 'Just started', not 'Wrong direction'", () => {
+  const p = computePace({ curr: 85.3, start: 85.15, target: 84, startDate: "2026-09-24", targetDate: "2026-12-03", goodDirection: -1, now: NOW });
+  assert.equal(p.status, "Just started");
+  const later = computePace({ curr: 86, start: 85, target: 82, startDate: "2026-08-01", targetDate: "2026-12-01", goodDirection: -1, now: NOW });
+  assert.equal(later.status, "Wrong direction");
+});
+
+test("pace: judged at the reading's date, not today", () => {
+  // 60-day goal; scan 15 days in shows 25% done; today is day 30.
+  const start = "2026-08-27", end = "2026-10-26", scan = "2026-09-11";
+  const asToday = computePace({ curr: 89, start: 90, target: 86, startDate: start, targetDate: end, goodDirection: -1, now: NOW });
+  const asScan = computePace({ curr: 89, start: 90, target: 86, startDate: start, targetDate: end, goodDirection: -1, now: NOW, currDate: scan });
+  assert.equal(asToday.status, "Behind");           // 25% vs 50% of the time
+  assert.equal(asScan.status, "On track");          // 25% vs 25% at the scan date
+  assert.match(asScan.note, /as of your Sep 11 reading/);
+  // last reading before the goal started → never "-3 days in"
+  const old = computePace({ curr: 89, start: 89, target: 86, startDate: "2026-09-20", targetDate: "2026-12-01", goodDirection: -1, now: NOW, currDate: "2026-09-17" });
+  assert.match(old.note, /^0 days in/);
+});
+
+test("analyseMetric: moving away from the target is 0%, not progress", () => {
+  const a = analyseMetric({ label: "Body fat", curr: 23, prev: 22, first: 22, target: 18, goodDirection: -1, unit: "%", now: NOW });
+  assert.equal(a.progress, 0);
+  const b = analyseMetric({ label: "Body fat", curr: 20, prev: 21, first: 22, start: 21, target: 18, goodDirection: -1, unit: "%", now: NOW });
+  assert.equal(Math.round(b.progress), 33);       // from the goal start (21), not the first scan (22)
+});
+
+test("goalTracks: one baseline for every screen (the user's case)", () => {
+  const scans = [
+    { date: "2026-08-01", weight: 87.0, body_fat: 22.4, muscle_mass: 50.1 },
+    { date: "2026-09-21", weight: 85.6, body_fat: 21.1, muscle_mass: 50.9 },
+    { date: "2026-09-25", weight: 85.15, body_fat: 20.7, muscle_mass: 51.3 },
+  ];
+  const goal = { goal_type: "cut", start_date: "2026-09-24", target_date: "2026-12-03", target_weight: 84, target_body_fat: 18.5, target_muscle: 52.5 };
+  const t = goalTracks({ goal, weights: [], scans, now: NOW });
+  // Baseline = reading closest to the goal start (Sep 25), not Aug 1
+  assert.equal(t.bodyFat.start, 20.7);
+  assert.equal(t.bodyFat.pace.progress, 0);
+  assert.equal(t.bodyFat.pace.status, "Just started");
+  // Muscle Mass in kg, target from 52.5% of the 84 kg target weight
+  assert.equal(t.muscle.curr, 43.7);
+  assert.equal(t.muscle.target, 44.1);
+  assert.equal(t.muscle.direction, 1);
+  assert.equal(t.weight.direction, -1);
+  // pace clock starts at the first reading on/after the goal start
+  assert.equal(t.weight.startDate, "2026-09-25");
+  // no goal → no pace, values still there
+  const none = goalTracks({ goal: null, weights: [], scans, now: NOW });
+  assert.equal(none.muscle.pace, null);
+  assert.equal(none.bodyFat.curr, 20.7);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

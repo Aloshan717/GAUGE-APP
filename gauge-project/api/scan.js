@@ -25,11 +25,26 @@ const SCHEMA = {
     percent_body_fat: nullable({ type: "number" }),
     body_fat_mass: nullable({ type: "number" }),
     skeletal_muscle_mass: nullable({ type: "number" }),
+    // Every muscle-related number on the sheet, with its printed label, so the
+    // app can pick the right one even when the sheet calls it something else.
+    muscle_readings: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          label: { type: "string" },
+          value: { type: "number" },
+          unit: { type: "string", enum: ["kg", "lb", "%"] },
+        },
+        required: ["label", "value", "unit"],
+        additionalProperties: false,
+      },
+    },
     notes: { type: "string" },
   },
   required: [
     "is_body_composition_report", "scan_date", "weight_unit", "weight",
-    "percent_body_fat", "body_fat_mass", "skeletal_muscle_mass", "notes",
+    "percent_body_fat", "body_fat_mass", "skeletal_muscle_mass", "muscle_readings", "notes",
   ],
   additionalProperties: false,
 };
@@ -39,7 +54,8 @@ const PROMPT = `This is a photo, screenshot or PDF of a body-composition result 
 - weight: body weight ("Weight").
 - percent_body_fat: "PBF" / "Percent Body Fat", in %.
 - body_fat_mass: "Body Fat Mass".
-- skeletal_muscle_mass: "SMM" / "Skeletal Muscle Mass". Not "Soft Lean Mass", "Fat Free Mass" or "Lean Body Mass".
+- skeletal_muscle_mass: the muscle mass, as a mass (kg or lb). On InBody it is "SMM" / "Skeletal Muscle Mass" — in the Muscle-Fat Analysis section it is the number printed at the end of the middle bar (between Weight and Body Fat Mass). Other sheets and apps may label it "Muscle Mass", "Skeletal Muscle", "كتلة العضلات الهيكلية" or "كتلة العضلات". Not "Soft Lean Mass", "Fat Free Mass", "Lean Body Mass" or "Dry Lean Mass". Null only if no such value is printed.
+- muscle_readings: every muscle-related value printed for the current test, each with its label exactly as printed and its unit (kg, lb or %). Include "Skeletal Muscle Mass", "Muscle Mass", "Soft Lean Mass", "Fat Free Mass", muscle percentages, etc. Leave out segmental (arm/leg/trunk) values and history. Empty list if there are none.
 - weight_unit: the unit the masses are printed in.
 - scan_date: the test date as YYYY-MM-DD. InBody prints dates like 2026.10.10; use the sheet's language and layout to get day and month the right way round.
 

@@ -1,7 +1,7 @@
 // GAUGE — shared UI pieces. Every screen is built from these, so spacing,
 // type and colour stay consistent across the app.
 import React, { useId, useState } from "react";
-import { chartLabels, computePace, ewmaTrend } from "./logic";
+import { chartLabels, ewmaTrend } from "./logic";
 import { NUM_FONT } from "./theme";
 
 // ─── ICONS ───────────────────────────────────────────────────────────────────
@@ -491,22 +491,17 @@ export function TrendChart({ data, field, color, T, h = 150, target = null, good
 }
 
 // ─── PACE BAR ────────────────────────────────────────────────────────────────
-export function PaceBar({ label, curr, start, target, startDate, targetDate, goodDirection, unit, T, color }) {
-  const p = computePace({ curr, start, target, startDate, targetDate, goodDirection });
+// The bar, status and explanation for one goal metric. `pace` comes from
+// computePace (via goalTracks), so every screen shows the same numbers.
+const fmtDay = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "");
+const r1 = (n) => (n == null ? n : Math.round(n * 10) / 10);
+
+export function PaceMeter({ T, pace: p, start, startDate, curr, unit = "" }) {
   if (!p) return null;
   const palette = { ok: T.ok, warn: T.warn, bad: T.bad, neutral: T.n500 };
   const c = palette[p.color];
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 700, color: T.text }}>
-          <span style={{ width: 8, height: 8, borderRadius: 3, background: color || c }} />{label}
-        </span>
-        <span style={{ fontSize: 12, color: T.n600, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
-          <strong style={{ color: T.text, fontSize: 14 }}>{curr}{unit}</strong> → {target}{unit}
-        </span>
-      </div>
       <div style={{ position: "relative", height: 10, borderRadius: 6, background: T.surface3 }}>
         <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${p.progress.toFixed(1)}%`, background: c, borderRadius: 6, transition: "width 0.6s ease", boxShadow: `0 0 10px ${c}55` }} />
         {p.elapsed != null && !p.reached && (
@@ -514,10 +509,33 @@ export function PaceBar({ label, curr, start, target, startDate, targetDate, goo
         )}
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <span style={{ fontSize: 12, fontWeight: 800, color: c }}>{p.status}</span>
-        {p.elapsed != null && !p.reached && <span style={{ fontSize: 10.5, color: T.n600 }}>| marks where you should be</span>}
+        <span style={{ fontSize: 12, fontWeight: 800, color: c }}>{p.status} · {p.progress.toFixed(0)}% done</span>
+        {p.elapsed != null && !p.reached && <span style={{ fontSize: 10.5, color: T.n600 }}>| = where you should be</span>}
       </div>
+      {start != null && (
+        <div style={{ fontSize: 11.5, color: T.n600, fontVariantNumeric: "tabular-nums" }}>
+          Start {r1(start)}{unit}{startDate ? ` (${fmtDay(startDate)})` : ""} · now {r1(curr)}{unit}{!p.reached ? ` · ${p.remaining}${unit} to go` : ""}
+        </div>
+      )}
       <div style={{ fontSize: 12, color: T.n700, lineHeight: 1.5 }}>{p.note}</div>
+    </div>
+  );
+}
+
+export function PaceBar({ label, curr, target, unit, T, color, pace, start, startDate }) {
+  if (!pace) return null;
+  const palette = { ok: T.ok, warn: T.warn, bad: T.bad, neutral: T.n500 };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 700, color: T.text }}>
+          <span style={{ width: 8, height: 8, borderRadius: 3, background: color || palette[pace.color] }} />{label}
+        </span>
+        <span style={{ fontSize: 12, color: T.n600, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+          <strong style={{ color: T.text, fontSize: 14 }}>{r1(curr)}{unit}</strong> → {target}{unit}
+        </span>
+      </div>
+      <PaceMeter T={T} pace={pace} start={start} startDate={startDate} curr={curr} unit={unit} />
     </div>
   );
 }
