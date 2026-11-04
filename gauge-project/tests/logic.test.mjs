@@ -11,7 +11,7 @@ import {
   weightTrend, coachAnalysis, averageDayBurn, RATE_BANDS, SOURCES,
   parseScanReading, musclePercent, scanHttpError, fitWithin,
   ewmaTrend, filterRange, weightDirection, weekStrip,
-  exerciseNames, exerciseHistory, personalBestIds, greeting, dailyVolume, scanMuscleKg, withMuscleKg, goalMuscleKg, goalTracks, pickMuscleReading,
+  exerciseNames, exerciseHistory, personalBestIds, greeting, dailyVolume, scanMuscleKg, withMuscleKg, goalMuscleKg, goalTracks, pickMuscleReading, muscleKind,
 } from "../src/logic.js";
 
 let passed = 0, failed = 0;
@@ -256,7 +256,7 @@ test("pace uses the goal's clock: old history no longer inflates elapsed time", 
 // ─── NEW: InBody-driven coach ────────────────────────────────────────────────
 test("composition: fat, fat-free and muscle in kg", () => {
   assert.deepEqual(composition({ date: "2026-09-01", weight: 90, body_fat: 25, muscle_mass: 40 }),
-    { date: "2026-09-01", weight: 90, bf: 25, smmPct: 40, fm: 22.5, ffm: 67.5, smmKg: 36 });
+    { date: "2026-09-01", weight: 90, bf: 25, smmPct: 40, fm: 22.5, ffm: 67.5, smmKg: 36, muscleKind: "skeletal" });
   assert.equal(composition({ date: "2026-09-01" }), null);
 });
 
@@ -410,7 +410,7 @@ test("parseScanReading: SMM kg → muscle % of body weight", () => {
   assert.equal(r.ok, true);
   assert.deepEqual(r.data, { date: "2026-10-10", weight: 84.2, body_fat: 21.4, muscle_mass: 45, muscle_kg: 37.9 });
   assert.equal(r.smmKg, 37.9);
-  assert.ok(r.notes.some((n) => /SMM\) 37.9 kg/.test(n)));
+  assert.ok(r.notes.some((n) => /Muscle Mass 37.9 kg \(printed as "Skeletal Muscle Mass"\)/.test(n)));
 });
 
 test("parseScanReading: lb sheets are converted to kg", () => {
@@ -575,8 +575,10 @@ test("scan: never takes lean / fat-free mass as muscle; says so when missing", (
   assert.equal(r.ok, true);
   assert.equal(r.data.muscle_kg, null);
   assert.ok(r.notes.some((n) => /wasn't found/.test(n)));
-  // SMM field wins over a "Muscle Mass" reading
-  assert.equal(pickMuscleReading({ skeletal_muscle_mass: 37.9, muscle_readings: [{ label: "Muscle Mass", value: 60, unit: "kg" }] }).value, 37.9);
+  // A value printed as "Muscle Mass" wins over Skeletal Muscle Mass (it's what the user tracks)
+  assert.equal(pickMuscleReading({ skeletal_muscle_mass: 37.9, muscle_readings: [{ label: "Muscle Mass", value: 60, unit: "kg" }] }).value, 60);
+  assert.equal(pickMuscleReading({ muscle_mass: 64, skeletal_muscle_mass: 43.7, muscle_readings: [] }).value, 64);
+  assert.equal(pickMuscleReading({ skeletal_muscle_mass: 37.9, muscle_readings: [{ label: "Soft Lean Mass", value: 63, unit: "kg" }] }).value, 37.9);
 });
 
 test("scan: muscle kept on the confirm screen even if weight wasn't read", () => {
@@ -636,6 +638,41 @@ test("goalTracks: one baseline for every screen (the user's case)", () => {
   const none = goalTracks({ goal: null, weights: [], scans, now: NOW });
   assert.equal(none.muscle.pace, null);
   assert.equal(none.bodyFat.curr, 20.7);
+});
+
+// ─── "Muscle Mass" (≈75% of weight) vs Skeletal Muscle Mass (≈45%) ──────────
+test("scan: a 64 kg 'Muscle Mass' at 85 kg is read, not dropped as a misread", () => {
+  const r = parseScanReading(reading({ weight: 85.2, percent_body_fat: 20.4, skeletal_muscle_mass: 43.9, muscle_mass: 64.1, muscle_readings: [] }), "x");
+  assert.equal(r.data.muscle_kg, 64.1);
+  assert.equal(r.data.muscle_mass, 75.2);
+  assert.ok(r.notes.some((n) => /printed as "Muscle Mass"/.test(n)));
+  assert.equal(parseScanReading(reading({ weight: 85, skeletal_muscle_mass: 90, muscle_readings: [] }), "x").data.muscle_kg, null); // > body weight
+});
+
+test("muscleKind: tells total Muscle Mass from Skeletal Muscle Mass", () => {
+  assert.equal(muscleKind({ weight: 85.15, body_fat: 20.7, muscle_mass: 51.3 }), "skeletal");   // 43.7 kg
+  assert.equal(muscleKind({ weight: 85.15, body_fat: 20.7, smm_kg: 64 }), "total");
+  assert.equal(muscleKind({ weight: 110, body_fat: 38, smm_kg: 64 }), "total");                  // high fat: still total
+  assert.equal(muscleKind({ weight: 80, smm_kg: 36 }), "skeletal");                              // no body fat → weight ratio
+  assert.equal(muscleKind({ weight: 80 }), null);
+});
+
+test("goalTracks: never compares Muscle Mass with older Skeletal Muscle readings (the 64 kg case)", () => {
+  const scans = [
+    { date: "2026-08-01", weight: 87.0, body_fat: 22.4, muscle_mass: 50.1 },
+    { date: "2026-09-21", weight: 85.6, body_fat: 21.1, muscle_mass: 50.9 },
+    { date: "2026-09-25", weight: 85.2, body_fat: 20.6, smm_kg: 64 },
+  ];
+  const goal = { goal_type: "cut", start_date: "2026-09-10", target_date: "2026-12-03", target_muscle_kg: 65 };
+  const t = goalTracks({ goal, weights: [], scans, now: NOW });
+  assert.equal(t.muscle.curr, 64);
+  assert.equal(t.muscle.prev, null);           // no "+20.3 kg"
+  assert.equal(t.muscle.start, 64);            // baseline from the same kind of reading
+  assert.equal(t.muscle.otherKind, 2);
+  assert.equal(t.muscle.pace.progress, 0);     // not 95%
+  // coach doesn't read the switch as muscle gained
+  const c = coachAnalysis({ goal, scans: [...scans.slice(0, 2), { date: "2026-10-20", weight: 85, body_fat: 20.5, smm_kg: 64 }], weights: [], now: NOW + 30 * DAY });
+  assert.ok(!c.findings.some((f) => /Muscle \+/.test(f.text)));
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

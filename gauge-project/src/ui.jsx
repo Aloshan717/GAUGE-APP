@@ -362,26 +362,35 @@ export function Sheet({ T, title, onClose, onBack, children }) {
 }
 
 // ─── RING ────────────────────────────────────────────────────────────────────
-// progress 0–100 (null = no target, track only). marker = where you should be.
-export function Ring({ T, size = 96, stroke = 9, progress, color, marker, children }) {
+// Outer ring: progress toward the target (0–100). Inner ring: share of the
+// goal's time already used (0–100). Ahead of the inner ring = ahead of schedule.
+export function Ring({ T, size = 96, stroke = 9, progress, color, time = null, children }) {
+  const cx = size / 2;
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const p = progress == null ? 0 : Math.max(0, Math.min(100, progress));
-  const angle = marker == null ? null : (Math.max(0, Math.min(100, marker)) / 100) * 2 * Math.PI - Math.PI / 2;
-  const mx = (rad) => size / 2 + rad * Math.cos(angle);
-  const my = (rad) => size / 2 + rad * Math.sin(angle);
+  const ts = Math.max(4, Math.round(stroke * 0.6));
+  const ri = r - stroke / 2 - ts / 2 - 2.5;
+  const ci = 2 * Math.PI * ri;
+  const tp = time == null ? null : Math.max(0, Math.min(100, time));
   return (
     <div style={{ position: "relative", width: size, height: size, flex: "none" }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: "block" }}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={T.surface3} strokeWidth={stroke} />
+        <circle cx={cx} cy={cx} r={r} fill="none" stroke={T.surface3} strokeWidth={stroke} />
         {p > 0 && (
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
-                  strokeDasharray={`${(p / 100) * c} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          <circle cx={cx} cy={cx} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
+                  strokeDasharray={`${(p / 100) * c} ${c}`} transform={`rotate(-90 ${cx} ${cx})`}
                   style={{ transition: "stroke-dasharray 0.8s cubic-bezier(.2,.8,.2,1)", filter: `drop-shadow(0 0 6px ${color}66)` }} />
         )}
-        {angle != null && (
-          <line x1={mx(r - stroke / 2 - 2)} y1={my(r - stroke / 2 - 2)} x2={mx(r + stroke / 2 + 2)} y2={my(r + stroke / 2 + 2)}
-                stroke={T.text} strokeWidth={2.2} strokeLinecap="round" opacity={0.85} />
+        {tp != null && (
+          <>
+            <circle cx={cx} cy={cx} r={ri} fill="none" stroke={T.surface3} strokeWidth={ts} opacity={0.7} />
+            {tp > 0 && (
+              <circle cx={cx} cy={cx} r={ri} fill="none" stroke={T.n800} strokeOpacity={0.75} strokeWidth={ts} strokeLinecap="round"
+                      strokeDasharray={`${(tp / 100) * ci} ${ci}`} transform={`rotate(-90 ${cx} ${cx})`}
+                      style={{ transition: "stroke-dasharray 0.8s cubic-bezier(.2,.8,.2,1)" }} />
+            )}
+          </>
         )}
       </svg>
       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center" }}>

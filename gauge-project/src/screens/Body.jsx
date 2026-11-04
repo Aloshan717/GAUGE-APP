@@ -93,7 +93,7 @@ function WeightView({ T, data, onRefresh, openSheet }) {
 }
 
 // ─── INBODY ──────────────────────────────────────────────────────────────────
-function MetricBlock({ label, color, T, data, field, curr, prev, first, goodDirection, unit, track }) {
+function MetricBlock({ label, color, T, data, field, curr, prev, first, goodDirection, unit, track, footnote }) {
   // Change lines only (since last scan / since first scan). Everything about
   // the target comes from the shared goal track, the same one Today uses.
   const analysis = analyseMetric({ label, curr, prev, first, target: null, goodDirection, unit });
@@ -120,6 +120,8 @@ function MetricBlock({ label, color, T, data, field, curr, prev, first, goodDire
           <div key={i} style={{ fontSize: 12.5, color: i === 0 ? T.text : T.n700, lineHeight: 1.55, fontWeight: i === 0 ? 600 : 400 }}>{l}</div>
         ))}
       </div>
+
+      {footnote && <Muted T={T} style={{ fontSize: 11.5 }}>{footnote}</Muted>}
 
       {track?.pace && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -167,7 +169,7 @@ function InbodyView({ T, data, onRefresh, openSheet }) {
             {[
               { label: "Weight", val: latest.weight, unit: "kg", pv: prev?.weight, good: 0, c: T.accent },
               { label: "Body fat", val: latest.body_fat, unit: "%", pv: prev?.body_fat, good: -1, c: T.fat },
-              { label: "Muscle Mass", val: latest.muscle_kg, unit: "kg", pv: prev?.muscle_kg, good: 1, c: T.muscle },
+              { label: "Muscle Mass", val: latest.muscle_kg, unit: "kg", pv: prev?.muscle_kind === latest.muscle_kind ? prev?.muscle_kg : null, good: 1, c: T.muscle },
             ].map((b) => (
               <div key={b.label} style={{ background: T.surface2, borderRadius: 14, padding: "10px 12px", borderTop: `2px solid ${b.c}`, minWidth: 0 }}>
                 <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.n600 }}>{b.label}</div>
@@ -193,10 +195,17 @@ function InbodyView({ T, data, onRefresh, openSheet }) {
             data={sorted.filter((s) => s.body_fat != null)}
             curr={latest.body_fat} prev={prev?.body_fat} first={sorted.find((s) => s.body_fat != null)?.body_fat}
             goodDirection={-1} />
+          {/* Only readings of the same kind as the latest one (total Muscle Mass vs Skeletal Muscle Mass) */}
           <MetricBlock label="Muscle Mass" field="muscle_kg" unit=" kg" color={T.muscle} T={T} track={tracks.muscle}
-            data={sorted.filter((s) => s.muscle_kg != null)}
-            curr={latest.muscle_kg} prev={prev?.muscle_kg} first={sorted.find((s) => s.muscle_kg != null)?.muscle_kg}
-            goodDirection={1} />
+            data={tracks.muscle.points}
+            curr={tracks.muscle.curr} prev={tracks.muscle.prev} first={tracks.muscle.points[0]?.muscle_kg}
+            goodDirection={1}
+            footnote={tracks.muscle.otherKind > 0
+              ? (() => {
+                  const n = tracks.muscle.otherKind, total = tracks.muscle.points.slice(-1)[0]?.muscle_kind === "total";
+                  return `${n} other scan${n > 1 ? "s" : ""} recorded ${total ? "Skeletal Muscle Mass" : "total Muscle Mass"} instead — a different, ${total ? "smaller" : "larger"} measure — so ${n > 1 ? "they aren't" : "it isn't"} compared with these.`;
+                })()
+              : null} />
         </Card>
       )}
 

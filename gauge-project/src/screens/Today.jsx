@@ -12,15 +12,19 @@ function Dial({ T, label, value, unit, delta, deltaGood, pace, color, target, on
   const tone = pace ? { ok: T.ok, warn: T.warn, bad: T.bad, neutral: color }[pace.color] : color;
   return (
     <button type="button" onClick={onClick} className="g-press" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, minWidth: 0, fontFamily: "inherit", color: T.text }}>
-      <Ring T={T} size={94} stroke={8} progress={pace ? Math.max(pace.progress, 2) : null} marker={pace && !pace.reached ? pace.elapsed : null} color={tone}>
-        <span style={{ fontFamily: NUM_FONT, fontWeight: 700, fontSize: 25, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{value ?? "—"}</span>
+      <Ring T={T} size={96} stroke={8} progress={pace ? pace.progress : null} time={pace && !pace.reached ? pace.elapsed : null} color={tone}>
+        <span style={{ fontFamily: NUM_FONT, fontWeight: 700, fontSize: 24, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{value ?? "—"}</span>
         <span style={{ fontSize: 10, color: T.n600, fontWeight: 700, marginTop: 1 }}>{value != null ? unit : ""}</span>
       </Ring>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.n700 }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.n700, whiteSpace: "nowrap" }}>
         <span style={{ width: 7, height: 7, borderRadius: 2, background: color }} />{label}
       </span>
-      <span style={{ minHeight: 16, display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
-        {delta != null ? <Delta T={T} value={delta} goodDirection={deltaGood} size={11} /> : <span style={{ fontSize: 11, color: T.n500 }}>—</span>}
+      <span style={{ minHeight: 30, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+        {pace ? (
+          <span style={{ fontSize: 11.5, fontWeight: 800, color: tone, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+            {pace.progress.toFixed(0)}% <span style={{ color: T.n600, fontWeight: 600 }}>· time {pace.elapsed != null ? `${pace.elapsed.toFixed(0)}%` : "—"}</span>
+          </span>
+        ) : delta != null ? <Delta T={T} value={delta} goodDirection={deltaGood} size={11} /> : <span style={{ fontSize: 11, color: T.n500 }}>—</span>}
         <span style={{ fontSize: 10.5, color: T.n600 }}>{target != null ? `→ ${target}${unit === "kg" ? " kg" : unit}` : "no target"}</span>
       </span>
     </button>
@@ -67,9 +71,16 @@ export default function TodayTab({ T, data, name, go, openSheet }) {
             <Dial T={T} label="Muscle Mass" unit="kg" color={T.muscle} value={tMu.curr}
               delta={dlt(tMu)} deltaGood={1} pace={pMu} target={tMu.target} onClick={() => go("body", "inbody")} />
           </Grid>
+          {hasPace && (
+            <div style={{ display: "flex", justifyContent: "center", gap: 14, fontSize: 11, color: T.n600, flexWrap: "wrap" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 14, height: 5, borderRadius: 3, background: T.accent }} />Progress to target</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 14, height: 4, borderRadius: 2, background: T.n800, opacity: 0.75 }} />Time used</span>
+            </div>
+          )}
           <Muted T={T} style={{ fontSize: 11, textAlign: "center" }}>
-            {latestScanDate ? `Latest scan ${fmt(latestScanDate)} · changes vs the previous reading` : "Add an InBody scan to fill body fat and muscle mass"}
-            {hasPace ? " · ring = progress, tick = where you should be" : ""}
+            {hasPace
+              ? "Outer ring ahead of the inner ring = ahead of schedule."
+              : latestScanDate ? `Latest scan ${fmt(latestScanDate)} · changes vs the previous reading` : "Add an InBody scan to fill body fat and muscle mass"}
           </Muted>
         </Card>
       ) : (

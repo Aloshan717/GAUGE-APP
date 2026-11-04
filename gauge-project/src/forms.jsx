@@ -229,13 +229,13 @@ export function ScanForm({ T, userId, onRefresh, onDone, initialMode }) {
 
       {mode === "manual" && (
         <>
-          <Muted T={T}>Copy the values from your InBody sheet. Muscle Mass is the Skeletal Muscle Mass (SMM) in kg, as printed.</Muted>
+          <Muted T={T}>Copy the values from your InBody sheet. Muscle Mass in kg, as printed on the sheet.</Muted>
           <FormGrid>
             <Field T={T} label="Date"><Input T={T} type="date" value={manual.date} onChange={setM("date")} /></Field>
             <Field T={T} label="Weight (kg)"><Input T={T} type="number" step="0.1" inputMode="decimal" placeholder="e.g. 84.0" value={manual.weight} onChange={setM("weight")} /></Field>
             <Field T={T} label="Body fat (%)"><Input T={T} type="number" step="0.1" inputMode="decimal" placeholder="PBF, e.g. 22.0" value={manual.body_fat} onChange={setM("body_fat")} /></Field>
             <Field T={T} label="Muscle Mass (kg)">
-              <Input T={T} type="number" step="0.1" inputMode="decimal" placeholder="SMM, e.g. 37.9" value={manual.muscle_kg} onChange={setM("muscle_kg")} />
+              <Input T={T} type="number" step="0.1" inputMode="decimal" placeholder="as printed, e.g. 64.0" value={manual.muscle_kg} onChange={setM("muscle_kg")} />
             </Field>
           </FormGrid>
           {manualMsg && <div style={{ fontSize: 12.5, color: T.bad }}>{manualMsg}</div>}

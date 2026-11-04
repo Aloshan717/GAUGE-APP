@@ -176,20 +176,17 @@ export function parseScanReading(reading, fallbackDate) {
 
   // A muscle % on the sheet (some devices print only that) → kg via the weight.
   if (pickedMuscle?.unit === "%" && weight) smmKg = round1((weight * pickedMuscle.value) / 100);
-  const otherLabel = !!(pickedMuscle && pickedMuscle.label && !/^skeletal muscle mass$/i.test(pickedMuscle.label));
-  if (otherLabel) {
-    notes.push(`Muscle Mass taken from "${pickedMuscle.label}" (${pickedMuscle.value}${pickedMuscle.unit === "%" ? "%" : ` ${pickedMuscle.unit}`}).`);
-  }
-
   let muscle = null;
   if (smmKg != null && weight) {
     muscle = round1((smmKg / weight) * 100);
-    if (muscle < 10 || muscle > 75) { notes.push(`Ignored muscle ${smmKg} kg — doesn't fit a ${weight} kg body weight.`); muscle = null; }
-    else if (!otherLabel) notes.push(`Muscle Mass = skeletal muscle mass (SMM) ${smmKg} kg.`);
+    // "Muscle Mass" (total muscle, ~75% of weight) and Skeletal Muscle Mass
+    // (~45%) are both valid; only a value that can't be part of the body is a misread.
+    if (muscle < 10 || muscle > 95) { notes.push(`Ignored muscle ${smmKg} kg — doesn't fit a ${weight} kg body weight.`); muscle = null; }
+    else notes.push(`Muscle Mass ${smmKg} kg (printed as "${pickedMuscle.label}").`);
   } else if (smmKg != null) {
-    notes.push(`Skeletal muscle ${smmKg} kg found, but no weight was read — add the weight to keep it.`);
+    notes.push(`Muscle Mass ${smmKg} kg found, but no weight was read — add the weight to keep it.`);
   } else {
-    notes.push("Muscle Mass wasn't found on the sheet — type it in below (Skeletal Muscle Mass, kg).");
+    notes.push("Muscle Mass wasn't found on the sheet — type it in below (kg, as printed).");
   }
 
   const date = normalizeDate(reading.scan_date);
@@ -222,8 +219,21 @@ export function scanMuscleKg(scan) {
   return pct != null && w ? round1((w * pct) / 100) : null;
 }
 
-// Scans with a muscle_kg field added, for charts and baselines.
-export const withMuscleKg = (scans) => (scans || []).map((s) => ({ ...s, muscle_kg: scanMuscleKg(s) }));
+// Two different numbers get called "muscle": total Muscle Mass (≈ 0.94 × fat-free
+// mass, what many sheets print as "Muscle Mass") and Skeletal Muscle Mass (≈ 0.57 ×
+// fat-free mass). They must never be compared with each other — a switch from one
+// to the other looked like +20 kg of muscle. Told apart by their share of
+// fat-free mass (or of body weight when body fat is missing).
+export function muscleKind(scan) {
+  const kg = scanMuscleKg(scan), w = coerceNumber(scan?.weight), bf = coerceNumber(scan?.body_fat);
+  if (kg == null || !w) return null;
+  const ffm = bf != null ? w * (1 - bf / 100) : null;
+  if (ffm) return kg / ffm >= 0.75 ? "total" : "skeletal";
+  return kg / w >= 0.6 ? "total" : "skeletal";
+}
+
+// Scans with muscle_kg / muscle_kind added, for charts and baselines.
+export const withMuscleKg = (scans) => (scans || []).map((s) => ({ ...s, muscle_kg: scanMuscleKg(s), muscle_kind: muscleKind(s) }));
 
 // Goal muscle target in kg. Older goals stored a % target; it is turned into kg
 // against the goal's target weight, else the latest weight.
@@ -235,21 +245,22 @@ export function goalMuscleKg(goal, refWeight) {
   return pct != null && w ? round1((w * pct) / 100) : null;
 }
 
-// Which printed number is the Muscle Mass. Skeletal muscle first (that is what
-// InBody tracks), then anything called "Muscle Mass"; never lean / fat-free mass,
-// which is a different, much larger number.
+// Which printed number is the Muscle Mass. The value printed as "Muscle Mass"
+// comes first — that is the number the person tracks. Skeletal Muscle Mass is
+// the fallback for sheets without it. Lean / fat-free mass is never used.
 const NOT_MUSCLE = /soft|lean|fat.?free|ffm|slm|lbm|dry|water|protein|segment|arm|leg|trunk|خال|الرخو|ماء/i;
+const IS_MUSCLE_MASS = (l) => /^(total\s+)?muscle\s*mass$/i.test(l) || (/كتلة\s*العضل/.test(l) && !/هيكل/.test(l));
 export function pickMuscleReading(reading) {
-  const direct = coerceNumber(reading?.skeletal_muscle_mass);
   const unit = reading?.weight_unit === "lb" ? "lb" : "kg";
-  if (direct != null && direct > 0) return { value: direct, unit, label: "Skeletal Muscle Mass" };
   const list = (Array.isArray(reading?.muscle_readings) ? reading.muscle_readings : [])
     .map((r) => ({ label: String(r?.label || "").trim(), value: coerceNumber(r?.value), unit: ["kg", "lb", "%"].includes(r?.unit) ? r.unit : unit }))
     .filter((r) => r.value != null && r.value > 0 && r.label && !NOT_MUSCLE.test(r.label));
-  const rank = (r) => (/skeletal|smm|هيكل/i.test(r.label) ? 0 : /muscle mass|كتلة العضل/i.test(r.label) ? 1 : /muscle|عضل/i.test(r.label) ? 2 : 9)
+  const direct = (v, label) => { const n = coerceNumber(v); return n != null && n > 0 ? { value: n, unit, label } : null; };
+  const rank = (r) => (IS_MUSCLE_MASS(r.label) ? 0 : /skeletal|smm|هيكل/i.test(r.label) ? 1 : /muscle|عضل/i.test(r.label) ? 2 : 9)
     + (r.unit === "%" ? 0.5 : 0);   // prefer a mass over a % with the same label
-  const best = list.filter((r) => rank(r) < 9).sort((a, b) => rank(a) - rank(b))[0];
-  return best || null;
+  const byRank = (k) => list.filter((r) => Math.floor(rank(r)) === k).sort((a, b) => rank(a) - rank(b))[0];
+  return direct(reading?.muscle_mass, "Muscle Mass") || byRank(0)
+    || direct(reading?.skeletal_muscle_mass, "Skeletal Muscle Mass") || byRank(1) || byRank(2) || null;
 }
 
 // Manual entry: InBody prints skeletal muscle in kg, the app stores % of weight.
@@ -658,7 +669,14 @@ export function goalTracks({ goal, weights, scans, now = Date.now() }) {
   const latestWeight = weightSeries.length ? weightSeries[weightSeries.length - 1].weight : null;
 
   const track = (key, label, unit, series, field, target, direction) => {
-    const pts = series.filter((p) => coerceNumber(p[field]) != null);
+    let pts = series.filter((p) => coerceNumber(p[field]) != null);
+    let otherKind = 0;
+    if (field === "muscle_kg" && pts.length) {
+      const kind = pts[pts.length - 1].muscle_kind;
+      const same = pts.filter((p) => p.muscle_kind === kind);
+      otherKind = pts.length - same.length;
+      pts = same;
+    }
     const last = pts[pts.length - 1], prev = pts[pts.length - 2];
     const curr = last ? coerceNumber(last[field]) : null;
     const base = baselineAt(pts, field, goalStart);
@@ -668,7 +686,7 @@ export function goalTracks({ goal, weights, scans, now = Date.now() }) {
       ? computePace({ curr, start: base?.value, target, startDate, targetDate: goal.target_date, goodDirection: dir, currDate: last.date, now })
       : null;
     return {
-      key, label, unit, field, points: pts, curr, currDate: last?.date || null,
+      key, label, unit, field, points: pts, otherKind, curr, currDate: last?.date || null,
       prev: prev ? coerceNumber(prev[field]) : null,
       start: base?.value ?? null, startDate, target, targetDate: goal?.target_date || null, direction: dir, pace,
     };
@@ -698,6 +716,7 @@ export function composition(scan) {
     weight, bf, smmPct, fm,
     ffm: fm != null ? +(weight - fm).toFixed(2) : null,
     smmKg: storedKg != null ? storedKg : smmPct != null ? +(weight * smmPct / 100).toFixed(2) : null,
+    muscleKind: muscleKind(scan),
   };
 }
 
@@ -832,7 +851,8 @@ export function coachAnalysis({ goalType, goal, scans, weights, now = Date.now()
   }
 
   // ── Body composition between scans (kg, not %) ──
-  const dSmm = P && L.smmKg != null && P.smmKg != null ? +(L.smmKg - P.smmKg).toFixed(2) : null;
+  // Muscle is only compared between readings of the same kind (see muscleKind).
+  const dSmm = P && L.smmKg != null && P.smmKg != null && L.muscleKind === P.muscleKind ? +(L.smmKg - P.smmKg).toFixed(2) : null;
   const dFm = P && L.fm != null && P.fm != null ? +(L.fm - P.fm).toFixed(2) : null;
 
   if (!P) {
