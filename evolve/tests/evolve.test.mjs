@@ -1,7 +1,7 @@
 // Evolve logic tests: library, swaps, sessions, advice, plan, energy, goal checks.
 import assert from "node:assert/strict";
 import { EXERCISES, BY_ID, GROUPS, usable, swapOptions, matchExercise, logExerciseId } from "../src/lib/exercises.js";
-import { buildSession, recommend, liftHistory, weightStep, exercisesFor } from "../src/lib/train.js";
+import { buildSession, recommend, liftHistory, weightStep, exercisesFor, adjustSession, recommendedCounts, makeCustomSlot, customMatch, makeSlot } from "../src/lib/train.js";
 import { generatePlan, weeklySets, swapInPlan, toggleKept, reviewCount, planDayFor, nextPlanDay, DEFAULT_DAYS } from "../src/lib/plan.js";
 import { restingEnergy, formulaMaintenance, maintenance, dailyTargets, goalDirection, feasibility, consistency, currentBody, adaptiveMaintenance, watchAverage, coachTips, localISO } from "../src/lib/body.js";
 import { toKcal } from "../api/burn.js";
@@ -247,6 +247,40 @@ test("Shortcut numbers parse with units and separators", () => {
   assert.equal(toKcal("1968 kcal"), 1968);
   assert.equal(toKcal(700), 700);
   assert.equal(toKcal("abc"), null);
+});
+
+// ── Your own counts and exercises ──
+test("you choose how many exercises per muscle — more than suggested", () => {
+  const rec = recommendedCounts({ muscles: ["Triceps"], minutes: 60 });
+  assert.equal(rec.Triceps, 2);
+  const s = adjustSession([], { muscles: ["Triceps"], counts: { Triceps: 4 } });
+  assert.equal(s.length, 4);
+  assert.equal(new Set(s.map((x) => x.ex)).size, 4);
+  assert.ok(s.every((x) => BY_ID[x.ex].group === "triceps"));
+});
+test("changing counts keeps exercises already there (and their swaps)", () => {
+  let s = adjustSession([], { muscles: ["Chest"], counts: { Chest: 2 } });
+  s = s.map((x, i) => (i === 0 ? { ...x, ex: "machine_chest_press" } : x));
+  const more = adjustSession(s, { muscles: ["Chest"], counts: { Chest: 4 } });
+  assert.equal(more.length, 4);
+  assert.ok(more.some((x) => x.ex === "machine_chest_press"));
+  const less = adjustSession(more, { muscles: ["Chest"], counts: { Chest: 1 } });
+  assert.equal(less.length, 1);
+});
+test("zero suggested + your own exercises; your own are never removed", () => {
+  const mine = [makeSlot({ group: "curl", ex: "hammer_curl", muscle: "Biceps", manual: true }), makeCustomSlot({ name: "Cable kickback", muscle: "Triceps" })];
+  const s = adjustSession(mine, { muscles: ["Biceps", "Triceps"], counts: { Biceps: 0, Triceps: 0 } });
+  assert.equal(s.length, 2);
+  assert.ok(s[1].custom);
+});
+test("sets per exercise applies to every exercise", () => {
+  const s = adjustSession([], { muscles: ["Back"], counts: { Back: 3 }, sets: 5 });
+  assert.ok(s.every((x) => x.sets === 5));
+});
+test("your own exercise keeps its history by name", () => {
+  const logs = [{ exercise: "Cable kickback", weight_kg: 10, reps: 12, date: day(-3) }, { exercise: "Other", weight_kg: 5, reps: 5, date: day(-3) }];
+  const h = liftHistory(logs, null, customMatch("cable kickback"));
+  assert.equal(h.length, 1); assert.equal(h[0].sets[0].weight_kg, 10);
 });
 
 // ── Every text exists in both languages ──

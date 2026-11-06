@@ -150,7 +150,12 @@ export const STR = {
     recT_up: "Every set hit {hi} → go to {w} kg.", recT_same: "Same {w} kg — aim for {r} reps.", recT_hold: "Same {w} kg — get every set to {lo}+.",
     recT_down: "Missed {lo} reps twice → drop to {w} kg and build back up.", recT_stall: "No progress in 3 sessions → aim for {r} reps, or swap.",
     recT_fresh: "Start with a weight you can do for {r} clean reps.", recT_reps: "Every set hit {hi} → add 2 reps or lower slower.",
-    noMuscle: "Pick at least one muscle to build a session.", restartQ: "Start over", sessionDone: "Done today",
+    noMuscle: "Pick at least one muscle to build a session.",
+    buildMode: "How to build it", modeSuggest: "Suggest for me", modeChoose: "I'll choose", perMuscle: "Exercises per muscle", setsPer: "Sets per exercise",
+    recN: "Suggested: {n}", suggestLine: "Suggested for your goal: {list} · {s} sets each.", notRules: "Suggestions, not rules — change anything.",
+    useSuggestion: "Use the suggestion", chooseHint: "Add the exercises you want — from the list or your own.",
+    addExercise: "Add exercise", addExTitle: "Add exercise", showAll: "Show all equipment", ownEx: "Not in the list? Type its name", ownExPh: "e.g. Cable kickback",
+    add: "Add", added: "Added: {name}", remove: "Remove", inSession: "In session", minus: "Fewer", plus: "More", restartQ: "Start over", sessionDone: "Done today",
 
     // Swap
     swapSheet: "Swap exercise", swCurrent: "Current exercise", swExplain: "These train the same muscle with the same job. Pick the one that suits you.",
@@ -312,7 +317,12 @@ export const STR = {
     recT_up: "وصلت {hi} في كل المجموعات ← ارفع لـ {w} كجم.", recT_same: "نفس {w} كجم — استهدف {r} تكرار.", recT_hold: "نفس {w} كجم — وصّل كل مجموعة لـ {lo} أو أكثر.",
     recT_down: "ما وصلت {lo} مرتين ← نزّل لـ {w} كجم وابنِ من جديد.", recT_stall: "ثابت 3 جلسات ← استهدف {r} تكرار أو بدّل التمرين.",
     recT_fresh: "ابدأ بوزن تقدر تسويه {r} تكرارات نظيفة.", recT_reps: "وصلت {hi} في كل المجموعات ← زد تكرارين أو نزّل أبطأ.",
-    noMuscle: "اختر عضلة وحدة على الأقل عشان نبني التمرين.", restartQ: "ابدأ من جديد", sessionDone: "خلصت اليوم",
+    noMuscle: "اختر عضلة وحدة على الأقل عشان نبني التمرين.",
+    buildMode: "طريقة البناء", modeSuggest: "اقترح لي", modeChoose: "أنا أختار", perMuscle: "عدد التمارين لكل عضلة", setsPer: "عدد المجموعات لكل تمرين",
+    recN: "المقترح: {n}", suggestLine: "المقترح لهدفك: {list} · {s} مجموعات لكل تمرين.", notRules: "اقتراح مو إجبار — غيّر اللي تبي.",
+    useSuggestion: "استخدم المقترح", chooseHint: "أضف التمارين اللي تبيها — من القائمة أو تمرينك الخاص.",
+    addExercise: "أضف تمرين", addExTitle: "أضف تمرين", showAll: "اعرض كل الأدوات", ownEx: "مو موجود بالقائمة؟ اكتب اسمه", ownExPh: "مثلاً: ترايسبس كيك باك",
+    add: "أضف", added: "انضاف: {name}", remove: "شيل", inSession: "موجود", minus: "أقل", plus: "أكثر", restartQ: "ابدأ من جديد", sessionDone: "خلصت اليوم",
 
     swapSheet: "بدّل التمرين", swCurrent: "التمرين الحالي", swExplain: "هذي تشغّل نفس العضلة بنفس الحركة. اختر اللي يناسبك.",
     swFiltered: "التمارين اللي تحتاج جهاز مو عندك، أو تضغط على مكان يألمك، مستبعدة من الأساس.", use: "اختر",

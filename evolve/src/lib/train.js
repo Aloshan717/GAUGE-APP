@@ -43,10 +43,11 @@ const setOrder = (a, b) =>
 
 // Every past session of one library exercise, newest first:
 // [{ date, sets: [{ weight_kg, reps, effort }] }]
-export function liftHistory(logs, exerciseId) {
+export function liftHistory(logs, exerciseId, match) {
   const by = new Map();
+  const isIt = match || ((l) => logExerciseId(l) === exerciseId);
   for (const l of logs || []) {
-    if (!l || logExerciseId(l) !== exerciseId) continue;
+    if (!l || !isIt(l)) continue;
     const d = normalizeDate(l.date);
     const w = coerceNumber(l.weight_kg), r = coerceNumber(l.reps);
     if (!d || w == null || r == null) continue;
@@ -87,7 +88,7 @@ export function buildSession({ muscles = [], logs = [], profile = {}, minutes } 
   const experience = profile.experience || "mid";
   const focus = profile.focus || "muscle";
   const n = exercisesFor(minutes ?? profile.session_min ?? 60);
-  const queues = muscles.filter((m) => MUSCLE_ORDER[m]).map((m) => ({ list: [...MUSCLE_ORDER[m]], own: new Map() }));
+  const queues = muscles.filter((m) => MUSCLE_ORDER[m]).map((m) => ({ m, list: [...MUSCLE_ORDER[m]], own: new Map() }));
   const used = new Map();
   const usedEx = new Set();
   const slots = [];
@@ -105,7 +106,7 @@ export function buildSession({ muscles = [], logs = [], profile = {}, minutes } 
         usedEx.add(ex);
         used.set(g, (used.get(g) || 0) + 1);
         q.own.set(g, (q.own.get(g) || 0) + 1);
-        slots.push({ group: g, ex });
+        slots.push({ group: g, ex, muscle: q.m });
         break;
       }
     }
@@ -113,7 +114,7 @@ export function buildSession({ muscles = [], logs = [], profile = {}, minutes } 
   // Big lifts first, while you're fresh.
   const ordered = [...slots].sort((a, b) => (GROUPS[b.group].compound ? 1 : 0) - (GROUPS[a.group].compound ? 1 : 0));
   return ordered.map((s, i) => ({
-    id: `s${i}`, group: s.group, ex: s.ex,
+    id: `s${i}`, group: s.group, ex: s.ex, muscle: s.muscle,
     sets: setsFor(s.group, { experience, focus, first: i === 0 }),
     reps: repsFor(s.group, { focus, first: i === 0 }),
   }));
@@ -183,4 +184,78 @@ export function lastTrained(logs, now = Date.now()) {
   const days = {};
   Object.entries(out).forEach(([m, d]) => { days[m] = Math.floor((now - new Date(d + "T00:00:00Z").getTime()) / 86400000); });
   return days;
+}
+
+// ─── Your own numbers ───────────────────────────────────────────────────────
+// The suggestion is only a starting point: you choose how many exercises per
+// muscle and how many sets, and can add any exercise (or one of your own).
+
+export const MAX_PER_MUSCLE = 6;
+export const slotMuscle = (s) => s.muscle || GROUPS[s.group]?.muscle || null;
+
+// Exercises per muscle the suggestion would give for this time.
+export function recommendedCounts({ muscles = [], logs = [], profile = {}, minutes } = {}) {
+  const out = Object.fromEntries(muscles.map((m) => [m, 0]));
+  buildSession({ muscles, logs, profile, minutes }).forEach((s) => { out[s.muscle] = (out[s.muscle] || 0) + 1; });
+  return out;
+}
+
+// Movement groups for a muscle: the usual order first, then the rest.
+export function groupsFor(muscle) {
+  const base = MUSCLE_ORDER[muscle] || [];
+  const extra = Object.keys(GROUPS).filter((g) => GROUPS[g].muscle === muscle && !base.includes(g));
+  return [...new Set([...base, ...extra])];
+}
+
+let seq = 0;
+export const newSlotId = (prefix = "x") => `${prefix}${Date.now().toString(36)}${(seq++).toString(36)}`;
+
+export function makeSlot({ group, ex, muscle, profile = {}, sets, first = false, manual = false }) {
+  return {
+    id: newSlotId(manual ? "m" : "a"), group, ex, origEx: ex, muscle: muscle || GROUPS[group]?.muscle, manual,
+    sets: sets ?? setsFor(group, { experience: profile.experience, focus: profile.focus, first }),
+    reps: repsFor(group, { focus: profile.focus, first }),
+  };
+}
+
+// Your own exercise, not in the library. History is matched by its name.
+export function makeCustomSlot({ name, muscle, sets = 3 }) {
+  return { id: newSlotId("c"), custom: true, manual: true, name: String(name).trim(), muscle, group: null, ex: null, sets, reps: [8, 12] };
+}
+export const customMatch = (name) => {
+  const k = String(name || "").trim().toLowerCase();
+  return (l) => String(l?.exercise || "").trim().toLowerCase() === k;
+};
+
+// Re-shape a session to the counts you set: keeps the exercises already there
+// (and their swaps and logged sets), adds or drops from the end per muscle.
+// Exercises you added yourself are never touched.
+export function adjustSession(slots = [], { muscles = [], counts = {}, sets = null, logs = [], profile = {} } = {}) {
+  const opts = { equipment: profile.equipment || "gym", pain: profile.pain || [] };
+  const manual = slots.filter((s) => s.manual);
+  const kept = [];
+  for (const m of muscles) {
+    const want = Math.max(0, Math.min(MAX_PER_MUSCLE, counts[m] ?? 0));
+    kept.push(...slots.filter((s) => !s.manual && slotMuscle(s) === m).slice(0, want).map((s) => ({ ...s, muscle: m })));
+  }
+  const used = new Set([...kept, ...manual].map((s) => s.ex).filter(Boolean));
+  const out = [...kept];
+  for (const m of muscles) {
+    const want = Math.max(0, Math.min(MAX_PER_MUSCLE, counts[m] ?? 0));
+    const groups = groupsFor(m);
+    let have = out.filter((s) => slotMuscle(s) === m).length, i = have, tries = 0;
+    while (have < want && tries++ < 40) {
+      const g = groups[i % groups.length];
+      i++;
+      const ex = pickExercise(g, logs, opts, used);
+      if (!ex) continue;
+      used.add(ex);
+      out.push(makeSlot({ group: g, ex, muscle: m, profile }));
+      have++;
+    }
+  }
+  // Big lifts first, then the exercises you added.
+  const ordered = out.sort((a, b) => (GROUPS[b.group]?.compound ? 1 : 0) - (GROUPS[a.group]?.compound ? 1 : 0));
+  const all = [...ordered, ...manual];
+  return sets ? all.map((s) => ({ ...s, sets })) : all;
 }

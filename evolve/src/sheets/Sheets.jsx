@@ -10,6 +10,7 @@ import ScanForm from "./ScanForm.jsx";
 import { Account, InviteForm, ProfileForm } from "./Account.jsx";
 import SwapSheet from "./Swap.jsx";
 import Setup from "./Setup.jsx";
+import AddExercise from "./AddExercise.jsx";
 
 function DayPicker({ value, onChange }) {
   const { t } = useApp();
@@ -219,7 +220,7 @@ function SyncSetup() {
 
 const TITLES = {
   log: "logTitle", weigh: "weighTitle", measure: "measureTitle", fuel: "fuelSheet", burn: "burnSheet", sync: "syncTitle",
-  scan: "scanTitle", account: "accountSheet", invite: "inviteTitle", profile: "profileTitle", swap: "swapSheet", setup: "setupTitle",
+  scan: "scanTitle", account: "accountSheet", invite: "inviteTitle", profile: "profileTitle", swap: "swapSheet", setup: "setupTitle", addEx: "addExTitle",
 };
 
 export default function Sheets() {
@@ -228,7 +229,7 @@ export default function Sheets() {
   const back = sheet.fromLog ? () => openSheet(sheet.name === "sync" ? "burn" : "log") : sheet.fromAccount ? () => openSheet("account") : null;
   const body = {
     log: <LogMenu />, weigh: <WeighForm />, measure: <MeasureForm />, fuel: <FuelForm />, burn: <BurnForm />, sync: <SyncSetup />,
-    scan: <ScanForm />, account: <Account />, invite: <InviteForm />, profile: <ProfileForm />, swap: <SwapSheet ctx={sheet} />, setup: <Setup />,
+    scan: <ScanForm />, account: <Account />, invite: <InviteForm />, profile: <ProfileForm />, swap: <SwapSheet ctx={sheet} />, setup: <Setup />, addEx: <AddExercise ctx={sheet} />,
   }[sheet.name];
   return (
     <Sheet title={t(TITLES[sheet.name] || "logTitle")} onClose={closeSheet} onBack={back} closeLabel={t("close")} backLabel={t("back")} rtl={rtl}>
