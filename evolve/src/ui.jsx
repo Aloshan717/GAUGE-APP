@@ -44,8 +44,15 @@ export function Icon({ name, size = 20, stroke = 1.9, color = "currentColor", fl
   );
 }
 
+// The app mark: three rising chevrons, faint to bright, on a dark tile.
 export const Logo = ({ big }) => (
-  <span className={`logo${big ? " big" : ""}`}><Icon name="logo" size={big ? 34 : 18} stroke={2.6} /></span>
+  <span className={`logo${big ? " big" : ""}`}>
+    <svg width={big ? 38 : 20} height={big ? 38 : 20} viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" aria-hidden="true">
+      <path d="M6 19 L12 13.5 L18 19" stroke="#2FE57D" strokeOpacity="0.35" />
+      <path d="M6 14.5 L12 9 L18 14.5" stroke="#2FE57D" strokeOpacity="0.65" />
+      <path d="M6 10 L12 4.5 L18 10" stroke="#7DF5B0" />
+    </svg>
+  </span>
 );
 
 // Outer ring = progress to target (status colour). Inner ring = time used.

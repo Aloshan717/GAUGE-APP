@@ -49,7 +49,7 @@ h1, h2, h3 { margin: 0; }
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
 }
 .brand { display: flex; align-items: center; gap: 9px; font-size: 18px; font-weight: 800; }
-.logo { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: var(--ink); display: grid; place-items: center; flex: none; }
+.logo { width: 30px; height: 30px; border-radius: 9px; background: radial-gradient(120% 120% at 30% 15%, #16301f, #050a07 70%); box-shadow: inset 0 0 0 1px rgba(47, 229, 125, 0.18); display: grid; place-items: center; flex: none; }
 .logo.big { width: 60px; height: 60px; border-radius: 18px; }
 .top-actions { display: flex; align-items: center; gap: 8px; }
 .pill-btn {

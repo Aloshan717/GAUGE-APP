@@ -1,1 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#2FE57D"/><g fill="none" stroke="#03130A" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 43l13-13 8 8 15-15"/><path d="M38 23h12v12"/></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><defs>
+  <radialGradient id="bgC" cx="30%" cy="18%" r="95%"><stop offset="0" stop-color="#16301F"/><stop offset="0.55" stop-color="#07110B"/><stop offset="1" stop-color="#020403"/></radialGradient>
+  <linearGradient id="gC" gradientUnits="userSpaceOnUse" x1="260" y1="780" x2="780" y2="200"><stop offset="0" stop-color="#0FA552"/><stop offset="0.6" stop-color="#2FE57D"/><stop offset="1" stop-color="#B6FFD3"/></linearGradient>
+  <filter id="glowC" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="22" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  <rect width="1024" height="1024" fill="url(#bgC)"/>
+  <rect x="6" y="6" width="1012" height="1012" rx="0" fill="none" stroke="#2FE57D" stroke-opacity="0.10" stroke-width="12"/><g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="88" filter="url(#glowC)">
+  <path d="M292 760 L512 560 L732 760" stroke="#2FE57D" stroke-opacity="0.32"/>
+  <path d="M292 600 L512 400 L732 600" stroke="#2FE57D" stroke-opacity="0.62"/>
+  <path d="M292 440 L512 240 L732 440" stroke="url(#gC)"/></g></svg>
