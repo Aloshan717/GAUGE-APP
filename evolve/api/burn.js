@@ -28,8 +28,10 @@ export default async function handler(req, res) {
   if (req.method !== "POST" && req.method !== "GET") return res.status(405).json({ ok: false, error: "Use POST" });
   const src = { ...(req.query || {}), ...jsonBody(req) };
   const key = String(src.key || "").trim();
-  const active = toKcal(src.active);
-  const resting = toKcal(src.resting);
+  // A Shortcut left on Unit "cal" sends small calories (×1000) — bring them back to kcal.
+  const asKcal = (n) => (n != null && n > 20000 ? n / 1000 : n);
+  const active = asKcal(toKcal(src.active));
+  const resting = asKcal(toKcal(src.resting));
   // The Shortcut runs at 11:55 pm and sends that day's totals, so no date = today.
   // (At 11:55 pm the UTC date is still the local date anywhere east of UTC, e.g. Saudi.)
   const today = new Date().toISOString().slice(0, 10);
