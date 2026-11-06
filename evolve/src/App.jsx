@@ -1,0 +1,273 @@
+// EVOLVE — app shell: session, data, theme, language, navigation, sheets.
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AppCtx } from "./ctx.js";
+import { store, auth, sb, setNotify, setApiLang, readAuthHash, isMissingTable } from "./lib/api.js";
+import { makeT } from "./lib/i18n.js";
+import { goalTracks } from "./lib/core.js";
+import { currentBody, maintenance, dailyTargets, feasibility, consistency, coachTips } from "./lib/body.js";
+import { Icon, Logo } from "./ui.jsx";
+import SignIn, { SetPassword } from "./screens/SignIn.jsx";
+import Home from "./screens/Home.jsx";
+import Train from "./screens/Train.jsx";
+import Body from "./screens/Body.jsx";
+import Goal from "./screens/Goal.jsx";
+import Planner from "./screens/Planner.jsx";
+import Sheets from "./sheets/Sheets.jsx";
+
+export const VERSION = "1.0.0";
+
+const EMPTY = { weights: [], inbody: [], measurements: [], logs: [], sessions: [], goal: null, days: [], profile: null, plan: null, planRow: null };
+
+function initialLang() {
+  const s = store.get("evolve_lang");
+  if (s === "ar" || s === "en") return s;
+  return (navigator.language || "").toLowerCase().startsWith("ar") ? "ar" : "en";
+}
+function initialTheme() {
+  const s = store.get("evolve_theme");
+  if (s === "light" || s === "dark") return s;
+  return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+export default function App() {
+  const [lang, setLang] = useState(initialLang);
+  const [theme, setTheme] = useState(initialTheme);
+  const [hashAuth] = useState(() => readAuthHash());
+  const [mode, setMode] = useState(() => {
+    if (hashAuth?.error) return "expired";
+    if (hashAuth?.type === "invite" || hashAuth?.type === "recovery") return hashAuth.type;
+    return auth.hasSession() || hashAuth ? "app" : "signin";
+  });
+  const [user, setUser] = useState(() => store.json("evolve_user"));
+  const [data, setData] = useState(() => {
+    const u = store.json("evolve_user");
+    return (u && store.json(`evolve_cache_${u.id}`)) || EMPTY;
+  });
+  const [tab, setTab] = useState("home");
+  const [sheet, setSheet] = useState(null);          // { name, ...opts }
+  const [toastMsg, setToastMsg] = useState("");
+  // Today's workout and the plan being reviewed survive a reload or app switch.
+  const [trainSession, setTrainSessionRaw] = useState(() => store.json(`evolve_train_${store.json("evolve_user")?.id}`));
+  const setTrainSession = useCallback((v) => setTrainSessionRaw((prev) => {
+    const next = typeof v === "function" ? v(prev) : v;
+    store.setJson(`evolve_train_${ownerRef.current}`, next);
+    return next;
+  }), []);
+  const [planDraft, setPlanDraftRaw] = useState(() => store.json(`evolve_plandraft_${store.json("evolve_user")?.id}`));
+  const setPlanDraft = useCallback((v) => setPlanDraftRaw((prev) => {
+    const next = typeof v === "function" ? v(prev) : v;
+    if (next) store.setJson(`evolve_plandraft_${ownerRef.current}`, next); else store.del(`evolve_plandraft_${ownerRef.current}`);
+    return next;
+  }), []);
+  const [banner, setBanner] = useState("");
+  const [setupMissing, setSetupMissing] = useState(false);
+  const ownerRef = useRef(user?.id || null);
+  const t = useMemo(() => makeT(lang), [lang]);
+
+  // Theme + language on <html>
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    store.set("evolve_theme", theme);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "light" ? "#f4f7f5" : "#060807");
+  }, [theme]);
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+    store.set("evolve_lang", lang);
+    setApiLang(lang);
+  }, [lang]);
+
+  const toast = useCallback((msg) => { setToastMsg(msg); }, []);
+  useEffect(() => { if (!toastMsg) return; const id = setTimeout(() => setToastMsg(""), 3200); return () => clearTimeout(id); }, [toastMsg]);
+  useEffect(() => { setNotify((m) => setToastMsg(m)); }, []);
+
+  // Session from an email link
+  useEffect(() => {
+    if (hashAuth?.access_token) {
+      auth.save(hashAuth);
+      history.replaceState(null, "", location.pathname);
+    } else if (hashAuth?.error) {
+      history.replaceState(null, "", location.pathname);
+    }
+  }, [hashAuth]);
+
+  const signOutLocal = useCallback(() => {
+    auth.clear();
+    store.del("evolve_user");
+    ownerRef.current = null;
+    setUser(null);
+    setData(EMPTY);
+    setSheet(null);
+    setTab("home");
+    setMode("signin");
+  }, []);
+  useEffect(() => { auth.onFatal = signOutLocal; return () => { auth.onFatal = null; }; }, [signOutLocal]);
+
+  const loadUser = useCallback(async () => {
+    const r = await sb.getUser();
+    if (r.ok && r.body?.id) {
+      const u = { id: r.body.id, email: r.body.email, name: r.body.user_metadata?.name || "" };
+      store.setJson("evolve_user", u);
+      if (ownerRef.current !== u.id) {
+        if (ownerRef.current) setData(EMPTY);
+        setTrainSessionRaw(store.json(`evolve_train_${u.id}`));
+        setPlanDraftRaw(store.json(`evolve_plandraft_${u.id}`));
+      }
+      ownerRef.current = u.id;
+      setUser(u);
+      return u;
+    }
+    return user;
+  }, [user]);
+
+  const refresh = useCallback(async (uidArg) => {
+    const uid = uidArg || ownerRef.current;
+    if (!uid) return;
+    const f = `user_id=eq.${uid}`;
+    const [weights, inbody, measurements, logs, goals, sessions, days, profiles, plans] = await Promise.all([
+      sb.select("weight_entries", f),
+      sb.select("inbody_scans", f),
+      sb.select("measurements", f),
+      sb.select("workout_logs", f),
+      sb.select("goals", f, "created_at.desc"),
+      sb.select("sessions", f),
+      sb.select("ev_days", `${f}&limit=200`),
+      sb.select("ev_profiles", f, null),
+      sb.select("ev_plans", `${f}&limit=1`, "created_at.desc"),
+    ]);
+    if (ownerRef.current !== uid) return;
+    const rows = (r, prev) => (Array.isArray(r) ? r : prev);
+    const evMissing = [days, profiles, plans].some((r) => !Array.isArray(r) && isMissingTable(r));
+    setSetupMissing(evMissing);
+    const failures = [weights, inbody, measurements, logs, goals, sessions].filter((r) => !Array.isArray(r));
+    if (!failures.length) setBanner("");
+    else if (failures.every((r) => r.network)) setBanner(t("offline"));
+    else setBanner(t("loadFailed", { msg: failures.map((r) => r.message).join(" · ") }));
+    setData((prev) => {
+      const next = {
+        weights: rows(weights, prev.weights), inbody: rows(inbody, prev.inbody), measurements: rows(measurements, prev.measurements),
+        logs: rows(logs, prev.logs), sessions: rows(sessions, prev.sessions),
+        goal: Array.isArray(goals) ? goals[0] || null : prev.goal,
+        days: rows(days, evMissing ? [] : prev.days),
+        profile: Array.isArray(profiles) ? profiles[0] || null : prev.profile,
+        planRow: Array.isArray(plans) ? plans[0] || null : prev.planRow,
+      };
+      next.plan = next.planRow?.active === false ? null : next.planRow?.plan || null;
+      store.setJson(`evolve_cache_${uid}`, next);
+      return next;
+    });
+  }, [t]);
+
+  useEffect(() => {
+    if (mode !== "app") return;
+    (async () => { const u = await loadUser(); if (u?.id) refresh(u.id); })();
+    // Reload when the app comes back to the foreground.
+    const onVis = () => { if (document.visibilityState === "visible" && ownerRef.current) refresh(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  // Profile language / theme follow the account across devices.
+  useEffect(() => {
+    const p = data.profile;
+    if (p?.lang && (p.lang === "en" || p.lang === "ar") && !store.get("evolve_lang_local")) setLang(p.lang);
+    if (p?.theme && (p.theme === "light" || p.theme === "dark") && !store.get("evolve_theme_local")) setTheme(p.theme);
+  }, [data.profile]);
+
+  const saveProfile = useCallback(async (patch) => {
+    if (!ownerRef.current) return { error: "no user" };
+    const row = { ...(data.profile || {}), ...patch, user_id: ownerRef.current, updated_at: new Date().toISOString() };
+    const r = await sb.upsert("ev_profiles", row, "user_id");
+    if (r.error === "setup") setSetupMissing(true);
+    if (!r.error) setData((d) => ({ ...d, profile: r.data || row }));
+    return r;
+  }, [data.profile]);
+
+  const changeLang = (l) => { setLang(l); store.set("evolve_lang_local", "1"); if (mode === "app") saveProfile({ lang: l }); };
+  const changeTheme = (th) => { setTheme(th); store.set("evolve_theme_local", "1"); if (mode === "app") saveProfile({ theme: th }); };
+
+  // Everything Home and Goal show, computed once.
+  const derived = useMemo(() => {
+    const now = Date.now();
+    const body = currentBody({ weights: data.weights, scans: data.inbody });
+    const tracks = goalTracks({ goal: data.goal, weights: data.weights, scans: data.inbody, now });
+    const maint = maintenance({ profile: data.profile || {}, body, days: data.days, sessions: data.sessions, weights: data.weights, scans: data.inbody, now });
+    const targets = dailyTargets({ goal: data.goal, body, maint, profile: data.profile || {}, now });
+    const feas = feasibility({ goal: data.goal, body, profile: data.profile || {}, now });
+    const fit = consistency({ goal: data.goal, body });
+    const tips = coachTips({ goal: data.goal, body, targets, tracks, days: data.days, weights: data.weights, scans: data.inbody, now });
+    return { body, tracks, maint, targets, feas, fit, tips };
+  }, [data]);
+
+  const openSheet = useCallback((name, opts = {}) => setSheet({ name, ...opts }), []);
+  const closeSheet = useCallback(() => setSheet(null), []);
+
+  const ctx = {
+    t, lang, theme, rtl: lang === "ar", user, data, setData, derived, refresh, saveProfile, setupMissing,
+    tab, setTab, openSheet, closeSheet, sheet, toast, changeLang, changeTheme, signOutLocal, version: VERSION,
+    trainSession, setTrainSession, planDraft, setPlanDraft,
+  };
+
+  if (mode === "signin") return <AppCtx.Provider value={ctx}><SignIn onSignedIn={() => setMode("app")} /></AppCtx.Provider>;
+  if (mode === "invite" || mode === "recovery" || mode === "expired") {
+    return <AppCtx.Provider value={ctx}><SetPassword kind={mode} onDone={() => setMode("app")} onBack={() => setMode("signin")} /></AppCtx.Provider>;
+  }
+
+  const name = (data.profile?.display_name || user?.name || (user?.email || "").split("@")[0] || "").trim();
+  const initial = (name[0] || "E").toUpperCase();
+
+  if (tab === "planner") {
+    return (
+      <AppCtx.Provider value={ctx}>
+        <Planner />
+        {sheet && <Sheets />}
+        {toastMsg && <div className="toast" role="status">{toastMsg}</div>}
+      </AppCtx.Provider>
+    );
+  }
+
+  const NAV = [["home", "home", t("navHome")], ["train", "train", t("navTrain")], null, ["body", "body", t("navBody")], ["goal", "goal", t("navGoal")]];
+
+  return (
+    <AppCtx.Provider value={ctx}>
+      <div className="app">
+        <header className="topbar">
+          <div className="brand ltr"><Logo /><span>Evolve</span></div>
+          <div className="top-actions">
+            <button className="pill-btn" onClick={() => changeTheme(theme === "light" ? "dark" : "light")} aria-label={theme === "light" ? t("toDark") : t("toLight")}>
+              <Icon name={theme === "light" ? "moon" : "sun"} size={17} />
+            </button>
+            <button className="pill-btn" onClick={() => changeLang(lang === "ar" ? "en" : "ar")} aria-label={t("langAria")}>{t("langBtn")}</button>
+            <button className="avatar" onClick={() => openSheet("account")} aria-label={t("accountAria")}>{initial}</button>
+          </div>
+        </header>
+
+        <main className="screen">
+          {setupMissing && <div className="banner"><Icon name="info" size={16} color="var(--warn)" /><span>{t("setupMissing")}</span></div>}
+          {banner && <div className="banner"><Icon name="info" size={16} color="var(--warn)" /><span>{banner}</span></div>}
+          {tab === "home" && <Home name={name} />}
+          {tab === "train" && <Train />}
+          {tab === "body" && <Body />}
+          {tab === "goal" && <Goal />}
+        </main>
+
+        <nav className="nav">
+          <div className="nav-inner">
+            {NAV.map((n, i) => n ? (
+              <button key={n[0]} className="nav-btn" aria-current={tab === n[0] ? "page" : undefined} onClick={() => { setTab(n[0]); window.scrollTo(0, 0); }}>
+                <Icon name={n[1]} size={22} />{n[2]}
+              </button>
+            ) : (
+              <div className="nav-fab-wrap" key={`fab${i}`}>
+                <button className="fab" aria-label={t("navLog")} onClick={() => openSheet("log")}><Icon name="plus" size={26} stroke={2.6} /></button>
+              </div>
+            ))}
+          </div>
+        </nav>
+      </div>
+      {sheet && <Sheets />}
+      {toastMsg && <div className="toast" role="status">{toastMsg}</div>}
+    </AppCtx.Provider>
+  );
+}
