@@ -86,6 +86,17 @@ export const STR = {
       "Add “Get Contents of URL”: the address above, Method POST, Request Body JSON with key (your key), date (Formatted Date), active (first Statistics), resting (second Statistics).",
       "Tap Done. The first run asks for Health access — allow both.",
     ],
+    wsIntro: "Once, about 3 minutes. Then every night your iPhone sends the day's burn from Apple Health to Evolve by itself — free, no app to install.",
+    wsCopy: "Copy my link", wsCheck: "Check it worked", wsNotYet: "Nothing received yet. Run the automation once (step 7), then check again.",
+    ws: [
+      ["Make your personal link", "This link is your key — it can only send your burn, nothing else. You'll paste it in step 6."],
+      ["Create the automation", "Open the Shortcuts app → bottom tab “Automation” → “+” (top right) → “Time of Day” → set 11:55 PM, repeat “Daily” → choose “Run Immediately” → Next → “New Blank Automation”."],
+      ["Read today's active energy", "Tap “Add Action”, search “Find Health Samples” and tap it. Tap the blue “Type” → “Active Energy”. Make the filter say “Start Date is Today”."],
+      ["Add it up", "Search “Calculate Statistics” and add it under the first action. Tap the blue word and choose “Sum”."],
+      ["Do the same for resting energy", "Add “Find Health Samples” again → Type “Resting Energy” → “Start Date is Today”. Then “Calculate Statistics” → “Sum” again."],
+      ["Send it to Evolve", "Search “Get Contents of URL” and add it last. Tap “URL” and paste your link. Tap the arrow (Show More): Method → POST, Request Body → JSON. Tap “Add new field” → Text: name active, value → the FIRST “Statistics”. Add another: name resting, value → the SECOND “Statistics”."],
+      ["Try it now", "Tap Done. Open the automation and tap ▶ (or wait until 11:55 PM). The first time, allow access to Health. Then tap “Check it worked” below."],
+    ],
     syncPrivacy: "Your key is stored only as a fingerprint. Evolve never sees your Health data — only the two totals the Shortcut sends.",
 
     // Account
@@ -256,6 +267,17 @@ export const STR = {
       "أضف «Format Date»: التاريخ الحالي، صيغة مخصصة yyyy-MM-dd.",
       "أضف «Get Contents of URL»: العنوان فوق، الطريقة POST، ونص الطلب JSON فيه key (مفتاحك)، و date (التاريخ المنسّق)، و active (الإحصائية الأولى)، و resting (الإحصائية الثانية).",
       "اضغط تم. أول تشغيل يطلب إذن Health — اسمح للاثنين.",
+    ],
+    wsIntro: "مرة وحدة، تقريباً 3 دقائق. بعدها كل ليلة الآيفون يرسل حرق اليوم من Apple Health إلى Evolve بنفسه — مجاناً وبدون تنزيل أي تطبيق.",
+    wsCopy: "انسخ رابطي", wsCheck: "تأكد إنه اشتغل", wsNotYet: "ما وصل شي للحين. شغّل الأتمتة مرة (الخطوة 7) وبعدين تأكد مرة ثانية.",
+    ws: [
+      ["سوّ رابطك الشخصي", "الرابط هذا هو مفتاحك — يقدر يرسل حرقك بس ولا شي ثاني. بتلصقه في الخطوة 6."],
+      ["سوّ الأتمتة", "افتح تطبيق «الاختصارات» ← التبويب تحت «الأتمتة» ← «+» فوق ← «وقت من اليوم» ← حط 11:55 م، والتكرار «يومياً» ← اختر «تشغيل فوراً» ← التالي ← «أتمتة فارغة جديدة»."],
+      ["اقرأ الطاقة النشطة لليوم", "اضغط «إضافة إجراء» وابحث عن «العثور على عينات الصحة» (Find Health Samples) واضغط عليه. اضغط على «النوع» الأزرق واختر «الطاقة النشطة» (Active Energy). وخلّ الفلتر «تاريخ البدء هو اليوم» (Start Date is Today)."],
+      ["اجمعها", "ابحث عن «حساب الإحصائيات» (Calculate Statistics) وأضفه تحت الإجراء الأول. اضغط على الكلمة الزرقاء واختر «المجموع» (Sum)."],
+      ["نفس الشي لطاقة الراحة", "أضف «العثور على عينات الصحة» مرة ثانية ← النوع «طاقة الراحة» (Resting Energy) ← «تاريخ البدء هو اليوم». وبعدها «حساب الإحصائيات» ← «المجموع» مرة ثانية."],
+      ["أرسلها إلى Evolve", "ابحث عن «الحصول على محتويات URL» (Get Contents of URL) وأضفه آخر شي. اضغط «URL» والصق رابطك. اضغط السهم (إظهار المزيد): الطريقة ← POST، ونص الطلب ← JSON. اضغط «إضافة حقل جديد» ← نص: الاسم active، والقيمة ← «الإحصائيات» الأولى. وأضف حقل ثاني: الاسم resting، والقيمة ← «الإحصائيات» الثانية."],
+      ["جرّبه الحين", "اضغط تم. افتح الأتمتة واضغط ▶ (أو انتظر لين 11:55 م). أول مرة يطلب إذن الوصول لـ Health — اسمح. بعدها اضغط «تأكد إنه اشتغل» تحت."],
     ],
     syncPrivacy: "مفتاحك ينحفظ كبصمة بس. Evolve ما يشوف بيانات Health — بس الرقمين اللي يرسلها الاختصار.",
 

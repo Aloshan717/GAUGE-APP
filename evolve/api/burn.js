@@ -1,7 +1,7 @@
 // Apple Watch burn, sent by the free iPhone Shortcut every morning.
 //
-// POST /api/burn  { "key": "...", "date": "2026-11-05", "active": 812, "resting": 1968 }
-// (also accepts the same fields as query parameters)
+// POST /api/burn?key=…   { "active": 812, "resting": 1968 }      (date optional, default today)
+// Every field may also be sent as a query parameter or in the JSON body.
 //
 // The Shortcut has no login, so it sends the personal key shown in
 // Evolve → Account → Apple Watch sync. Supabase stores only its SHA-256 and the
@@ -26,8 +26,10 @@ export default async function handler(req, res) {
   const key = String(src.key || "").trim();
   const active = toKcal(src.active);
   const resting = toKcal(src.resting);
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-  const date = isoDate(src.date) || yesterday;
+  // The Shortcut runs at 11:55 pm and sends that day's totals, so no date = today.
+  // (At 11:55 pm the UTC date is still the local date anywhere east of UTC, e.g. Saudi.)
+  const today = new Date().toISOString().slice(0, 10);
+  const date = isoDate(src.date) || today;
 
   if (!key) return res.status(400).json({ ok: false, error: "Missing key — copy it from Evolve → Account → Apple Watch sync." });
   if (active == null && resting == null) return res.status(400).json({ ok: false, error: "Missing active and resting energy." });

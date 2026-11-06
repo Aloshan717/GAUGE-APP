@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { useApp } from "../ctx.js";
 import { Sheet, Field, Seg, Chips, Icon, Note } from "../ui.jsx";
-import { sb, sha256Hex, newSyncKey } from "../lib/api.js";
+import { sb } from "../lib/api.js";
 import { fmtDate, fmtNum } from "../lib/i18n.js";
 import { coerceNumber } from "../lib/core.js";
 import { localISO, addDays, dayRow } from "../lib/body.js";
@@ -11,6 +11,7 @@ import { Account, InviteForm, ProfileForm } from "./Account.jsx";
 import SwapSheet from "./Swap.jsx";
 import Setup from "./Setup.jsx";
 import AddExercise from "./AddExercise.jsx";
+import WatchSync from "./WatchSync.jsx";
 
 function DayPicker({ value, onChange }) {
   const { t } = useApp();
@@ -176,48 +177,6 @@ function BurnForm() {
   );
 }
 
-function SyncSetup() {
-  const { t, data, saveProfile } = useApp();
-  const [key, setKey] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState("");
-  const url = `${location.origin}/api/burn`;
-  const make = async () => {
-    setBusy(true);
-    const k = newSyncKey();
-    const r = await saveProfile({ sync_key_hash: await sha256Hex(k) });
-    setBusy(false);
-    if (!r.error) setKey(k);
-  };
-  const copy = async (text, what) => { try { await navigator.clipboard.writeText(text); setCopied(what); setTimeout(() => setCopied(""), 1500); } catch { /* clipboard blocked */ } };
-  const steps = t("syncSteps");
-  return (
-    <>
-      <div className="col">
-        <span className="label">{t("syncUrl")}</span>
-        <code className="key">{url}</code>
-        <button className="btn sm" onClick={() => copy(url, "url")}><Icon name="copy" size={16} />{copied === "url" ? t("copied") : t("copy")}</button>
-      </div>
-      <div className="col">
-        <span className="label">{t("syncKey")}</span>
-        {key ? (
-          <>
-            <code className="key">{key}</code>
-            <button className="btn sm" onClick={() => copy(key, "key")}><Icon name="copy" size={16} />{copied === "key" ? t("copied") : t("copy")}</button>
-          </>
-        ) : (
-          <button className="btn primary" onClick={make} disabled={busy}>{data.profile?.sync_key_hash ? t("newKey") : t("makeKey")}</button>
-        )}
-        <span className="small muted">{t("syncKeyNote")}</span>
-      </div>
-      <ol className="col" style={{ margin: 0, paddingInlineStart: 20, gap: 10 }}>
-        {(Array.isArray(steps) ? steps : []).map((s, i) => <li key={i} className="body" style={{ color: "var(--text2)" }}>{s}</li>)}
-      </ol>
-      <Note kind="plain" icon="lock">{t("syncPrivacy")}</Note>
-    </>
-  );
-}
-
 const TITLES = {
   log: "logTitle", weigh: "weighTitle", measure: "measureTitle", fuel: "fuelSheet", burn: "burnSheet", sync: "syncTitle",
   scan: "scanTitle", account: "accountSheet", invite: "inviteTitle", profile: "profileTitle", swap: "swapSheet", setup: "setupTitle", addEx: "addExTitle",
@@ -228,7 +187,7 @@ export default function Sheets() {
   if (!sheet) return null;
   const back = sheet.fromLog ? () => openSheet(sheet.name === "sync" ? "burn" : "log") : sheet.fromAccount ? () => openSheet("account") : null;
   const body = {
-    log: <LogMenu />, weigh: <WeighForm />, measure: <MeasureForm />, fuel: <FuelForm />, burn: <BurnForm />, sync: <SyncSetup />,
+    log: <LogMenu />, weigh: <WeighForm />, measure: <MeasureForm />, fuel: <FuelForm />, burn: <BurnForm />, sync: <WatchSync />,
     scan: <ScanForm />, account: <Account />, invite: <InviteForm />, profile: <ProfileForm />, swap: <SwapSheet ctx={sheet} />, setup: <Setup />, addEx: <AddExercise ctx={sheet} />,
   }[sheet.name];
   return (
