@@ -2,6 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <script>
+      // Invite and password-reset emails belong to Evolve (/evolve/, same accounts).
+      (function () {
+        var h = location.hash;
+        if (/(^|&|#)type=(invite|recovery)(&|$)/.test(h) && location.pathname.indexOf("/evolve") !== 0) location.replace("/evolve/" + h);
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#000000" />
     <meta name="description" content="Track weight, body composition, measurements and lifts." />

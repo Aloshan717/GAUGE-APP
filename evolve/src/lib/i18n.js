@@ -7,7 +7,10 @@ export const STR = {
     close: "Close", back: "Back", save: "Save", saving: "Saving…", cancel: "Cancel", del: "Delete", delQ: "Delete?", edit: "Edit", next: "Next", done: "Done",
     today: "Today", yesterday: "Yesterday", kg: "kg", kcal: "kcal", g: "g", cm: "cm", min: "min", date: "Date",
     offline: "No connection — showing your last synced data.",
-    setupMissing: "Evolve's database setup hasn't been run yet, so calories, profile and plans can't be saved. Run evolve/supabase/evolve_setup.sql in Supabase → SQL Editor.",
+    setupMissing: "One-time setup needed (1 minute) — until then calories, protein, your profile, plans and Apple Watch sync can't be saved. Weight, scans, goal and lifts already work.",
+    setupBtn: "Set up now", setupTitle: "One-time setup", setupText: "Evolve needs four small tables in your database for calories, protein, your profile, plans and Apple Watch sync. Your existing data is not touched.",
+    setupSteps: ["Tap “Copy setup”.", "Tap “Open Supabase” and sign in if asked.", "Long-press in the editor → Paste → tap Run.", "Come back here — Evolve checks again by itself."],
+    copySetup: "Copy setup", setupCopied: "Copied — now open Supabase", openSupabase: "Open Supabase", setupSafe: "Safe to run more than once. It only adds Evolve's tables; nothing existing is deleted.",
     loadFailed: "Some data couldn't load (what you had is still shown): {msg}",
     saved: "Saved", deleted: "Deleted",
 
@@ -178,7 +181,10 @@ export const STR = {
     close: "إغلاق", back: "رجوع", save: "حفظ", saving: "يحفظ…", cancel: "إلغاء", del: "حذف", delQ: "تحذف؟", edit: "تعديل", next: "التالي", done: "تم",
     today: "اليوم", yesterday: "أمس", kg: "كجم", kcal: "سعرة", g: "غ", cm: "سم", min: "دقيقة", date: "التاريخ",
     offline: "ما فيه اتصال — نعرض آخر بيانات محفوظة.",
-    setupMissing: "إعداد قاعدة بيانات Evolve ما تم للحين، فما نقدر نحفظ السعرات والملف والخطط. شغّل الملف evolve/supabase/evolve_setup.sql في Supabase ← SQL Editor.",
+    setupMissing: "يحتاج إعداد مرة وحدة (دقيقة) — لين ذاك ما تنحفظ السعرات والبروتين والملف والخطط ومزامنة الساعة. الوزن والسكانات والهدف والتمارين شغّالة.",
+    setupBtn: "جهّزه الحين", setupTitle: "إعداد مرة وحدة", setupText: "Evolve يحتاج أربع جداول صغيرة في قاعدة بياناتك للسعرات والبروتين والملف والخطط ومزامنة الساعة. بياناتك الحالية ما تتغير.",
+    setupSteps: ["اضغط «انسخ الإعداد».", "اضغط «افتح Supabase» وسجّل دخول إذا طلب.", "اضغط مطولاً في المحرر ← لصق ← اضغط Run.", "ارجع هنا — Evolve يتأكد بنفسه."],
+    copySetup: "انسخ الإعداد", setupCopied: "انتسخ — افتح Supabase الحين", openSupabase: "افتح Supabase", setupSafe: "آمن لو شغّلته أكثر من مرة. يضيف جداول Evolve بس، وما يحذف شي.",
     loadFailed: "بعض البيانات ما تحمّلت (اللي عندك باقي ظاهر): {msg}",
     saved: "انحفظ", deleted: "انحذف",
 

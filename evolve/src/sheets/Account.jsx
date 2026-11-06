@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useApp } from "../ctx.js";
 import { Seg, Chips, Field, Icon, Note } from "../ui.jsx";
-import { sb } from "../lib/api.js";
+import { sb, appUrl } from "../lib/api.js";
 import { fmtDate } from "../lib/i18n.js";
 import { ageFrom } from "../lib/body.js";
 import { coerceNumber } from "../lib/core.js";
@@ -60,7 +60,7 @@ export function InviteForm() {
     const e = email.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) { setMsg(["err", t("badEmail")]); return; }
     setBusy(true); setMsg(null);
-    const r = await sb.fn("/api/invite", { method: "POST", body: { email: e } });
+    const r = await sb.fn("/api/invite", { method: "POST", body: { email: e, redirect: appUrl() } });
     setBusy(false);
     if (r.ok) { setMsg(["ok", t("inviteSent", { email: e })]); setEmail(""); }
     else if (r.network) setMsg(["err", t("noNet")]);

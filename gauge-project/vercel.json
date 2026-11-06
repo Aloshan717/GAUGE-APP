@@ -1,8 +1,23 @@
 {
   "crons": [
-    { "path": "/api/keepalive", "schedule": "0 5 * * *" }
+    {
+      "path": "/api/keepalive",
+      "schedule": "0 5 * * *"
+    }
   ],
   "functions": {
-    "api/scan.js": { "maxDuration": 60 }
-  }
+    "api/scan.js": {
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/evolve",
+      "destination": "/evolve/index.html"
+    },
+    {
+      "source": "/evolve/",
+      "destination": "/evolve/index.html"
+    }
+  ]
 }

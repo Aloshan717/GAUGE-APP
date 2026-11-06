@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#060807" />
+    <meta name="description" content="Weight, InBody, training and nutrition — one plan, built around your goal." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="manifest" href="/evolve/manifest.webmanifest" />
+    <link rel="icon" href="/evolve/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/evolve/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Evolve" />
+    <title>Evolve</title>
+    <script>
+      // Theme before first paint, so there's no flash.
+      try {
+        var t = localStorage.getItem("evolve_theme");
+        if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        document.documentElement.dataset.theme = t;
+        var l = localStorage.getItem("evolve_lang");
+        if (l === "ar") { document.documentElement.lang = "ar"; document.documentElement.dir = "rtl"; }
+      } catch (e) {}
+    </script>
+    <script type="module" crossorigin src="/evolve/assets/index-CO6tsuk4.js"></script>
+    <link rel="stylesheet" crossorigin href="/evolve/assets/index-CPTWaysa.css">
+  </head>
+  <body>
+    <noscript>Evolve needs JavaScript.</noscript>
+    <div id="root"></div>
+  </body>
+</html>

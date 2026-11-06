@@ -6,22 +6,35 @@ English and Arabic, light and dark, invite-only. A phone web app (add it to the 
 It shares Gauge's Supabase project, so your weigh-ins, InBody scans, measurements,
 goals and lifts are already there — nothing to import.
 
-## Setup (once)
+## Where it runs
 
-1. **Database** — Supabase → SQL Editor → paste `supabase/evolve_setup.sql` → Run.
-   Adds profile, daily calories/protein/burn, plans, and the Apple Watch sync function.
-   Safe to run again.
-2. **Hosting** — Vercel → Add New → Project → this repository → **Root Directory: `evolve`** → Deploy.
-3. **Environment variables** (Vercel → the Evolve project → Settings → Environment Variables):
-   - `ANTHROPIC_API_KEY` — same key as Gauge (InBody photo reading).
-   - `SUPABASE_SERVICE_ROLE_KEY` — Supabase → Project Settings → API keys → secret key. Only for invites.
-   - `ADMIN_EMAILS` — your email (comma-separated if more). Who may send invites.
-   Redeploy after adding them.
-4. **Sign-in settings** (Supabase → Authentication):
-   - Sign In / Providers → Email → turn **off** “Allow new users to sign up” (invite only).
-   - URL Configuration → Redirect URLs → add your Evolve address, e.g. `https://evolve-xxxx.vercel.app/**`.
-5. **Invite people** — in Evolve: Account → Invite someone (or Supabase → Authentication → Users → Invite user).
-   They get an email, set a password, and are in. Every person's data is private (row level security).
+Evolve is served inside Gauge's live site at **`/evolve/`** — same Vercel project, same
+domain, same InBody reader (`/api/scan`) and the same accounts. Nothing to set up in Vercel.
+
+After changing Evolve, rebuild it into Gauge and commit both folders:
+
+```
+npm run publish:gauge    # builds to gauge-project/public/evolve, copies api/burn.js + api/invite.js
+```
+
+Gauge's `vercel.json` rewrites `/evolve` to Evolve's page, and Gauge's `index.html` forwards
+invite / password-reset email links to `/evolve/`.
+
+## One-time database setup
+
+The first time you open Evolve it shows **“Set up now”**: copy the setup, open Supabase,
+paste, Run. (Same as running `supabase/evolve_setup.sql` in Supabase → SQL Editor.)
+Until then weight, scans, goal and lifts work; calories/protein, profile, plans and
+Apple Watch sync need it.
+
+## Optional
+
+- **Invites from inside the app**: add `SUPABASE_SERVICE_ROLE_KEY` and `ADMIN_EMAILS` to the
+  Vercel project's environment variables. Without them, invite from Supabase → Authentication →
+  Users → Invite user — the email link opens Evolve.
+- **Invite only**: Supabase → Authentication → Sign In / Providers → turn off “Allow new users to sign up”.
+- **Own address**: a separate Vercel project with Root Directory `evolve` also works
+  (`evolve/vercel.json` is ready); add `ANTHROPIC_API_KEY` there.
 
 ## Apple Watch burn (free)
 

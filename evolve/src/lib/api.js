@@ -5,6 +5,9 @@ import { tokenNeedsRefresh, isJwtError, isFatalRefreshFailure } from "./core.js"
 export const SUPABASE_URL = "https://mhksjkzpyurcspcnvxtr.supabase.co";
 export const SUPABASE_ANON_KEY = "sb_publishable_SnjjsrjYxe_SEWJqwht3pQ_i0yA91tr";
 
+// Evolve's own address (it may live under a path, e.g. /evolve/).
+export const appUrl = () => `${location.origin}${import.meta.env?.BASE_URL || "/"}`;
+
 // ─── Local storage (never throws) ────────────────────────────────────────────
 export const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -91,7 +94,7 @@ export const sb = {
     } catch { return { status: 0, network: true, body: null }; }
   },
   async recover(email) {
-    const redirect = `${location.origin}/`;
+    const redirect = appUrl();
     try {
       const r = await fetch(`${SUPABASE_URL}/auth/v1/recover?redirect_to=${encodeURIComponent(redirect)}`, { method: "POST", headers: this.headers(), body: JSON.stringify({ email }) });
       return { ok: r.ok, status: r.status, body: await r.json().catch(() => null) };

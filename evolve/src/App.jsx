@@ -244,7 +244,12 @@ export default function App() {
         </header>
 
         <main className="screen">
-          {setupMissing && <div className="banner"><Icon name="info" size={16} color="var(--warn)" /><span>{t("setupMissing")}</span></div>}
+          {setupMissing && (
+            <div className="banner" style={{ flexDirection: "column" }}>
+              <span className="row top" style={{ gap: 8 }}><Icon name="info" size={16} color="var(--warn)" /><span>{t("setupMissing")}</span></span>
+              <button className="btn primary sm" style={{ marginInlineStart: 0 }} onClick={() => openSheet("setup")}>{t("setupBtn")}</button>
+            </div>
+          )}
           {banner && <div className="banner"><Icon name="info" size={16} color="var(--warn)" /><span>{banner}</span></div>}
           {tab === "home" && <Home name={name} />}
           {tab === "train" && <Train />}

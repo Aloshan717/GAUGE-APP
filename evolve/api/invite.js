@@ -31,11 +31,15 @@ export default async function handler(req, res) {
   if (!configured) return res.status(501).json({ ok: false, error: "not-configured" });
   if (!isAdmin) return res.status(403).json({ ok: false, error: "Only the admin can send invites." });
 
-  const email = String(jsonBody(req).email || "").trim().toLowerCase();
+  const body = jsonBody(req);
+  const email = String(body.email || "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ ok: false, error: "That email doesn't look right." });
 
+  // The invite link opens Evolve wherever it is served (e.g. /evolve/ on Gauge's site).
   const origin = req.headers?.origin || (req.headers?.host ? `https://${req.headers.host}` : "");
-  const url = `${SUPABASE_URL}/auth/v1/invite${origin ? `?redirect_to=${encodeURIComponent(origin + "/")}` : ""}`;
+  const asked = String(body.redirect || "");
+  const redirect = origin && asked.startsWith(origin + "/") ? asked : origin ? origin + "/" : "";
+  const url = `${SUPABASE_URL}/auth/v1/invite${redirect ? `?redirect_to=${encodeURIComponent(redirect)}` : ""}`;
   try {
     const r = await fetch(url, { method: "POST", headers: adminHeaders(secret()), body: JSON.stringify({ email }) });
     const body = await r.json().catch(() => null);
