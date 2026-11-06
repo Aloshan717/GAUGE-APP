@@ -1,9 +1,13 @@
-// Apple Watch auto-sync: a personal link + a free Shortcuts automation, step by step.
+// Apple Watch auto-sync — the simplest Shortcut that works:
+//   Find Health Samples (Active Energy, today) → Calculate Statistics (Sum) →
+//   Get Contents of URL (your link + the Statistics number at the end).
+// Resting energy is your resting metabolic rate, which Evolve already knows
+// from your InBody / profile, so it is built into the link.
 import React, { useState } from "react";
 import { useApp } from "../ctx.js";
 import { Icon, Note } from "../ui.jsx";
 import { sha256Hex, newSyncKey, store } from "../lib/api.js";
-import { fmtDate } from "../lib/i18n.js";
+import { fmtDate, fmtNum } from "../lib/i18n.js";
 
 function Step({ n, title, children, dim }) {
   return (
@@ -18,13 +22,14 @@ function Step({ n, title, children, dim }) {
 }
 
 export default function WatchSync() {
-  const { t, lang, user, data, saveProfile, refresh } = useApp();
+  const { t, lang, user, data, derived, saveProfile, refresh, openSheet } = useApp();
   const keyStore = `evolve_sync_key_${user?.id}`;
   const [key, setKey] = useState(() => store.get(keyStore) || "");
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [checked, setChecked] = useState(false);
-  const link = key ? `${location.origin}/api/burn?key=${key}` : "";
+  const resting = derived.maint?.bmr?.kcal || null;
+  const link = key && resting ? `${location.origin}/api/burn?key=${key}&resting=${resting}&active=` : "";
   const lastWatch = (data.days || []).filter((d) => d.burn_source === "watch" && d.burn_kcal).sort((a, b) => (a.date < b.date ? 1 : -1))[0];
 
   const make = async () => {
@@ -33,48 +38,49 @@ export default function WatchSync() {
     const r = await saveProfile({ sync_key_hash: await sha256Hex(k) });
     setBusy(false);
     if (r.error) return;
-    store.set(keyStore, k);   // kept on this phone so you can copy it again while setting up
+    store.set(keyStore, k);
     setKey(k);
   };
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2500); } catch { /* blocked */ }
-  };
+  const copy = async () => { try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2500); } catch { /* blocked */ } };
   const check = async () => { await refresh(); setChecked(true); };
-  const steps = t("ws");
-  const S = (i) => (Array.isArray(steps) ? steps[i] : ["", ""]);
-  const CopyBtn = () => (
-    <button className="btn primary" onClick={copy} disabled={!key}><Icon name="copy" size={18} />{copied ? t("copied") : t("wsCopy")}</button>
-  );
+  const S = (i) => (Array.isArray(t("ws2")) ? t("ws2")[i] : ["", ""]);
+  const body = (i) => <div className="body" style={{ color: "var(--text2)", whiteSpace: "pre-line" }}>{S(i)[1]}</div>;
+
+  if (!resting) {
+    return (
+      <>
+        <Note kind="warn" icon="info">{t("wsNeedBmr")}</Note>
+        <button className="btn primary" onClick={() => openSheet("profile", { fromAccount: true })}>{t("addProfile")}</button>
+      </>
+    );
+  }
 
   return (
     <>
-      <div className="body sub">{t("wsIntro")}</div>
-      {lastWatch && <Note>{t("autoOn", { date: fmtDate(lastWatch.date, lang) })} · {lastWatch.burn_kcal} {t("kcal")}</Note>}
+      <div className="body sub">{t("ws2Intro")}</div>
+      {lastWatch && <Note>{t("autoOn", { date: fmtDate(lastWatch.date, lang) })} · {fmtNum(lastWatch.burn_kcal)} {t("kcal")}</Note>}
 
       <Step n={1} title={S(0)[0]}>
-        <div className="small sub">{S(0)[1]}</div>
+        {body(0)}
         {key ? (
           <>
-            <code className="key">{link}</code>
-            <CopyBtn />
+            <button className="btn primary lg" onClick={copy}><Icon name="copy" size={18} />{copied ? t("copied") : t("wsCopy")}</button>
             <button className="link" onClick={make} disabled={busy}>{t("newKey")}</button>
           </>
         ) : (
-          <button className="btn primary" onClick={make} disabled={busy}>{busy ? t("saving") : t("makeKey")}</button>
+          <button className="btn primary lg" onClick={make} disabled={busy}>{busy ? t("saving") : t("wsMake")}</button>
         )}
       </Step>
-      {[1, 2, 3, 4].map((i) => (
-        <Step key={i} n={i + 1} title={S(i)[0]} dim={!key}><div className="body" style={{ color: "var(--text2)" }}>{S(i)[1]}</div></Step>
-      ))}
-      <Step n={6} title={S(5)[0]} dim={!key}>
-        <div className="body" style={{ color: "var(--text2)" }}>{S(5)[1]}</div>
-        <CopyBtn />
-      </Step>
-      <Step n={7} title={S(6)[0]} dim={!key}>
-        <div className="body" style={{ color: "var(--text2)" }}>{S(6)[1]}</div>
+      <Step n={2} title={S(1)[0]} dim={!key}>{body(1)}</Step>
+      <Step n={3} title={S(2)[0]} dim={!key}>{body(2)}</Step>
+      <Step n={4} title={S(3)[0]} dim={!key}>{body(3)}</Step>
+      <Step n={5} title={S(4)[0]} dim={!key}>
+        {body(4)}
         <button className="btn soft" onClick={check}>{t("wsCheck")}</button>
-        {checked && (lastWatch ? <div className="okmsg">{t("autoOn", { date: fmtDate(lastWatch.date, lang) })}</div> : <div className="err">{t("wsNotYet")}</div>)}
+        {checked && (lastWatch ? <div className="okmsg">{t("autoOn", { date: fmtDate(lastWatch.date, lang) })} · {fmtNum(lastWatch.burn_kcal)} {t("kcal")}</div> : <div className="err">{t("wsNotYet")}</div>)}
       </Step>
+      <Step n={6} title={S(5)[0]} dim={!lastWatch}>{body(5)}</Step>
+      <div className="small muted">{t("wsRestNote", { r: fmtNum(resting) })}</div>
       <Note kind="plain" icon="lock">{t("syncPrivacy")}</Note>
     </>
   );

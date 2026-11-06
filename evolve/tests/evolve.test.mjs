@@ -247,6 +247,8 @@ test("Shortcut numbers parse with units and separators", () => {
   assert.equal(toKcal("1968 kcal"), 1968);
   assert.equal(toKcal(700), 700);
   assert.equal(toKcal("abc"), null);
+  assert.equal(toKcal("٦١٢٫٤"), 612.4);
+  assert.equal(toKcal("١٬٢٣٤"), 1234);
 });
 
 // ── Your own counts and exercises ──

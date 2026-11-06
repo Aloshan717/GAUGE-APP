@@ -12,7 +12,11 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY, jsonBody } from "./_supabase.js";
 export function toKcal(v) {
   if (typeof v === "number") return isFinite(v) ? v : null;
   if (typeof v !== "string") return null;
-  const s = v.replace(/[\s ]/g, "").replace(/kcal|cal/gi, "");
+  const s = v
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))   // Arabic-Indic digits
+    .replace(/[\u06f0-\u06f9]/g, (d) => String(d.charCodeAt(0) - 0x06f0))   // Persian digits
+    .replace(/\u066b/g, ".").replace(/\u066c/g, ",")                          // Arabic decimal / thousands
+    .replace(/[\s\u00a0]/g, "").replace(/kcal|cal|سعرة|سعرات/gi, "");
   const cleaned = /,\d{3}(\D|$)/.test(s) ? s.replace(/,/g, "") : s.replace(",", ".");
   const n = parseFloat(cleaned.replace(/[^0-9.-]/g, ""));
   return isFinite(n) ? n : null;
