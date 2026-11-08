@@ -32,6 +32,10 @@ update public.goals
 alter table public.workout_logs add column if not exists effort text;        -- easy | ok | hard
 alter table public.workout_logs add column if not exists exercise_id text;   -- Evolve library id
 alter table public.workout_logs add column if not exists set_no integer;
+-- Saved sets can be corrected (Evolve also works without this: it re-saves the set).
+drop policy if exists "workout_logs update own" on public.workout_logs;
+create policy "workout_logs update own" on public.workout_logs
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- ── Profile ──────────────────────────────────────────────────────────────────
 create table if not exists public.ev_profiles (

@@ -140,6 +140,15 @@ export function toggleKept(plan, slotId) {
   };
 }
 
+// Your own number of sets for one exercise in the plan.
+export function setSlotSets(plan, slotId, sets) {
+  const n = Math.max(1, Math.min(12, Math.round(Number(sets)) || 1));
+  return {
+    ...plan,
+    days: plan.days.map((d) => ({ ...d, slots: d.slots.map((s) => (s.id === slotId ? { ...s, sets: n } : s)) })),
+  };
+}
+
 export function reviewCount(plan) {
   let total = 0, kept = 0;
   (plan?.days || []).forEach((d) => d.slots.forEach((s) => { total++; if (s.kept) kept++; }));

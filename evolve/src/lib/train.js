@@ -228,8 +228,9 @@ export const customMatch = (name) => {
 };
 
 // Re-shape a session to the counts you set: keeps the exercises already there
-// (and their swaps and logged sets), adds or drops from the end per muscle.
-// Exercises you added yourself are never touched.
+// (with their swaps, their own number of sets and logged sets), adds or drops
+// from the end per muscle. New exercises get `sets` if you set one for every
+// exercise. Exercises you added yourself are never touched.
 export function adjustSession(slots = [], { muscles = [], counts = {}, sets = null, logs = [], profile = {} } = {}) {
   const opts = { equipment: profile.equipment || "gym", pain: profile.pain || [] };
   const manual = slots.filter((s) => s.manual);
@@ -250,12 +251,25 @@ export function adjustSession(slots = [], { muscles = [], counts = {}, sets = nu
       const ex = pickExercise(g, logs, opts, used);
       if (!ex) continue;
       used.add(ex);
-      out.push(makeSlot({ group: g, ex, muscle: m, profile }));
+      out.push(makeSlot({ group: g, ex, muscle: m, profile, sets: sets || undefined }));
       have++;
     }
   }
   // Big lifts first, then the exercises you added.
   const ordered = out.sort((a, b) => (GROUPS[b.group]?.compound ? 1 : 0) - (GROUPS[a.group]?.compound ? 1 : 0));
-  const all = [...ordered, ...manual];
-  return sets ? all.map((s) => ({ ...s, sets })) : all;
+  return [...ordered, ...manual];
+}
+
+export const MAX_SETS = 12;
+
+// One number of sets for every exercise — never fewer than the sets already saved.
+export function setAllSets(slots = [], n, done = {}) {
+  return slots.map((s) => ({ ...s, sets: Math.max(n, (done[s.id] || []).length) }));
+}
+
+// The suggested sets for each exercise (as when it was added).
+export function suggestedSets(slots = [], profile = {}, done = {}) {
+  return slots.map((s) => (s.custom ? s : {
+    ...s, sets: Math.max((done[s.id] || []).length, setsFor(s.group, { experience: profile.experience, focus: profile.focus })),
+  }));
 }

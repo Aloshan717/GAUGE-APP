@@ -12,6 +12,7 @@ import SwapSheet from "./Swap.jsx";
 import Setup from "./Setup.jsx";
 import AddExercise from "./AddExercise.jsx";
 import WatchSync from "./WatchSync.jsx";
+import ExerciseInfo from "./ExerciseInfo.jsx";
 
 function DayPicker({ value, onChange }) {
   const { t } = useApp();
@@ -179,16 +180,19 @@ function BurnForm() {
 
 const TITLES = {
   log: "logTitle", weigh: "weighTitle", measure: "measureTitle", fuel: "fuelSheet", burn: "burnSheet", sync: "syncTitle",
-  scan: "scanTitle", account: "accountSheet", invite: "inviteTitle", profile: "profileTitle", swap: "swapSheet", setup: "setupTitle", addEx: "addExTitle",
+  scan: "scanTitle", account: "accountSheet", invite: "inviteTitle", profile: "profileTitle", swap: "swapSheet", setup: "setupTitle", addEx: "addExTitle", exInfo: "exInfoTitle",
 };
 
 export default function Sheets() {
   const { t, sheet, closeSheet, openSheet, rtl } = useApp();
   if (!sheet) return null;
-  const back = sheet.fromLog ? () => openSheet(sheet.name === "sync" ? "burn" : "log") : sheet.fromAccount ? () => openSheet("account") : null;
+  const back = sheet.fromLog ? () => openSheet(sheet.name === "sync" ? "burn" : "log")
+    : sheet.fromAccount ? () => openSheet("account")
+    : sheet.backTo ? () => openSheet(sheet.backTo.name, sheet.backTo.opts)
+    : null;
   const body = {
     log: <LogMenu />, weigh: <WeighForm />, measure: <MeasureForm />, fuel: <FuelForm />, burn: <BurnForm />, sync: <WatchSync />,
-    scan: <ScanForm />, account: <Account />, invite: <InviteForm />, profile: <ProfileForm />, swap: <SwapSheet ctx={sheet} />, setup: <Setup />, addEx: <AddExercise ctx={sheet} />,
+    scan: <ScanForm />, account: <Account />, invite: <InviteForm />, profile: <ProfileForm />, swap: <SwapSheet ctx={sheet} />, setup: <Setup />, addEx: <AddExercise ctx={sheet} />, exInfo: <ExerciseInfo ctx={sheet} />,
   }[sheet.name];
   return (
     <Sheet title={t(TITLES[sheet.name] || "logTitle")} onClose={closeSheet} onBack={back} closeLabel={t("close")} backLabel={t("back")} rtl={rtl}>

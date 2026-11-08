@@ -173,7 +173,7 @@ export const STR = {
     recT_down: "Missed {lo} reps twice → drop to {w} kg and build back up.", recT_stall: "No progress in 3 sessions → aim for {r} reps, or swap.",
     recT_fresh: "Start with a weight you can do for {r} clean reps.", recT_reps: "Every set hit {hi} → add 2 reps or lower slower.",
     noMuscle: "Pick at least one muscle to build a session.",
-    buildMode: "How to build it", modeSuggest: "Suggest for me", modeChoose: "I'll choose", perMuscle: "Exercises per muscle", setsPer: "Sets per exercise",
+    buildMode: "How to build it", modeSuggest: "Suggest for me", modeChoose: "I'll choose", perMuscle: "Exercises per muscle", setsPer: "Sets for every exercise",
     recN: "Suggested: {n}", suggestLine: "Suggested for your goal: {list} · {s} sets each.", notRules: "Suggestions, not rules — change anything.",
     useSuggestion: "Use the suggestion", chooseHint: "Add the exercises you want — from the list or your own.",
     addExercise: "Add exercise", addExTitle: "Add exercise", showAll: "Show all equipment", ownEx: "Not in the list? Type its name", ownExPh: "e.g. Cable kickback",
@@ -201,6 +201,13 @@ export const STR = {
     stDays: "days a week", stMins: "min a session", stSets: "sets per muscle a week", plFood: "Food: {k} kcal · {p} g protein a day",
     plSwapHint: "Swap only offers exercises for the same muscle and the same movement.", plReviewed: "Reviewed {k} of {n}",
     keep: "Suits me", kept: "✓ Suits me", approved: "Plan approved — it's on your Train page.", cardioNote: "+ cardio {c} a week",
+
+    // Editing sets, sets per exercise, muscle map
+    saveChange: "Save change", setSaved: "Saved set", deleteSet: "Delete set", editHint: "Saved sets stay editable — change a number and tap ✓ again.",
+    setsThis: "Sets for this exercise", setsThisHint: "Change it any time", setsPerHint: "Or change each exercise on its own below.", plSets: "Sets · {lo}–{hi} reps",
+    helpsTxt: "helps: {list}", worksA11y: "Muscles worked: {list}", exInfoA11y: "Photos and muscles: {name}", exInfoTitle: "Exercise details",
+    exStart: "Start", exEnd: "End", bodyFront: "Front", bodyBack: "Back", mainMuscles: "Main muscles", helperMuscles: "Also works",
+    ownExTag: "Your exercise", ownExMap: "Your own exercise — the map shows the muscle you added it under.",
   },
 
   ar: {
@@ -362,7 +369,7 @@ export const STR = {
     recT_down: "ما وصلت {lo} مرتين ← نزّل لـ {w} كجم وابنِ من جديد.", recT_stall: "ثابت 3 جلسات ← استهدف {r} تكرار أو بدّل التمرين.",
     recT_fresh: "ابدأ بوزن تقدر تسويه {r} تكرارات نظيفة.", recT_reps: "وصلت {hi} في كل المجموعات ← زد تكرارين أو نزّل أبطأ.",
     noMuscle: "اختر عضلة وحدة على الأقل عشان نبني التمرين.",
-    buildMode: "طريقة البناء", modeSuggest: "اقترح لي", modeChoose: "أنا أختار", perMuscle: "عدد التمارين لكل عضلة", setsPer: "عدد المجموعات لكل تمرين",
+    buildMode: "طريقة البناء", modeSuggest: "اقترح لي", modeChoose: "أنا أختار", perMuscle: "عدد التمارين لكل عضلة", setsPer: "عدد المجموعات لكل التمارين",
     recN: "المقترح: {n}", suggestLine: "المقترح لهدفك: {list} · {s} مجموعات لكل تمرين.", notRules: "اقتراح مو إجبار — غيّر اللي تبي.",
     useSuggestion: "استخدم المقترح", chooseHint: "أضف التمارين اللي تبيها — من القائمة أو تمرينك الخاص.",
     addExercise: "أضف تمرين", addExTitle: "أضف تمرين", showAll: "اعرض كل الأدوات", ownEx: "مو موجود بالقائمة؟ اكتب اسمه", ownExPh: "مثلاً: ترايسبس كيك باك",
@@ -388,6 +395,12 @@ export const STR = {
     stDays: "أيام بالأسبوع", stMins: "دقيقة للتمرين", stSets: "مجموعة للعضلة أسبوعياً", plFood: "الأكل: {k} سعرة · {p} غ بروتين يومياً",
     plSwapHint: "التبديل يعرض لك بس تمارين لنفس العضلة ونفس الحركة.", plReviewed: "راجعت {k} من {n}",
     keep: "يناسبني", kept: "✓ يناسبني", approved: "اعتمدنا الخطة — تلقاها في صفحة التمرين.", cardioNote: "+ كارديو {c} بالأسبوع",
+
+    saveChange: "احفظ التعديل", setSaved: "مجموعة محفوظة", deleteSet: "احذف المجموعة", editHint: "المجموعة المحفوظة تقدر تعدّلها — غيّر الرقم واضغط ✓ مرة ثانية.",
+    setsThis: "عدد المجموعات لهالتمرين", setsThisHint: "غيّره متى ما تبي", setsPerHint: "أو غيّر كل تمرين لحاله تحت.", plSets: "المجموعات · {lo}–{hi} تكرار",
+    helpsTxt: "يساعد: {list}", worksA11y: "العضلات اللي يشغّلها: {list}", exInfoA11y: "صور وعضلات: {name}", exInfoTitle: "تفاصيل التمرين",
+    exStart: "البداية", exEnd: "النهاية", bodyFront: "أمام", bodyBack: "خلف", mainMuscles: "العضلات الأساسية", helperMuscles: "عضلات مساعدة",
+    ownExTag: "تمرينك الخاص", ownExMap: "تمرينك الخاص — الخريطة تبيّن العضلة اللي أضفته تحتها.",
   },
 };
 

@@ -1,13 +1,14 @@
 // Add any exercise to today's session — from the library, or one of your own.
 import React, { useState } from "react";
 import { useApp } from "../ctx.js";
-import { Chips, Photo, Field, Icon } from "../ui.jsx";
+import { Chips, Photo, Field, Icon, MuscleMap } from "../ui.jsx";
+import { musclesOf, muscleNames } from "../lib/muscles.js";
 import { EXERCISES, GROUPS, MUSCLES, MUSCLE_NAMES, usable } from "../lib/exercises.js";
 import { makeSlot, makeCustomSlot } from "../lib/train.js";
 import { localISO } from "../lib/body.js";
 
 export default function AddExercise({ ctx }) {
-  const { t, lang, data, trainSession, setTrainSession, closeSheet, toast } = useApp();
+  const { t, lang, data, trainSession, setTrainSession, closeSheet, toast, openSheet } = useApp();
   const L = lang === "ar" ? 1 : 0;
   const profile = data.profile || {};
   const [muscle, setMuscle] = useState(ctx.muscle || "Chest");
@@ -40,17 +41,21 @@ export default function AddExercise({ ctx }) {
       <button type="button" className="chip sm" aria-pressed={all} onClick={() => setAll((x) => !x)} style={{ alignSelf: "flex-start" }}>{t("showAll")}</button>
       {list.map((e) => {
         const there = inSession.has(e.id);
+        const em = musclesOf(e);
         return (
-          <button key={e.id} className="card tight" disabled={there} onClick={() => addLib(e)} aria-label={`${t("add")} ${e.name[L]}`}
-            style={{ width: "100%", textAlign: "start", color: "inherit", flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 16 }}>
-            <Photo ex={e} small />
-            <span className="grow col" style={{ gap: 2 }}>
-              <span className="strong" style={{ fontSize: 14.5 }}>{e.name[L]}</span>
-              <span className="small sub">{e.gear[L]}</span>
-              <span className="small muted">{GROUPS[e.group].main[L]} · {GROUPS[e.group].job[L]}</span>
-            </span>
-            <span className="small strong" style={{ color: there ? "var(--muted)" : "var(--accent-text)", flex: "none" }}>{there ? t("inSession") : t("add")}</span>
-          </button>
+          <div key={e.id} className="card tight pick-row">
+            <button type="button" className="ex-media" onClick={() => openSheet("exInfo", { ex: e.id, backTo: { name: "addEx", opts: { muscle } } })} aria-label={t("exInfoA11y", { name: e.name[L] })}><Photo ex={e} small /></button>
+            <button type="button" className="pick-main" disabled={there} onClick={() => addLib(e)} aria-label={`${t("add")} ${e.name[L]}`}>
+              <span className="grow col" style={{ gap: 2 }}>
+                <span className="strong" style={{ fontSize: 14.5 }}>{e.name[L]}</span>
+                <span className="small sub">{e.gear[L]}</span>
+                <span className="small muted">{GROUPS[e.group].job[L]}</span>
+                <span className="small" style={{ color: "var(--accent-text)", fontWeight: 700 }}>{muscleNames(em.primary, lang).join(" · ")}</span>
+              </span>
+              <MuscleMap muscles={em} height={46} />
+              <span className="small strong" style={{ color: there ? "var(--muted)" : "var(--accent-text)", flex: "none" }}>{there ? t("inSession") : t("add")}</span>
+            </button>
+          </div>
         );
       })}
       <div className="divider" />

@@ -1,8 +1,10 @@
 // Evolve logic tests: library, swaps, sessions, advice, plan, energy, goal checks.
 import assert from "node:assert/strict";
 import { EXERCISES, BY_ID, GROUPS, usable, swapOptions, matchExercise, logExerciseId } from "../src/lib/exercises.js";
-import { buildSession, recommend, liftHistory, weightStep, exercisesFor, adjustSession, recommendedCounts, makeCustomSlot, customMatch, makeSlot } from "../src/lib/train.js";
-import { generatePlan, weeklySets, swapInPlan, toggleKept, reviewCount, planDayFor, nextPlanDay, DEFAULT_DAYS } from "../src/lib/plan.js";
+import { buildSession, recommend, liftHistory, weightStep, exercisesFor, adjustSession, recommendedCounts, makeCustomSlot, customMatch, makeSlot, setAllSets, suggestedSets } from "../src/lib/train.js";
+import { generatePlan, weeklySets, swapInPlan, toggleKept, setSlotSets, reviewCount, planDayFor, nextPlanDay, DEFAULT_DAYS } from "../src/lib/plan.js";
+import { musclesOf, slotMuscles, regionLevels, REGIONS, MUSCLE_LABELS } from "../src/lib/muscles.js";
+import { FRONT, BACK } from "../src/lib/bodymap.js";
 import { restingEnergy, formulaMaintenance, maintenance, dailyTargets, goalDirection, feasibility, consistency, currentBody, adaptiveMaintenance, watchAverage, coachTips, localISO } from "../src/lib/body.js";
 import { toKcal } from "../api/burn.js";
 import { STR } from "../src/lib/i18n.js";
@@ -275,9 +277,71 @@ test("zero suggested + your own exercises; your own are never removed", () => {
   assert.equal(s.length, 2);
   assert.ok(s[1].custom);
 });
-test("sets per exercise applies to every exercise", () => {
+test("sets for every exercise applies to new exercises", () => {
   const s = adjustSession([], { muscles: ["Back"], counts: { Back: 3 }, sets: 5 });
   assert.ok(s.every((x) => x.sets === 5));
+});
+test("each exercise keeps its own number of sets when the session changes", () => {
+  let s = adjustSession([], { muscles: ["Chest"], counts: { Chest: 2 } });
+  s = s.map((x, i) => (i === 0 ? { ...x, sets: 6 } : x));
+  const more = adjustSession(s, { muscles: ["Chest"], counts: { Chest: 3 }, sets: 4 });
+  assert.equal(more.find((x) => x.id === s[0].id).sets, 6);
+  assert.equal(more.filter((x) => !s.some((o) => o.id === x.id))[0].sets, 4);
+});
+test("one number for every exercise never hides saved sets", () => {
+  const s = adjustSession([], { muscles: ["Biceps"], counts: { Biceps: 2 } });
+  const done = { [s[0].id]: [{ kg: 10, reps: 12 }, { kg: 10, reps: 11 }, { kg: 10, reps: 10 }] };
+  const all = setAllSets(s, 2, done);
+  assert.equal(all[0].sets, 3);
+  assert.equal(all[1].sets, 2);
+  const sug = suggestedSets(all.map((x) => ({ ...x, sets: 9 })), {}, done);
+  assert.ok(sug.every((x) => x.sets === 3));
+});
+test("plan review: change the sets of one exercise", () => {
+  const plan = generatePlan({ train_days: [0, 2, 4], session_min: 60 });
+  const id = plan.days[0].slots[1].id;
+  const p2 = setSlotSets(plan, id, 5);
+  assert.equal(p2.days[0].slots[1].sets, 5);
+  assert.equal(setSlotSets(plan, id, 0).days[0].slots[1].sets, 1);
+  assert.equal(plan.days[0].slots[1].sets === 5, false);
+});
+
+// ── Library and muscle map ──
+test("every exercise has a photo, a known group and muscles on the map", () => {
+  assert.ok(EXERCISES.length >= 230);
+  const regionsFront = new Set(FRONT.map(([r]) => r)), regionsBack = new Set(BACK.map(([r]) => r));
+  for (const e of EXERCISES) {
+    assert.ok(GROUPS[e.group], e.id);
+    assert.ok(e.img, e.id);
+    const m = musclesOf(e);
+    assert.ok(m.primary.length > 0, e.id);
+    for (const k of [...m.primary, ...m.secondary]) {
+      assert.ok(MUSCLE_LABELS[k], `${e.id}: ${k}`);
+      (REGIONS[k].front || []).forEach((r) => assert.ok(regionsFront.has(r), r));
+      (REGIONS[k].back || []).forEach((r) => assert.ok(regionsBack.has(r), r));
+    }
+    assert.ok(e.name[0] && e.name[1] && e.gear[0] && e.gear[1] && e.why[0] && e.why[1], e.id);
+  }
+  assert.equal(new Set(EXERCISES.map((e) => e.id)).size, EXERCISES.length);
+  assert.equal(new Set(EXERCISES.map((e) => e.img)).size, EXERCISES.length);
+});
+test("plenty of swaps: biceps alone has 20+ in a full gym", () => {
+  assert.ok(swapOptions("db_curl", { equipment: "gym" }).length >= 20);
+  assert.ok(swapOptions("db_curl", { equipment: "home" }).length >= 8);
+  for (const g of Object.keys(GROUPS)) {
+    if (["legpress", "legext", "abduction", "adduction"].includes(g)) continue;
+    assert.ok(EXERCISES.filter((e) => e.group === g).length >= 5, g);
+  }
+});
+test("muscle map: hammer curls add forearms, deadlifts light the whole back chain", () => {
+  assert.deepEqual(musclesOf("hammer_curl").primary, ["biceps", "forearms"]);
+  assert.deepEqual(musclesOf("db_curl").primary, ["biceps"]);
+  const back = regionLevels(musclesOf("deadlift"), "back");
+  assert.equal(back.hamstring, "primary"); assert.equal(back["lower-back"], "primary"); assert.equal(back.trapezius, "secondary");
+  const front = regionLevels(musclesOf("bench_press"), "front");
+  assert.equal(front.chest, "primary"); assert.equal(front.triceps, "secondary"); assert.equal(front.quadriceps, undefined);
+  assert.deepEqual(musclesOf("close_grip_bench").primary, ["triceps"]);
+  assert.deepEqual(slotMuscles({ custom: true, muscle: "Biceps" }).primary, ["biceps"]);
 });
 test("your own exercise keeps its history by name", () => {
   const logs = [{ exercise: "Cable kickback", weight_kg: 10, reps: 12, date: day(-3) }, { exercise: "Other", weight_kg: 5, reps: 5, date: day(-3) }];

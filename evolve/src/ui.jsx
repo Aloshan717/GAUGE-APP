@@ -1,6 +1,9 @@
 // EVOLVE — shared UI pieces.
 import React, { useEffect, useRef } from "react";
+import { useApp } from "./ctx.js";
 import { exerciseImages } from "./lib/exercises.js";
+import { FRONT, BACK } from "./lib/bodymap.js";
+import { regionLevels } from "./lib/muscles.js";
 
 const P = {
   home: <><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5" /></>,
@@ -171,15 +174,52 @@ export function Empty({ icon, title, text, action }) {
 }
 
 // Exercise photo with a graceful fallback when offline or missing.
-export function Photo({ ex, small }) {
-  const srcs = exerciseImages(ex);
+// frame 0 = start of the movement, 1 = end.
+export function Photo({ ex, small, big, frame = 0 }) {
+  const srcs = exerciseImages(ex, frame);
   const [i, setI] = React.useState(0);
-  React.useEffect(() => setI(0), [ex?.id]);
+  React.useEffect(() => setI(0), [ex?.id, frame]);
   return (
-    <div className={`ex-photo${small ? " sm" : ""}`}>
+    <div className={`ex-photo${small ? " sm" : ""}${big ? " xl" : ""}`}>
       {i < srcs.length
         ? <img src={srcs[i]} alt="" loading="lazy" onError={() => setI((n) => n + 1)} />
         : <Icon name="train" size={small ? 22 : 26} />}
+    </div>
+  );
+}
+
+// Front and back of the body with the muscles an exercise works lit up:
+// main muscles in full colour, helpers lighter.
+const VIEWS = [["front", FRONT], ["back", BACK]];
+export function MuscleMap({ muscles, height = 64, label, captions }) {
+  return (
+    <span className="mmap" role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
+      {VIEWS.map(([view, shapes], vi) => {
+        const lv = regionLevels(muscles, view);
+        return (
+          <span key={view} className="mmap-view">
+            <svg viewBox="0 0 100 220" style={{ height, width: (height * 100) / 220 }} aria-hidden="true">
+              {shapes.map(([region, polys]) => polys.map((pts, i) => (
+                <polygon key={`${region}${i}`} points={pts} className={lv[region] === "primary" ? "p" : lv[region] === "secondary" ? "s" : undefined} />
+              )))}
+            </svg>
+            {captions && <span className="cap">{captions[vi]}</span>}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+// − n + for small counts (exercises per muscle, sets).
+export function Stepper({ value, min = 0, max, onChange, label, small }) {
+  const { t } = useApp();
+  const size = small ? 36 : 40;
+  return (
+    <div className="row" style={{ gap: 6, flex: "none" }}>
+      <button type="button" className="icon-btn" style={{ width: size, height: size }} aria-label={`${t("minus")} · ${label}`} disabled={value <= min} onClick={() => onChange(value - 1)}>−</button>
+      <span className="num" style={{ fontSize: small ? 20 : 22, minWidth: 26, textAlign: "center" }} aria-live="polite">{value}</span>
+      <button type="button" className="icon-btn" style={{ width: size, height: size }} aria-label={`${t("plus")} · ${label}`} disabled={value >= max} onClick={() => onChange(value + 1)}>+</button>
     </div>
   );
 }

@@ -164,6 +164,23 @@ export const sb = {
     return { data: null, error };
   },
 
+  // Change one row by id: { data, error }. data is null when nothing was changed
+  // (no such row, or the database doesn't allow edits on this table).
+  async update(table, id, data, { optional = [] } = {}) {
+    const path = `/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`;
+    let res = await this.request(path, { method: "PATCH", body: data });
+    const missing = optional.filter((k) => k in data);
+    if (!res.ok && missing.length && /PGRST204|column/i.test(`${res.body?.code || ""} ${res.body?.message || ""}`)) {
+      const slim = { ...data };
+      missing.forEach((k) => delete slim[k]);
+      res = await this.request(path, { method: "PATCH", body: slim });
+    }
+    if (res.ok) return { data: Array.isArray(res.body) ? res.body[0] || null : res.body, error: null };
+    const error = errText(res, currentLang);
+    notify(error);
+    return { data: null, error };
+  },
+
   async delete(table, id) {
     const res = await this.request(`/rest/v1/${table}?id=eq.${id}`, { method: "DELETE" });
     if (res.ok) return { error: null };

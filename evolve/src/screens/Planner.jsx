@@ -1,11 +1,12 @@
 // Plan builder: 1 about you · 2 your training · 3 review the week (keep / swap) → approve.
 import React, { useEffect, useMemo } from "react";
 import { useApp } from "../ctx.js";
-import { Icon, Chips, Field, Photo } from "../ui.jsx";
+import { Icon, Chips, Field, Photo, Stepper, MuscleMap } from "../ui.jsx";
 import { sb } from "../lib/api.js";
 import { fmtDate, fmtNum } from "../lib/i18n.js";
-import { BY_ID, GROUPS } from "../lib/exercises.js";
-import { generatePlan, splitFor, weeklySets, toggleKept, reviewCount, DEFAULT_DAYS, WEEKDAYS, WEEKDAYS_FULL } from "../lib/plan.js";
+import { BY_ID } from "../lib/exercises.js";
+import { generatePlan, splitFor, weeklySets, toggleKept, setSlotSets, reviewCount, DEFAULT_DAYS, WEEKDAYS, WEEKDAYS_FULL } from "../lib/plan.js";
+import { musclesOf, muscleNames } from "../lib/muscles.js";
 import { ageFrom } from "../lib/body.js";
 import { coerceNumber } from "../lib/core.js";
 
@@ -197,16 +198,21 @@ export default function Planner() {
             </div>
             {PD.slots.map((s) => {
               const ex = BY_ID[s.ex];
-              const g = GROUPS[s.group];
+              const em = musclesOf(ex);
               return (
                 <div key={s.id} className="card tight" style={{ borderColor: s.kept ? "var(--accent-line)" : "var(--line)" }}>
                   <div className="row">
-                    <Photo ex={ex} small />
+                    <button type="button" className="ex-media" onClick={() => openSheet("exInfo", { ex: s.ex })} aria-label={t("exInfoA11y", { name: ex.name[L] })}><Photo ex={ex} small /></button>
                     <div className="grow col" style={{ gap: 2 }}>
                       <span className="strong" style={{ fontSize: 14.5 }}>{ex.name[L]}</span>
                       <span className="small sub">{ex.gear[L]}</span>
-                      <span className="small muted">{g.main[L]} · {t("setsReps", { s: s.sets, lo: s.reps[0], hi: s.reps[1] })}</span>
+                      <span className="small" style={{ color: "var(--accent-text)", fontWeight: 700 }}>{muscleNames(em.primary, lang).join(" · ")}</span>
                     </div>
+                    <MuscleMap muscles={em} height={46} />
+                  </div>
+                  <div className="row between">
+                    <span className="small sub">{t("plSets", { lo: s.reps[0], hi: s.reps[1] })}</span>
+                    <Stepper small value={s.sets} min={1} max={12} onChange={(n) => setPlanDraft((x) => ({ ...x, plan: setSlotSets(x.plan, s.id, n) }))} label={`${t("setsThis")} · ${ex.name[L]}`} />
                   </div>
                   <div className="grid2">
                     <button className={`btn sm ${s.kept ? "soft" : ""}`} aria-pressed={!!s.kept} onClick={() => setPlanDraft((x) => ({ ...x, plan: toggleKept(x.plan, s.id) }))}>{s.kept ? t("kept") : t("keep")}</button>
