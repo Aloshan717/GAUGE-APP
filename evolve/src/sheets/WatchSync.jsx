@@ -77,6 +77,7 @@ export default function WatchSync() {
       <Step n={1} title={S(0)[0]}>
         {body(0)}
         {savedHash && !key && <Note kind="warn" icon="info">{t("wsNoLocalKey")}</Note>}
+        {lastWatch && resting && lastWatch.burn_kcal - resting < 25 && <Note kind="warn" icon="info">{t("wsNoActive", { k: fmtNum(lastWatch.burn_kcal) })}</Note>}
         {keyOk === false && <Note kind="warn" icon="info">{t("wsKeyOld")}</Note>}
         {key ? (
           <>
