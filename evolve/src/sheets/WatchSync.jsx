@@ -3,7 +3,7 @@
 //   Get Contents of URL (your link + the Statistics number at the end).
 // Resting energy is your resting metabolic rate, which Evolve already knows
 // from your InBody / profile, so it is built into the link.
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useApp } from "../ctx.js";
 import { Icon, Note } from "../ui.jsx";
 import { sha256Hex, newSyncKey, store } from "../lib/api.js";
@@ -32,8 +32,19 @@ export default function WatchSync() {
   const resting = derived.maint?.bmr?.kcal || null;
   const link = key && resting ? `${location.origin}/api/burn?key=${key}&resting=${resting}&active=` : "";
   const lastWatch = (data.days || []).filter((d) => d.burn_source === "watch" && d.burn_kcal).sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+  const savedHash = data.profile?.sync_key_hash || null;
+  // Is the link on this phone the one the server knows? (Only its hash is stored.)
+  const [keyOk, setKeyOk] = useState(null);
+  useEffect(() => {
+    let on = true;
+    if (!key || !savedHash) { setKeyOk(null); return undefined; }
+    sha256Hex(key).then((h) => { if (on) setKeyOk(h === savedHash); });
+    return () => { on = false; };
+  }, [key, savedHash]);
 
   const make = async () => {
+    // A new link stops the old one — easy to break a working Shortcut by accident.
+    if (savedHash && !window.confirm(t("wsNewKeyQ"))) return;
     setBusy(true);
     const k = newSyncKey();
     const r = await saveProfile({ sync_key_hash: await sha256Hex(k) });
@@ -65,9 +76,12 @@ export default function WatchSync() {
 
       <Step n={1} title={S(0)[0]}>
         {body(0)}
+        {savedHash && !key && <Note kind="warn" icon="info">{t("wsNoLocalKey")}</Note>}
+        {keyOk === false && <Note kind="warn" icon="info">{t("wsKeyOld")}</Note>}
         {key ? (
           <>
             <button className="btn primary lg" onClick={copy}><Icon name="copy" size={18} />{copied ? t("copied") : t("wsCopy")}</button>
+            <div className="small muted">{t("wsKeyEnds", { k: key.slice(-4) })}</div>
             <button className="link" onClick={make} disabled={busy}>{t("newKey")}</button>
           </>
         ) : (

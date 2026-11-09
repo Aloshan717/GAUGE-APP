@@ -14,7 +14,7 @@ import Goal from "./screens/Goal.jsx";
 import Planner from "./screens/Planner.jsx";
 import Sheets from "./sheets/Sheets.jsx";
 
-export const VERSION = "1.2.1";
+export const VERSION = "1.2.2";
 
 const EMPTY = { weights: [], inbody: [], measurements: [], logs: [], sessions: [], goal: null, days: [], profile: null, plan: null, planRow: null };
 
