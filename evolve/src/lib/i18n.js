@@ -176,7 +176,7 @@ export const STR = {
     buildMode: "How to build it", modeSuggest: "Suggest for me", modeChoose: "I'll choose", perMuscle: "Exercises per muscle", setsPer: "Sets for every exercise",
     recN: "Suggested: {n}", suggestLine: "Suggested for your goal: {list} · {s} sets each.", notRules: "Suggestions, not rules — change anything.",
     useSuggestion: "Use the suggestion", chooseHint: "Add the exercises you want — from the list or your own.",
-    addExercise: "Add exercise", addExTitle: "Add exercise", showAll: "Show all equipment", ownEx: "Not in the list? Type its name", ownExPh: "e.g. Cable kickback",
+    addExercise: "Add exercise", addExTitle: "Add exercise", showAll: "Show all equipment", ownEx: "Not in the list? Add your own", ownExPh: "e.g. Cable kickback",
     add: "Add", added: "Added: {name}", remove: "Remove", inSession: "In session", minus: "Fewer", plus: "More", restartQ: "Start over", sessionDone: "Done today",
 
     // Swap
@@ -208,6 +208,18 @@ export const STR = {
     helpsTxt: "helps: {list}", worksA11y: "Muscles worked: {list}", exInfoA11y: "Photos and muscles: {name}", exInfoTitle: "Exercise details",
     exStart: "Start", exEnd: "End", bodyFront: "Front", bodyBack: "Back", mainMuscles: "Main muscles", helperMuscles: "Also works",
     ownExTag: "Your exercise", ownExMap: "Your own exercise — the map shows the muscle you added it under.",
+
+    // Same as last time, history, finished exercises, search, your own exercises
+    histTitle: "Previous times", histAll: "All {n} times", exDone: "Complete", todayDid: "Today: {sets}", editSets: "Edit sets",
+    repeatTitle: "Repeat a past workout", nEx: "{n} exercises", nEx1: "1 exercise", nEx2: "2 exercises", repeatBtn: "Repeat", modeLast: "Same as last time",
+    lastFrom: "Same as {date} · {count}", lastNone: "No past workout yet — suggested",
+    lastHint: "Same exercises and sets as last time — your weights carry on. Swap or add anything.",
+    doneCount: "{d}/{n} done", allDone: "All exercises done — tap Finish workout.",
+    searchPh: "Search all exercises (e.g. pec fly, فراشة)", clear: "Clear", myEx: "My exercises", libraryEx: "Library",
+    searchNone: "Nothing found — add it below as your own.", ownMuscleLbl: "Muscle", ownPartsLbl: "Which part does it work? (optional)",
+    ownPhoto: "Add a photo", ownPhotoChange: "Change photo", ownExKept: "Saved on this phone — it shows under My exercises next time.",
+    photoFull: "Phone storage is full — saved without the photo.", photoFail: "Couldn't read that photo.",
+    histAllTitle: "Your history", histBest: "Best {w} kg", histChart: "Top weight each time", histNone: "No sets logged yet for this exercise.",
   },
 
   ar: {
@@ -372,7 +384,7 @@ export const STR = {
     buildMode: "طريقة البناء", modeSuggest: "اقترح لي", modeChoose: "أنا أختار", perMuscle: "عدد التمارين لكل عضلة", setsPer: "عدد المجموعات لكل التمارين",
     recN: "المقترح: {n}", suggestLine: "المقترح لهدفك: {list} · {s} مجموعات لكل تمرين.", notRules: "اقتراح مو إجبار — غيّر اللي تبي.",
     useSuggestion: "استخدم المقترح", chooseHint: "أضف التمارين اللي تبيها — من القائمة أو تمرينك الخاص.",
-    addExercise: "أضف تمرين", addExTitle: "أضف تمرين", showAll: "اعرض كل الأدوات", ownEx: "مو موجود بالقائمة؟ اكتب اسمه", ownExPh: "مثلاً: ترايسبس كيك باك",
+    addExercise: "أضف تمرين", addExTitle: "أضف تمرين", showAll: "اعرض كل الأدوات", ownEx: "مو موجود بالقائمة؟ أضف تمرينك", ownExPh: "مثلاً: ترايسبس كيك باك",
     add: "أضف", added: "انضاف: {name}", remove: "شيل", inSession: "موجود", minus: "أقل", plus: "أكثر", restartQ: "ابدأ من جديد", sessionDone: "خلصت اليوم",
 
     swapSheet: "بدّل التمرين", swCurrent: "التمرين الحالي", swExplain: "هذي تشغّل نفس العضلة بنفس الحركة. اختر اللي يناسبك.",
@@ -401,6 +413,17 @@ export const STR = {
     helpsTxt: "يساعد: {list}", worksA11y: "العضلات اللي يشغّلها: {list}", exInfoA11y: "صور وعضلات: {name}", exInfoTitle: "تفاصيل التمرين",
     exStart: "البداية", exEnd: "النهاية", bodyFront: "أمام", bodyBack: "خلف", mainMuscles: "العضلات الأساسية", helperMuscles: "عضلات مساعدة",
     ownExTag: "تمرينك الخاص", ownExMap: "تمرينك الخاص — الخريطة تبيّن العضلة اللي أضفته تحتها.",
+
+    histTitle: "المرات السابقة", histAll: "كل المرات ({n})", exDone: "مكتمل", todayDid: "اليوم: {sets}", editSets: "عدّل المجموعات",
+    repeatTitle: "كرّر تمرين سابق", nEx: "{n} تمارين", nEx1: "تمرين واحد", nEx2: "تمرينين", repeatBtn: "كرّر", modeLast: "مثل آخر مرة",
+    lastFrom: "مثل {date} · {count}", lastNone: "ما فيه تمرين سابق — حطينا المقترح",
+    lastHint: "نفس التمارين والمجموعات اللي سويتها آخر مرة — وأوزانك تكمل منها. تقدر تبدّل أو تضيف.",
+    doneCount: "{d}/{n} مكتمل", allDone: "خلصت كل التمارين — اضغط إنهاء التمرين.",
+    searchPh: "دوّر في كل التمارين (مثلاً: فراشة، pec fly)", clear: "مسح", myEx: "تماريني", libraryEx: "المكتبة",
+    searchNone: "ما لقينا شي — أضفه تحت كتمرين خاص.", ownMuscleLbl: "العضلة", ownPartsLbl: "أي جزء يشغّل؟ (اختياري)",
+    ownPhoto: "أضف صورة", ownPhotoChange: "غيّر الصورة", ownExKept: "ينحفظ في جوالك — تلقاه تحت «تماريني» المرة الجاية.",
+    photoFull: "ذاكرة الجوال ممتلئة — انحفظ بدون الصورة.", photoFail: "ما قدرنا نقرأ الصورة.",
+    histAllTitle: "سجلّك", histBest: "أفضل وزن {w} كجم", histChart: "أعلى وزن كل مرة", histNone: "ما سجلت مجموعات لهالتمرين للحين.",
   },
 };
 
@@ -421,6 +444,7 @@ export function fmtDate(iso, lang = "en", style = "short") {
   if (isNaN(d.getTime())) return "—";
   const opts = style === "long" ? { day: "numeric", month: "short", year: "numeric" }
     : style === "weekday" ? { weekday: "long", day: "numeric", month: "long" }
+    : style === "day" ? { weekday: "short", day: "numeric", month: "short" }
     : { day: "numeric", month: "short" };
   if (lang === "ar" && style !== "weekday") opts.month = "long";
   return new Intl.DateTimeFormat(LOCALE[lang] || LOCALE.en, opts).format(d);

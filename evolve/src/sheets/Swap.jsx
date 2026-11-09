@@ -29,7 +29,7 @@ export default function SwapSheet({ ctx }) {
       return { ...s, done, slots: s.slots.map((x) => (x.id === ctx.slotId ? { ...x, ex: exId, origEx: x.origEx || x.ex } : x)) };
     });
   }
-  if (!slot) return <div className="small muted">{t("swNone")}</div>;
+  if (!slot || !BY_ID[slot.ex]) return <div className="small muted">{t("swNone")}</div>;
 
   const cur = BY_ID[slot.ex];
   const g = GROUPS[cur.group];
@@ -45,7 +45,7 @@ export default function SwapSheet({ ctx }) {
         <div className="row">
           <button type="button" className="ex-media" onClick={() => info(cur.id)} aria-label={t("exInfoA11y", { name: cur.name[L] })}><Photo ex={cur} small /></button>
           <div className="grow"><div className="strong" style={{ fontSize: 16 }}>{cur.name[L]}</div><div className="small sub">{cur.gear[L]}</div></div>
-          <MuscleMap muscles={curM} height={56} label={t("worksA11y", { list: muscleNames([...curM.primary, ...curM.secondary], lang).join(", ") })} />
+          <MuscleMap muscles={curM} height={64} views="main" zoom group={cur.group} label={t("worksA11y", { list: muscleNames([...curM.primary, ...curM.secondary], lang).join(", ") })} />
         </div>
         <div className="row wrap" style={{ gap: 6 }}>
           <span className="tag ok">{g.job[L]}</span>
@@ -70,7 +70,7 @@ export default function SwapSheet({ ctx }) {
                 <span className="small muted">{e.why[L]}</span>
                 <span className="small" style={{ color: "var(--accent-text)", fontWeight: 700 }}>{muscleNames(em.primary, lang).join(" · ")}</span>
               </span>
-              <MuscleMap muscles={em} height={46} />
+              <MuscleMap muscles={em} height={52} views="main" zoom group={e.group} />
               <span className="small strong" style={{ color: "var(--accent-text)", flex: "none" }}>{t("use")}</span>
             </button>
           </div>

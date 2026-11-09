@@ -198,6 +198,7 @@ export default function Planner() {
             </div>
             {PD.slots.map((s) => {
               const ex = BY_ID[s.ex];
+              if (!ex) return null;
               const em = musclesOf(ex);
               return (
                 <div key={s.id} className="card tight" style={{ borderColor: s.kept ? "var(--accent-line)" : "var(--line)" }}>
@@ -208,7 +209,7 @@ export default function Planner() {
                       <span className="small sub">{ex.gear[L]}</span>
                       <span className="small" style={{ color: "var(--accent-text)", fontWeight: 700 }}>{muscleNames(em.primary, lang).join(" · ")}</span>
                     </div>
-                    <MuscleMap muscles={em} height={46} />
+                    <MuscleMap muscles={em} height={52} views="main" zoom group={ex.group} />
                   </div>
                   <div className="row between">
                     <span className="small sub">{t("plSets", { lo: s.reps[0], hi: s.reps[1] })}</span>

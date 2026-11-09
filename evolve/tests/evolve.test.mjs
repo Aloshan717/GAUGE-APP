@@ -1,9 +1,10 @@
 // Evolve logic tests: library, swaps, sessions, advice, plan, energy, goal checks.
 import assert from "node:assert/strict";
 import { EXERCISES, BY_ID, GROUPS, usable, swapOptions, matchExercise, logExerciseId } from "../src/lib/exercises.js";
-import { buildSession, recommend, liftHistory, weightStep, exercisesFor, adjustSession, recommendedCounts, makeCustomSlot, customMatch, makeSlot, setAllSets, suggestedSets } from "../src/lib/train.js";
+import { buildSession, recommend, liftHistory, weightStep, exercisesFor, adjustSession, recommendedCounts, makeCustomSlot, customMatch, makeSlot, setAllSets, suggestedSets,
+  pastWorkouts, lastTimeFor, slotsFromItems, sameExercise } from "../src/lib/train.js";
 import { generatePlan, weeklySets, swapInPlan, toggleKept, setSlotSets, reviewCount, planDayFor, nextPlanDay, DEFAULT_DAYS } from "../src/lib/plan.js";
-import { musclesOf, slotMuscles, regionLevels, REGIONS, MUSCLE_LABELS } from "../src/lib/muscles.js";
+import { musclesOf, slotMuscles, regionLevels, REGIONS, MUSCLE_LABELS, PARTS, mainView, focusBox, searchExercises, customMuscles } from "../src/lib/muscles.js";
 import { FRONT, BACK } from "../src/lib/bodymap.js";
 import { restingEnergy, formulaMaintenance, maintenance, dailyTargets, goalDirection, feasibility, consistency, currentBody, adaptiveMaintenance, watchAverage, coachTips, localISO } from "../src/lib/body.js";
 import { toKcal } from "../api/burn.js";
@@ -307,12 +308,12 @@ test("plan review: change the sets of one exercise", () => {
 });
 
 // ── Library and muscle map ──
-test("every exercise has a photo, a known group and muscles on the map", () => {
-  assert.ok(EXERCISES.length >= 230);
+test("every exercise has a known group and muscles on the map; photos are unique", () => {
+  assert.ok(EXERCISES.length >= 270);
+  assert.ok(EXERCISES.filter((e) => !e.img).length <= 15);
   const regionsFront = new Set(FRONT.map(([r]) => r)), regionsBack = new Set(BACK.map(([r]) => r));
   for (const e of EXERCISES) {
     assert.ok(GROUPS[e.group], e.id);
-    assert.ok(e.img, e.id);
     const m = musclesOf(e);
     assert.ok(m.primary.length > 0, e.id);
     for (const k of [...m.primary, ...m.secondary]) {
@@ -323,7 +324,8 @@ test("every exercise has a photo, a known group and muscles on the map", () => {
     assert.ok(e.name[0] && e.name[1] && e.gear[0] && e.gear[1] && e.why[0] && e.why[1], e.id);
   }
   assert.equal(new Set(EXERCISES.map((e) => e.id)).size, EXERCISES.length);
-  assert.equal(new Set(EXERCISES.map((e) => e.img)).size, EXERCISES.length);
+  const imgs = EXERCISES.map((e) => e.img).filter(Boolean);
+  assert.equal(new Set(imgs).size, imgs.length);
 });
 test("plenty of swaps: biceps alone has 20+ in a full gym", () => {
   assert.ok(swapOptions("db_curl", { equipment: "gym" }).length >= 20);
@@ -337,11 +339,89 @@ test("muscle map: hammer curls add forearms, deadlifts light the whole back chai
   assert.deepEqual(musclesOf("hammer_curl").primary, ["biceps", "forearms"]);
   assert.deepEqual(musclesOf("db_curl").primary, ["biceps"]);
   const back = regionLevels(musclesOf("deadlift"), "back");
-  assert.equal(back.hamstring, "primary"); assert.equal(back["lower-back"], "primary"); assert.equal(back.trapezius, "secondary");
+  assert.equal(back.hamstring, "primary"); assert.equal(back["lower-back"], "primary"); assert.equal(back["traps-upper"], "secondary");
   const front = regionLevels(musclesOf("bench_press"), "front");
-  assert.equal(front.chest, "primary"); assert.equal(front.triceps, "secondary"); assert.equal(front.quadriceps, undefined);
+  assert.equal(front["chest-mid"], "primary"); assert.equal(front.triceps, "secondary"); assert.equal(front.quadriceps, undefined);
   assert.deepEqual(musclesOf("close_grip_bench").primary, ["triceps"]);
   assert.deepEqual(slotMuscles({ custom: true, muscle: "Biceps" }).primary, ["biceps"]);
+});
+test("muscle parts: which part of the chest, shoulder, abs and calves", () => {
+  const lv = (id) => regionLevels(musclesOf(id), "front");
+  assert.equal(lv("incline_db_press")["chest-upper"], "primary");
+  assert.equal(lv("incline_db_press")["chest-mid"], "secondary");
+  assert.equal(lv("bench_press")["chest-mid"], "primary");
+  assert.equal(lv("decline_bench_press")["chest-lower"], "primary");
+  assert.equal(lv("low_cable_crossover")["chest-upper"], "primary");
+  assert.equal(lv("cable_crossover")["chest-lower"], "primary");
+  assert.equal(lv("chest_dip")["chest-lower"], "primary");
+  assert.equal(lv("front_db_raise")["delt-front"], "primary");
+  assert.equal(lv("db_lateral_raise")["delt-side-f"], "primary");
+  assert.equal(lv("db_lateral_raise")["delt-front"], undefined);
+  assert.equal(regionLevels(musclesOf("face_pull"), "back")["delt-rear"], "primary");
+  assert.equal(lv("hanging_leg_raise")["abs-lower"], "primary");
+  assert.equal(lv("crunch")["abs-upper"], "primary");
+  assert.equal(regionLevels(musclesOf("seated_calf_raise"), "back")["left-soleus"], "primary");
+  assert.equal(regionLevels(musclesOf("hip_abduction_machine"), "back")["glute-med"], "primary");
+  assert.equal(regionLevels(musclesOf("hip_thrust"), "back")["glute-max"], "primary");
+  for (const [chip, keys] of Object.entries(PARTS)) keys.forEach((k) => assert.ok(REGIONS[k] && MUSCLE_LABELS[k], `${chip}:${k}`));
+  assert.deepEqual(customMuscles("Chest", ["upperChest"]).primary, ["upperChest"]);
+});
+test("small maps zoom on the target and pick the right side", () => {
+  assert.equal(mainView(musclesOf("bench_press"), "hpress"), "front");
+  assert.equal(mainView(musclesOf("seated_cable_row"), "row"), "back");
+  assert.equal(mainView(musclesOf("barbell_shrug"), "shrug"), "back");
+  const box = focusBox(musclesOf("bench_press"), "front");
+  assert.ok(box[3] < 80 && box[1] > 10 && box[1] + box[3] < 90, JSON.stringify(box));   // torso, not the whole body
+  const legs = focusBox(musclesOf("leg_extension"), "front");
+  assert.ok(legs[1] > 70, JSON.stringify(legs));
+  for (const e of EXERCISES) {
+    const m = musclesOf(e), v = mainView(m, e.group), b = focusBox(m, v);
+    assert.ok(b && b[0] >= 0 && b[1] >= 0 && b[0] + b[2] <= 100.01 && b[1] + b[3] <= 220.01, `${e.id} ${JSON.stringify(b)}`);
+  }
+});
+test("search finds the pec fly machine in Arabic and English, names first", () => {
+  assert.equal(searchExercises("فراشة")[0].id, "pec_deck");
+  assert.equal(searchExercises("pec fly")[0].id, "pec_deck");
+  assert.ok(searchExercises("rear delt").some((e) => e.id === "reverse_pec_deck"));
+  assert.ok(searchExercises("أعلى الصدر").slice(0, 5).every((e) => musclesOf(e).primary.includes("upperChest")));
+  assert.deepEqual(searchExercises("   "), []);
+  assert.deepEqual(searchExercises("zzzz"), []);
+});
+
+// ── Same as last time ──
+const pastLogs = [
+  { id: "a1", date: "2026-11-05", exercise: "Bench Press", muscle_group: "Chest", weight_kg: 80, reps: 8, created_at: "2026-11-05T17:00:00Z" },
+  { id: "a2", date: "2026-11-05", exercise: "Bench Press", muscle_group: "Chest", weight_kg: 80, reps: 7, created_at: "2026-11-05T17:03:00Z" },
+  { id: "a3", date: "2026-11-05", exercise: "Cable kickback", muscle_group: "Triceps", weight_kg: 10, reps: 12, created_at: "2026-11-05T17:20:00Z" },
+  { id: "a4", date: "2026-11-05", exercise_id: "pec_deck", exercise: "Pec deck", muscle_group: "Chest", weight_kg: 50, reps: 12, created_at: "2026-11-05T17:10:00Z" },
+  { id: "a5", date: "2026-11-05", exercise_id: "pec_deck", exercise: "Pec deck", muscle_group: "Chest", weight_kg: 50, reps: 11, created_at: "2026-11-05T17:12:00Z" },
+  { id: "a6", date: "2026-11-05", exercise_id: "pec_deck", exercise: "Pec deck", muscle_group: "Chest", weight_kg: 50, reps: 10, created_at: "2026-11-05T17:14:00Z" },
+  { id: "b1", date: "2026-11-07", exercise_id: "lat_pulldown", exercise: "Lat pulldown", muscle_group: "Back", weight_kg: 60, reps: 10, created_at: "2026-11-07T17:00:00Z" },
+  { id: "c1", date: "2026-11-09", exercise_id: "db_curl", exercise: "Dumbbell curl", muscle_group: "Biceps", weight_kg: 14, reps: 10 },
+];
+test("past workouts: one per day, newest first, exercises in order with their sets", () => {
+  const w = pastWorkouts(pastLogs, { before: "2026-11-09" });
+  assert.deepEqual(w.map((x) => x.date), ["2026-11-07", "2026-11-05"]);
+  assert.deepEqual(w[1].items.map((i) => [i.id || i.name, i.sets]), [["bench_press", 2], ["pec_deck", 3], ["Cable kickback", 1]]);
+  assert.deepEqual(w[1].muscles, ["Chest", "Triceps"]);
+});
+test("a typed name never turns into another muscle's exercise", () => {
+  const w = pastWorkouts(pastLogs, { before: "2026-11-09" });
+  const kick = w[1].items.find((i) => i.name === "Cable kickback");
+  assert.equal(kick.id, null);
+  assert.equal(kick.muscle, "Triceps");
+});
+test("same as last time: the exercises and sets from the last time you trained that muscle", () => {
+  const w = pastWorkouts(pastLogs, { before: "2026-11-09" });
+  const last = lastTimeFor("Chest", w);
+  assert.equal(last.date, "2026-11-05");
+  const slots = slotsFromItems(last.items, { muscle: "Chest" });
+  assert.deepEqual(slots.map((s) => [s.ex, s.sets, s.muscle]), [["bench_press", 2, "Chest"], ["pec_deck", 3, "Chest"]]);
+  assert.equal(lastTimeFor("Legs", w), null);
+  const tri = slotsFromItems(lastTimeFor("Triceps", w).items, { mine: (n) => (n === "Cable kickback" ? { parts: ["triceps"] } : null) });
+  assert.ok(tri[0].custom); assert.equal(tri[0].name, "Cable kickback"); assert.deepEqual(tri[0].parts, ["triceps"]);
+  assert.ok(sameExercise(slots[0], { ex: "bench_press" }));
+  assert.ok(sameExercise(tri[0], { custom: true, name: "cable KICKBACK" }));
 });
 test("your own exercise keeps its history by name", () => {
   const logs = [{ exercise: "Cable kickback", weight_kg: 10, reps: 12, date: day(-3) }, { exercise: "Other", weight_kg: 5, reps: 5, date: day(-3) }];

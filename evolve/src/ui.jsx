@@ -3,7 +3,7 @@ import React, { useEffect, useRef } from "react";
 import { useApp } from "./ctx.js";
 import { exerciseImages } from "./lib/exercises.js";
 import { FRONT, BACK } from "./lib/bodymap.js";
-import { regionLevels } from "./lib/muscles.js";
+import { regionLevels, focusBox, mainView } from "./lib/muscles.js";
 
 const P = {
   home: <><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5" /></>,
@@ -35,6 +35,8 @@ const P = {
   play: <path d="M8 5v14l11-7z" />,
   logo: <><path d="M4 16l5-5 3 3 7-7" /><path d="M14 7h5v5" /></>,
   eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>,
+  repeat: <><path d="M17 2.5 20 5.5l-3 3" /><path d="M4 11V9.5a4 4 0 0 1 4-4h12" /><path d="M7 21.5 4 18.5l3-3" /><path d="M20 13v1.5a4 4 0 0 1-4 4H4" /></>,
+  search: <><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.2-4.2" /></>,
 };
 
 export function Icon({ name, size = 20, stroke = 1.9, color = "currentColor", flip = false, style }) {
@@ -176,7 +178,7 @@ export function Empty({ icon, title, text, action }) {
 // Exercise photo with a graceful fallback when offline or missing.
 // frame 0 = start of the movement, 1 = end.
 export function Photo({ ex, small, big, frame = 0 }) {
-  const srcs = exerciseImages(ex, frame);
+  const srcs = ex?.photo ? [ex.photo] : exerciseImages(ex, frame);
   const [i, setI] = React.useState(0);
   React.useEffect(() => setI(0), [ex?.id, frame]);
   return (
@@ -188,18 +190,21 @@ export function Photo({ ex, small, big, frame = 0 }) {
   );
 }
 
-// Front and back of the body with the muscles an exercise works lit up:
-// main muscles in full colour, helpers lighter.
-const VIEWS = [["front", FRONT], ["back", BACK]];
-export function MuscleMap({ muscles, height = 64, label, captions }) {
+// The body with the muscles an exercise works lit up: main muscles in full
+// colour, helpers lighter. `views`: which sides to draw ("main" = the side where
+// the main muscles are). `zoom`: crop to the target so its part is easy to see.
+const VIEWS = { front: FRONT, back: BACK };
+export function MuscleMap({ muscles, height = 64, label, captions, views = ["front", "back"], zoom = false, all = false, group }) {
+  const list = views === "main" ? [mainView(muscles, group)] : views;
   return (
     <span className="mmap" role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
-      {VIEWS.map(([view, shapes], vi) => {
+      {list.map((view, vi) => {
         const lv = regionLevels(muscles, view);
+        const box = (zoom && focusBox(muscles, view, { all })) || [0, 0, 100, 220];
         return (
           <span key={view} className="mmap-view">
-            <svg viewBox="0 0 100 220" style={{ height, width: (height * 100) / 220 }} aria-hidden="true">
-              {shapes.map(([region, polys]) => polys.map((pts, i) => (
+            <svg viewBox={box.join(" ")} style={{ height, width: (height * box[2]) / box[3] }} aria-hidden="true">
+              {VIEWS[view].map(([region, polys]) => polys.map((pts, i) => (
                 <polygon key={`${region}${i}`} points={pts} className={lv[region] === "primary" ? "p" : lv[region] === "secondary" ? "s" : undefined} />
               )))}
             </svg>

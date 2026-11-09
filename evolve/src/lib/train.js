@@ -1,5 +1,5 @@
 // EVOLVE — training logic: today's session, lift history, next-set advice.
-import { GROUPS, BY_ID, groupItems, usable, logExerciseId } from "./exercises.js";
+import { GROUPS, BY_ID, groupItems, usable, logExerciseId, canonicalId } from "./exercises.js";
 import { coerceNumber, normalizeDate } from "./core.js";
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
@@ -45,7 +45,8 @@ const setOrder = (a, b) =>
 // [{ date, sets: [{ weight_kg, reps, effort }] }]
 export function liftHistory(logs, exerciseId, match) {
   const by = new Map();
-  const isIt = match || ((l) => logExerciseId(l) === exerciseId);
+  const target = canonicalId(exerciseId);
+  const isIt = match || ((l) => logExerciseId(l) === target);
   for (const l of logs || []) {
     if (!l || !isIt(l)) continue;
     const d = normalizeDate(l.date);
@@ -219,8 +220,8 @@ export function makeSlot({ group, ex, muscle, profile = {}, sets, first = false,
 }
 
 // Your own exercise, not in the library. History is matched by its name.
-export function makeCustomSlot({ name, muscle, sets = 3 }) {
-  return { id: newSlotId("c"), custom: true, manual: true, name: String(name).trim(), muscle, group: null, ex: null, sets, reps: [8, 12] };
+export function makeCustomSlot({ name, muscle, sets = 3, parts }) {
+  return { id: newSlotId("c"), custom: true, manual: true, name: String(name).trim(), muscle, group: null, ex: null, sets, reps: [8, 12], ...(parts?.length ? { parts } : null) };
 }
 export const customMatch = (name) => {
   const k = String(name || "").trim().toLowerCase();
@@ -273,3 +274,63 @@ export function suggestedSets(slots = [], profile = {}, done = {}) {
     ...s, sets: Math.max((done[s.id] || []).length, setsFor(s.group, { experience: profile.experience, focus: profile.focus })),
   }));
 }
+
+// ─── Same as last time ──────────────────────────────────────────────────────
+// Your past workouts, newest first: one per day, the exercises in the order
+// you did them and how many sets you logged — so a session can be repeated.
+//   [{ date, muscles: [...], items: [{ id, name, muscle, sets }] }]
+export function pastWorkouts(logs, { before } = {}) {
+  const days = new Map();
+  for (const l of logs || []) {
+    const d = normalizeDate(l?.date);
+    if (!d || (before && d >= before)) continue;
+    const id = logExerciseId(l);
+    const name = String(l.exercise || "").trim();
+    if (!id && !name) continue;
+    const key = id || `name:${name.toLowerCase()}`;
+    if (!days.has(d)) days.set(d, new Map());
+    const day = days.get(d);
+    const when = String(l.created_at || "");
+    if (!day.has(key)) {
+      day.set(key, { id, name: id ? BY_ID[id].name[0] : name, muscle: l.muscle_group || (id ? GROUPS[BY_ID[id].group].muscle : null), sets: 0, first: when, ref: String(l.id || "") });
+    }
+    const e = day.get(key);
+    e.sets += 1;
+    if (when && (!e.first || when < e.first)) e.first = when;
+  }
+  return [...days.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .map(([date, day]) => {
+      const items = [...day.values()]
+        .sort((a, b) => a.first.localeCompare(b.first) || a.ref.localeCompare(b.ref))
+        .map(({ id, name, muscle, sets }) => ({ id, name, muscle, sets }));
+      return { date, items, muscles: [...new Set(items.map((i) => i.muscle).filter(Boolean))] };
+    });
+}
+
+// The exercises from the last time you trained this muscle (or null).
+export function lastTimeFor(muscle, workouts) {
+  for (const w of workouts || []) {
+    const items = w.items.filter((i) => i.muscle === muscle);
+    if (items.length) return { date: w.date, items };
+  }
+  return null;
+}
+
+// Session slots from a past workout's exercises, with the sets you did.
+// `mine(name)` finds the details (parts, photo) of an exercise you added yourself.
+export function slotsFromItems(items = [], { profile = {}, muscle, mine } = {}) {
+  return items.map((i) => {
+    const sets = Math.max(1, Math.min(MAX_SETS, i.sets || 3));
+    const m = muscle || i.muscle;
+    if (i.id && BY_ID[i.id]) {
+      const g = BY_ID[i.id].group;
+      return { ...makeSlot({ group: g, ex: i.id, muscle: m || GROUPS[g].muscle, profile, sets }), fromLast: true };
+    }
+    const own = mine?.(i.name);
+    return { ...makeCustomSlot({ name: i.name, muscle: m || own?.muscle || "Chest", sets, parts: own?.parts }), fromLast: true };
+  });
+}
+
+// Same exercise already in the list (library id, or your own by name)?
+export const sameExercise = (a, b) => (a.ex && a.ex === b.ex) || (!!a.custom && !!b.custom && a.name.toLowerCase() === b.name.toLowerCase());

@@ -63,18 +63,18 @@ export const GROUPS = {
 const RAW = [
   ["bench_press", "hpress", "Barbell_Bench_Press_-_Medium_Grip", "barbell bench", "shoulder wrist", "same", "Bench press", "بنش برس", "Barbell · flat bench", "بار · بنش مستوي", "Heaviest loading — best for strength", "يتحمل أعلى وزن — الأفضل للقوة"],
   ["db_bench_press", "hpress", "Dumbbell_Bench_Press", "dumbbell bench", "shoulder", "same", "Dumbbell bench press", "بنش دمبل", "Dumbbells · flat bench", "دمبل · بنش مستوي", "Each side works alone, deeper stretch", "كل جهة تشتغل لحالها ومدى أعمق"],
-  ["machine_chest_press", "hpress", "Leverage_Chest_Press", "machine", "", "same", "Machine chest press", "جهاز ضغط الصدر", "Chest press machine", "جهاز ضغط الصدر", "Push to the last rep safely — no spotter", "تضغط لآخر تكرار بأمان بدون مساعد"],
+  ["machine_chest_press", "hpress", "Leverage_Chest_Press", "machine", "", "same", "Plate-loaded chest press", "جهاز ضغط الصدر بالأقراص", "Chest press machine (plate-loaded, each arm alone)", "جهاز ضغط صدر بالأقراص (كل يد لحالها)", "Push to the last rep safely — no spotter", "تضغط لآخر تكرار بأمان بدون مساعد"],
   ["smith_bench_press", "hpress", "Smith_Machine_Bench_Press", "machine bench", "shoulder", "same", "Smith machine bench press", "بنش سميث", "Smith machine · flat bench", "جهاز السميث · بنش مستوي", "Fixed path — quick to set up", "مسار ثابت وسريع التجهيز"],
   ["push_up", "hpress", "Pushups", "body", "wrist", "same", "Push-up", "ضغط أرضي", "Bodyweight", "وزن الجسم", "No equipment — add reps or a backpack", "بدون أدوات — زد التكرار أو شنطة على ظهرك"],
 
   ["incline_db_press", "incline", "Incline_Dumbbell_Press", "dumbbell bench", "", "same", "Incline dumbbell press", "ضغط دمبل مائل", "Dumbbells · incline bench", "دمبل · بنش مائل", "Free path — kind to the shoulders", "حركة حرة ومريحة للكتف"],
-  ["incline_machine_press", "incline", "Leverage_Incline_Chest_Press", "machine", "", "same", "Incline machine press", "جهاز ضغط مائل", "Incline press machine", "جهاز ضغط مائل", "Stable — easy to add weight", "ثابت وسهل تزيد عليه"],
+  ["incline_machine_press", "incline", "Leverage_Incline_Chest_Press", "machine", "", "same", "Incline chest press machine", "جهاز ضغط صدر مائل", "Incline press machine (plate-loaded)", "جهاز ضغط مائل بالأقراص", "Stable — easy to add weight", "ثابت وسهل تزيد عليه"],
   ["incline_bench_press", "incline", "Barbell_Incline_Bench_Press_-_Medium_Grip", "barbell bench", "shoulder wrist", "same", "Incline barbell press", "بنش مائل بار", "Barbell · incline bench", "بار · بنش مائل", "Takes the heaviest load", "يتحمل أعلى وزن"],
   ["incline_cable_fly", "incline", "Incline_Cable_Flye", "cable bench", "", "angle", "Incline cable fly", "تفتيح كيبل مائل", "Cables · incline bench", "كيبل · بنش مائل", "Upper chest without pressing", "أعلى الصدر بدون ضغط"],
   ["feet_up_push_up", "incline", "Push-Ups_With_Feet_Elevated", "body", "wrist shoulder", "same", "Feet-up push-up", "ضغط أرضي والرجل مرفوعة", "Bodyweight · step or bench", "وزن الجسم · درج أو كرسي", "Tilts the work to the upper chest", "يحوّل الشغل لأعلى الصدر"],
 
   ["cable_fly", "fly", "Flat_Bench_Cable_Flyes", "cable bench", "", "same", "Cable fly", "تفتيح كيبل", "Cables · flat bench", "كيبل · بنش مستوي", "Tension through the whole rep", "شد ثابت طول الحركة"],
-  ["pec_deck", "fly", "Butterfly", "machine", "", "same", "Pec deck", "جهاز الفراشة", "Pec deck machine", "جهاز الفراشة", "Easiest to learn, very stable", "الأسهل والأثبت"],
+  ["pec_deck", "fly", "Butterfly", "machine", "", "same", "Pec fly machine (pec deck)", "جهاز الفراشة للصدر (بيك دك)", "Pec fly / rear delt machine · handles or pads", "جهاز الفراشة (صدر وكتف خلفي) · مقابض أو مساند", "Back on the pad, bring the handles together in front", "ظهرك على المسند وضم المقابض قدامك"],
   ["db_fly", "fly", "Dumbbell_Flyes", "dumbbell bench", "shoulder", "same", "Dumbbell fly", "تفتيح دمبل", "Dumbbells · flat bench", "دمبل · بنش مستوي", "Big stretch at the bottom", "تمدد كبير تحت"],
 
   ["rope_pushdown", "triceps", "Triceps_Pushdown_-_Rope_Attachment", "cable", "", "same", "Triceps pushdown", "ترايسبس بوش داون", "Cable · rope", "كيبل · حبل", "Easy on the elbows", "مريح للكوع"],
@@ -86,7 +86,7 @@ const RAW = [
   ["close_push_up", "triceps", "Push-Ups_-_Close_Triceps_Position", "body", "wrist", "angle", "Close-grip push-up", "ضغط أرضي ضيق", "Bodyweight", "وزن الجسم", "A push-up aimed at the triceps", "ضغط يركز على الترايسبس"],
 
   ["seated_cable_row", "row", "Seated_Cable_Rows", "cable", "", "same", "Seated cable row", "سحب كيبل جالس", "Cable row station", "جهاز السحب الأرضي", "Smooth and easy to control", "سلس وسهل التحكم"],
-  ["machine_row", "row", "Leverage_Iso_Row", "machine", "", "same", "Machine row", "جهاز السحب", "Row machine", "جهاز السحب", "Chest pad — no lower-back strain", "مسند صدر — ما يضغط أسفل الظهر"],
+  ["machine_row", "row", "Leverage_Iso_Row", "machine", "", "same", "Row machine (chest pad)", "جهاز السحب بمسند صدر", "Row machine (plate-loaded, each arm alone)", "جهاز سحب بالأقراص (كل يد لحالها)", "Chest pad — no lower-back strain", "مسند صدر — ما يضغط أسفل الظهر"],
   ["chest_supported_db_row", "row", "Dumbbell_Incline_Row", "dumbbell bench", "", "same", "Chest-supported dumbbell row", "سحب دمبل على بنش مائل", "Dumbbells · incline bench", "دمبل · بنش مائل", "No strain on the lower back", "ما يضغط أسفل الظهر"],
   ["one_arm_db_row", "row", "One-Arm_Dumbbell_Row", "dumbbell bench", "", "same", "One-arm dumbbell row", "سحب دمبل بيد وحدة", "Dumbbell · bench", "دمبل · بنش", "Each side alone, long range", "كل جهة لحالها ومدى طويل"],
   ["barbell_row", "row", "Bent_Over_Barbell_Row", "barbell", "back", "same", "Barbell row", "سحب بار منحني", "Barbell", "بار", "Heaviest row — trains the whole back", "أثقل سحب ويشغل الظهر كامل"],
@@ -109,7 +109,7 @@ const RAW = [
   ["incline_lateral_raise", "lateral", "One-Arm_Incline_Lateral_Raise", "dumbbell bench", "", "angle", "Lying incline lateral raise", "رفرفة جانبية على بنش مائل", "Dumbbell · incline bench", "دمبل · بنش مائل", "Harder at the bottom, no swinging", "أصعب تحت وما تتمرجح"],
 
   ["face_pull", "rear", "Face_Pull", "cable", "", "same", "Face pull", "فيس بول", "Cable · rope", "كيبل · حبل", "Rear shoulders and upper back, shoulder-friendly", "الكتف الخلفي وأعلى الظهر ومريح للكتف"],
-  ["reverse_pec_deck", "rear", "Reverse_Machine_Flyes", "machine", "", "same", "Reverse pec deck", "فراشة عكسي", "Pec deck machine", "جهاز الفراشة", "Locks you in — no swinging", "يثبتك وما تتمرجح"],
+  ["reverse_pec_deck", "rear", "Reverse_Machine_Flyes", "machine", "", "same", "Rear delt fly machine (reverse pec deck)", "جهاز الفراشة العكسي (كتف خلفي)", "Same pec fly machine · chest on the pad", "نفس جهاز الفراشة · صدرك على المسند", "Locks you in — no swinging", "يثبتك وما تتمرجح"],
   ["db_reverse_fly", "rear", "Reverse_Flyes", "dumbbell", "back", "same", "Dumbbell reverse fly", "رفرفة خلفي دمبل", "Dumbbells", "دمبل", "Needs only dumbbells", "تحتاج دمبل بس"],
 
   ["ez_curl", "curl", "EZ-Bar_Curl", "barbell", "", "same", "EZ-bar curl", "بايسبس بار EZ", "EZ bar", "بار EZ", "Easier on the wrists than a straight bar", "أريح للرسغ من البار المستقيم"],
@@ -304,7 +304,7 @@ const RAW = [
   ["side_split_squat", "lunge", "Barbell_Side_Split_Squat", "barbell", "knee", "angle", "Side (lateral) lunge", "طعن جانبي", "Barbell", "بار", "Inner thighs and glutes", "الفخذ الداخلي والمؤخرة"],
   ["deficit_reverse_lunge", "lunge", "Elevated_Back_Lunge", "barbell", "knee", "angle", "Deficit reverse lunge", "طعن خلفي من منصة", "Barbell · low step", "بار · منصة منخفضة", "A deeper stretch for the glutes", "تمدد أعمق للمؤخرة"],
 
-  ["cable_kickback", "glutes", "One-Legged_Cable_Kickback", "cable", "", "same", "Cable glute kickback", "ركلة خلفية كيبل", "Cable · ankle strap", "كيبل · رباط الكاحل", "Glutes alone, easy to load", "المؤخرة لحالها وسهل تزيد الوزن"],
+  ["cable_glute_kickback", "glutes", "One-Legged_Cable_Kickback", "cable", "", "same", "Cable glute kickback", "ركلة خلفية كيبل", "Cable · ankle strap", "كيبل · رباط الكاحل", "Glutes alone, easy to load", "المؤخرة لحالها وسهل تزيد الوزن"],
   ["butt_lift_bridge", "glutes", "Butt_Lift_Bridge", "body", "", "same", "Glute bridge", "جسر المؤخرة", "Bodyweight · floor", "وزن الجسم · أرض", "No equipment — squeeze at the top", "بدون أدوات — اعصر فوق"],
   ["band_hip_lift", "glutes", "Hip_Lift_with_Band", "band", "", "same", "Banded hip lift", "جسر الورك بالمطاط", "Resistance band", "مطاط مقاومة", "Glutes with a band", "المؤخرة بالمطاط"],
 
@@ -343,6 +343,50 @@ const RAW = [
   ["jackknife_sit_up", "core", "Jackknife_Sit-Up", "body", "back", "angle", "Jackknife sit-up", "جاك نايف", "Bodyweight", "وزن الجسم", "Upper and lower abs at once", "أعلى وأسفل البطن مع بعض"],
   ["ab_rollout_knees", "core", "Barbell_Ab_Rollout_-_On_Knees", "barbell", "back shoulder", "angle", "Barbell rollout (on knees)", "رول أوت بالبار على الركب", "Barbell with round plates", "بار مع أقراص دائرية", "Ab-wheel work without a wheel", "مثل عجلة البطن بدون عجلة"],
   ["pallof_press", "core", "Pallof_Press", "cable", "", "angle", "Pallof press", "بالوف برس", "Cable · handle", "كيبل · مقبض", "Core strength against twisting — kind to the back", "قوة البطن ضد اللف — مريح للظهر"],
+
+  // ── Gym machines and cable moves (added) ──
+  ["wide_chest_press", "hpress", null, "machine", "", "same", "Wide chest press machine", "جهاز ضغط صدر واسع", "Wide chest press (plate-loaded)", "جهاز ضغط صدر واسع (أقراص)", "Big stretch — mid and lower chest", "تمدد كبير — منتصف وأسفل الصدر"],
+  ["standing_cable_press", "hpress", "Standing_Cable_Chest_Press", "cable", "", "same", "Standing cable chest press", "ضغط صدر كيبل واقف", "Cables at chest height · standing", "كيبل بمستوى الصدر · واقف", "Chest with core stability", "صدر مع ثبات للبطن"],
+  ["trx_push_up", "hpress", "Suspended_Push-Up", "body", "shoulder wrist", "angle", "Suspension-strap push-up", "ضغط بالأحزمة المعلقة", "Suspension straps (TRX)", "أحزمة معلقة (TRX)", "Harder than a floor push-up", "أصعب من الضغط العادي"],
+  ["decline_machine_press", "hpress", "Leverage_Decline_Chest_Press", "machine", "", "angle", "Decline chest press machine", "جهاز ضغط صدر مائل للأسفل", "Decline press machine (plate-loaded)", "جهاز ضغط مائل للأسفل (أقراص)", "Lower chest with a fixed path", "أسفل الصدر بمسار ثابت"],
+  ["smith_decline_press", "hpress", "Smith_Machine_Decline_Press", "machine bench", "", "angle", "Smith decline press", "ضغط سميث مائل للأسفل", "Smith machine · decline bench", "جهاز السميث · بنش مائل للأسفل", "Lower chest, safe to push hard", "أسفل الصدر وتضغط بقوة بأمان"],
+  ["svend_press", "hpress", "Svend_Press", "plate", "", "angle", "Plate squeeze press", "ضغط القرص بين الكفين", "Weight plate", "قرص حديد", "Squeeze the plate hard — mid chest", "اعصر القرص بقوة — منتصف الصدر"],
+  ["cable_iron_cross", "fly", "Cable_Iron_Cross", "cable", "shoulder", "same", "Standing cable fly", "تفتيح كيبل واقف", "Cable crossover · high pulleys", "جهاز الكيبل · من فوق", "Big stretch across the chest", "تمدد كبير على الصدر"],
+
+  ["assisted_dip", "triceps", null, "machine", "shoulder", "angle", "Assisted dip machine", "جهاز الديبس المساعد", "Assisted dip / pull-up machine", "جهاز المساعدة للديبس والعقلة", "Dips with help — work up to bodyweight", "ديبس بمساعدة لين توصل لوزن جسمك"],
+  ["one_arm_cable_ext", "triceps", "Cable_One_Arm_Tricep_Extension", "cable", "", "same", "One-arm reverse-grip pushdown", "بوش داون بيد وحدة قبضة عكسية", "Cable · handle · palm up", "كيبل · مقبض · الكف لفوق", "Each arm alone", "كل يد لحالها"],
+  ["low_cable_triceps_ext", "triceps", "Low_Cable_Triceps_Extension", "cable bench", "shoulder", "angle", "Lying low-cable extension", "تمديد كيبل منبطح من تحت", "Low pulley · rope · bench", "كيبل من تحت · حبل · بنش", "Long head with a deep stretch", "الرأس الطويل مع تمدد عميق"],
+  ["incline_cable_triceps_ext", "triceps", "Cable_Incline_Triceps_Extension", "cable bench", "", "angle", "Incline cable extension", "تمديد كيبل على بنش مائل", "High pulley · bar · incline bench", "كيبل من فوق · بار · بنش مائل", "Long head under steady tension", "الرأس الطويل بشد ثابت"],
+  ["smith_close_grip_bench", "triceps", "Smith_Machine_Close-Grip_Bench_Press", "machine bench", "wrist", "angle", "Smith close-grip bench", "بنش ضيق سميث", "Smith machine · flat bench", "جهاز السميث · بنش مستوي", "Heavy triceps on a fixed path", "ترايسبس ثقيل بمسار ثابت"],
+
+  ["low_row_machine", "row", null, "machine", "", "same", "Low row machine", "جهاز السحب السفلي", "Low row machine (plate-loaded)", "جهاز السحب السفلي (أقراص)", "Lats and mid back, chest supported", "المجنص ومنتصف الظهر والصدر مسنود"],
+  ["shotgun_row", "row", "Shotgun_Row", "cable", "", "same", "Standing one-arm cable row", "سحب كيبل واقف بيد وحدة", "Low pulley · handle", "كيبل من تحت · مقبض", "Each side alone with a long pull", "كل جهة لحالها مع سحبة طويلة"],
+  ["kneeling_high_row", "row", "Kneeling_High_Pulley_Row", "cable", "", "angle", "Kneeling high-pulley row", "سحب كيبل عالي وأنت راكع", "High pulley · rope", "كيبل من فوق · حبل", "Lats and mid back from above", "المجنص ومنتصف الظهر من فوق"],
+  ["iso_pulldown", "vpull", null, "machine", "", "same", "Plate-loaded pulldown", "جهاز سحب أمامي بالأقراص", "Front pulldown machine (each arm alone)", "جهاز سحب أمامي (كل يد لحالها)", "Strong pull, each side alone", "سحب قوي وكل جهة لحالها"],
+  ["kneeling_one_arm_pulldown", "vpull", "Kneeling_Single-Arm_High_Pulley_Row", "cable", "", "angle", "Kneeling one-arm pulldown", "سحب عالي بيد وحدة وأنت راكع", "High pulley · handle", "كيبل من فوق · مقبض", "Each lat alone, full stretch", "كل مجنص لحاله مع تمدد كامل"],
+  ["mixed_grip_chin", "vpull", "Mixed_Grip_Chin", "bar", "", "angle", "Mixed-grip pull-up", "عقلة بقبضة مختلطة", "Pull-up bar", "بار العقلة", "One palm each way — stronger grip", "كف لكل جهة — قبضة أقوى"],
+  ["pullover_machine", "vpull", null, "machine", "", "angle", "Pullover machine", "جهاز البلوفر", "Pullover machine", "جهاز البلوفر", "Lats without the biceps", "المجنص بدون بايسبس"],
+
+  ["lateral_raise_machine", "lateral", null, "machine", "", "same", "Lateral raise machine", "جهاز الرفرفة الجانبية", "Lateral raise machine", "جهاز الرفرفة الجانبية", "Side shoulders, no swinging", "الكتف الجانبي بدون تمرجح"],
+  ["smith_upright_row", "lateral", "Smith_Machine_Upright_Row", "machine", "shoulder wrist", "angle", "Smith upright row", "سحب عمودي سميث", "Smith machine", "جهاز السميث", "Side shoulders and traps on a fixed path", "الكتف الجانبي والترابيس بمسار ثابت"],
+  ["cable_shoulder_press_standing", "ohp", "Cable_Shoulder_Press", "cable", "", "same", "Standing cable shoulder press", "ضغط كتف كيبل واقف", "Cables · low pulleys", "كيبل · من تحت", "Smooth press with constant tension", "ضغط سلس بشد ثابت"],
+  ["bent_cable_rear_raise", "rear", "Bent_Over_Low-Pulley_Side_Lateral", "cable", "back", "same", "Bent-over cable rear raise", "رفرفة خلفي كيبل منحني", "Low pulley · handle", "كيبل من تحت · مقبض", "Rear shoulders with tension at the bottom", "الكتف الخلفي بشد حتى تحت"],
+  ["cable_row_to_neck", "rear", "Low_Pulley_Row_To_Neck", "cable", "", "angle", "Cable row to neck", "سحب كيبل للرقبة", "Low pulley · rope · seated", "كيبل من تحت · حبل · جالس", "Rear shoulders and upper back", "الكتف الخلفي وأعلى الظهر"],
+  ["cable_external_rotation", "rear", "External_Rotation_with_Cable", "cable", "", "angle", "Cable external rotation", "تدوير خارجي بالكيبل", "Cable at elbow height · handle", "كيبل بمستوى الكوع · مقبض", "Rotator cuff — keeps the shoulders healthy", "عضلات الدوران — تحمي الكتف"],
+
+  ["pendulum_squat", "squat", null, "machine", "knee", "same", "Pendulum squat", "بندولم سكوات", "Pendulum squat machine", "جهاز البندولم سكوات", "Deep quads with the back supported", "فخذ أمامي عميق والظهر مسنود"],
+  ["belt_squat", "squat", null, "machine", "", "same", "Belt squat", "سكوات بالحزام", "Belt squat machine", "جهاز سكوات الحزام", "Heavy legs, nothing on the spine", "أرجل ثقيلة بدون ضغط على الظهر"],
+  ["horizontal_leg_press", "legpress", null, "machine", "knee", "same", "Seated leg press", "ليج برس جالس", "Seated (horizontal) leg press", "جهاز ليج برس أفقي", "Easy on the back", "مريح للظهر"],
+  ["machine_deadlift", "hinge", "Leverage_Deadlift", "machine", "", "angle", "Machine deadlift", "جهاز الديدلفت", "Lever deadlift machine", "جهاز الديدلفت بالأقراص", "Heavy pull on a guided path", "سحب ثقيل بمسار ثابت"],
+  ["hip_thrust_machine", "glutes", null, "machine", "", "same", "Hip thrust machine", "جهاز الهيب ثرست", "Hip thrust machine", "جهاز الهيب ثرست", "Heavy glutes, quick to set up", "مؤخرة بوزن عالي وتجهيز سريع"],
+  ["glute_kickback_machine", "glutes", null, "machine", "", "same", "Glute kickback machine", "جهاز الركلة الخلفية", "Glute kickback machine", "جهاز الركلة الخلفية", "Glutes alone, one leg at a time", "المؤخرة لحالها وكل رجل لحالها"],
+  ["kneeling_leg_curl", "legcurl", null, "machine", "", "same", "Kneeling leg curl", "ثني الرجل وأنت راكع", "Kneeling leg curl machine", "جهاز ثني الرجل راكع", "Each leg alone", "كل رجل لحالها"],
+
+  ["torso_rotation", "core", null, "machine", "", "angle", "Torso rotation machine", "جهاز لف الجذع", "Rotary torso machine", "جهاز لف الجذع", "Obliques with a safe range", "الخواصر بمدى آمن"],
+  ["wood_chop", "core", "Standing_Cable_Wood_Chop", "cable", "", "angle", "Cable wood chop", "وود تشوب كيبل", "High pulley · handle", "كيبل من فوق · مقبض", "Obliques with power", "الخواصر بقوة"],
+  ["cable_side_bend", "core", "One-Arm_High-Pulley_Cable_Side_Bends", "cable", "", "angle", "Cable side bend", "ميل جانبي بالكيبل", "High pulley · handle", "كيبل من فوق · مقبض", "Obliques, one side at a time", "الخواصر جهة جهة"],
+  ["plate_twist", "core", "Plate_Twist", "plate", "back", "angle", "Seated plate twist", "لف القرص جالس", "Weight plate", "قرص حديد", "Obliques with load", "الخواصر بوزن"],
+  ["suspended_reverse_crunch", "core", "Suspended_Reverse_Crunch", "body", "", "angle", "Suspension knee tuck", "سحب الركب بالأحزمة المعلقة", "Suspension straps (TRX)", "أحزمة معلقة (TRX)", "Lower abs, hard", "أسفل البطن وصعب"],
 ];
 
 const split = (s) => (s ? s.split(" ").filter(Boolean) : []);
@@ -353,6 +397,10 @@ export const EXERCISES = RAW.map(([id, group, img, equip, loads, tag, en, ar, ge
 }));
 
 export const BY_ID = Object.fromEntries(EXERCISES.map((e) => [e.id, e]));
+// Ids that were renamed: old sessions, plans and logs keep working.
+const RENAMED = { cable_kickback: "cable_glute_kickback" };
+Object.entries(RENAMED).forEach(([o, n]) => { BY_ID[o] = BY_ID[n]; });
+export const canonicalId = (id) => RENAMED[id] || id;
 export const groupItems = (group) => EXERCISES.filter((e) => e.group === group);
 
 // Can this exercise be done here, without loading a sore joint?
@@ -404,8 +452,20 @@ export function matchExercise(name) {
   return NAME_INDEX.get(k) || NAME_INDEX.get(k.replace(/s$/, "")) || null;
 }
 
-// Library id for a logged set: the stored id, else matched from the typed name.
-export const logExerciseId = (log) => (log?.exercise_id && BY_ID[log.exercise_id] ? log.exercise_id : matchExercise(log?.exercise));
+// Library id for a logged set: the stored id, else matched from the typed name
+// — but not across unrelated muscles, so a triceps "kickback" you typed never
+// turns into a glute exercise. (Rear delts under Back, dips under Chest… fine.)
+const NEAR = {
+  Chest: ["Chest", "Triceps", "Shoulders"], Back: ["Back", "Shoulders", "Biceps", "Legs"], Shoulders: ["Shoulders", "Back", "Chest", "Triceps"],
+  Biceps: ["Biceps", "Back"], Triceps: ["Triceps", "Chest", "Shoulders"], Legs: ["Legs", "Back", "Core"], Core: ["Core", "Legs"],
+};
+export const logExerciseId = (log) => {
+  if (log?.exercise_id && BY_ID[log.exercise_id]) return canonicalId(log.exercise_id);
+  const id = matchExercise(log?.exercise);
+  if (!id) return null;
+  const m = log?.muscle_group;
+  return NEAR[m] && !NEAR[m].includes(GROUPS[BY_ID[id].group].muscle) ? null : id;
+};
 
 // Alternatives for a swap: same group, usable here, not already in today's
 // session. Same-movement options first, then different angles.
