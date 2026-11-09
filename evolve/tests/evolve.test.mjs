@@ -7,13 +7,21 @@ import { generatePlan, weeklySets, swapInPlan, toggleKept, setSlotSets, reviewCo
 import { musclesOf, slotMuscles, regionLevels, REGIONS, MUSCLE_LABELS, PARTS, mainView, focusBox, searchExercises, customMuscles } from "../src/lib/muscles.js";
 import { FRONT, BACK } from "../src/lib/bodymap.js";
 import { restingEnergy, formulaMaintenance, maintenance, dailyTargets, goalDirection, feasibility, consistency, currentBody, adaptiveMaintenance, watchAverage, coachTips, localISO } from "../src/lib/body.js";
-import { toKcal } from "../api/burn.js";
+import burnHandler, { toKcal, localDate } from "../api/burn.js";
 import { STR } from "../src/lib/i18n.js";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 let passed = 0, failed = 0;
-const test = (name, fn) => { try { fn(); passed++; } catch (e) { failed++; console.error(`✗ ${name}\n   ${e.stack?.split("\n").slice(0, 3).join("\n   ")}`); } };
+const pending = [];
+const fail = (name, e) => { failed++; console.error(`✗ ${name}\n   ${e.stack?.split("\n").slice(0, 3).join("\n   ")}`); };
+const test = (name, fn) => {
+  try {
+    const r = fn();
+    if (r && typeof r.then === "function") pending.push(r.then(() => { passed++; }, (e) => fail(name, e)));
+    else passed++;
+  } catch (e) { fail(name, e); }
+};
 const NOW = Date.UTC(2026, 10, 6);
 const day = (n) => new Date(NOW + n * 86400000).toISOString().slice(0, 10);
 
@@ -254,6 +262,26 @@ test("Shortcut numbers parse with units and separators", () => {
   assert.equal(toKcal("١٬٢٣٤"), 1234);
 });
 
+test("watch burn is filed under the phone's own date, not UTC", () => {
+  const at = new Date("2026-11-09T22:30:00Z");          // 1:30 am on the 10th in Riyadh
+  assert.equal(localDate("Asia/Riyadh", at), "2026-11-10");
+  assert.equal(localDate("", at), "2026-11-09");
+  assert.equal(localDate("Not/AZone", at), "2026-11-09");
+});
+test("a send with no active energy (iPhone locked) changes nothing", async () => {
+  const real = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = async () => { called = true; return { ok: true, status: 200, json: async () => ({ ok: true }) }; };
+  try {
+    let code = 0;
+    const res = { status(c) { code = c; return this; }, json() { return this; } };
+    await burnHandler({ method: "GET", query: { key: "k".repeat(28), resting: "1968", active: "" }, headers: {} }, res);
+    assert.equal(code, 400); assert.equal(called, false);
+    await burnHandler({ method: "GET", query: { key: "k".repeat(28), resting: "1968", active: "612" }, headers: { "x-vercel-ip-timezone": "Asia/Riyadh" } }, res);
+    assert.equal(code, 200); assert.equal(called, true);
+  } finally { globalThis.fetch = real; }
+});
+
 // ── Your own counts and exercises ──
 test("you choose how many exercises per muscle — more than suggested", () => {
   const rec = recommendedCounts({ muscles: ["Triceps"], minutes: 60 });
@@ -456,5 +484,6 @@ test("English and Arabic have the same keys and placeholders", () => {
   assert.deepEqual(bad, []);
 });
 
+await Promise.all(pending);
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

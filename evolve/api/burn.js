@@ -1,7 +1,12 @@
-// Apple Watch burn, sent by the free iPhone Shortcut every morning.
+// Apple Watch burn, sent by the free iPhone Shortcut.
 //
-// POST /api/burn?key=…   { "active": 812, "resting": 1968 }      (date optional, default today)
-// Every field may also be sent as a query parameter or in the JSON body.
+// GET or POST /api/burn?key=…&resting=1968&active=812      (date optional, default: today where you are)
+// Every field may also be sent in a JSON body.
+//
+// The Shortcut runs when you open an app you use every day (the iPhone keeps
+// Health data locked while the phone is locked, so a night-time automation
+// often can't read it). Each run sends today's burn so far; the last one of the
+// day stays.
 //
 // The Shortcut has no login, so it sends the personal key shown in
 // Evolve → Account → Apple Watch sync. Supabase stores only its SHA-256 and the
@@ -24,6 +29,17 @@ export function toKcal(v) {
 
 const isoDate = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? v.trim() : null);
 
+// Today's date where the phone is: Vercel tells us the caller's time zone.
+// (UTC would file a 1 a.m. run in Riyadh under the day before.)
+export function localDate(tz, now = new Date()) {
+  if (tz) {
+    try {
+      return new Intl.DateTimeFormat("en-CA", { timeZone: String(tz), year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+    } catch { /* unknown zone */ }
+  }
+  return now.toISOString().slice(0, 10);
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST" && req.method !== "GET") return res.status(405).json({ ok: false, error: "Use POST" });
   const src = { ...(req.query || {}), ...jsonBody(req) };
@@ -32,13 +48,13 @@ export default async function handler(req, res) {
   const asKcal = (n) => (n != null && n > 20000 ? n / 1000 : n);
   const active = asKcal(toKcal(src.active));
   const resting = asKcal(toKcal(src.resting));
-  // The Shortcut runs at 11:55 pm and sends that day's totals, so no date = today.
-  // (At 11:55 pm the UTC date is still the local date anywhere east of UTC, e.g. Saudi.)
-  const today = new Date().toISOString().slice(0, 10);
-  const date = isoDate(src.date) || today;
+  const tz = req.headers?.["x-vercel-ip-timezone"] || src.tz || "";
+  const date = isoDate(src.date) || localDate(tz);
 
   if (!key) return res.status(400).json({ ok: false, error: "Missing key — copy it from Evolve → Account → Apple Watch sync." });
-  if (active == null && resting == null) return res.status(400).json({ ok: false, error: "Missing active and resting energy." });
+  // No active energy usually means Health was locked (phone locked): don't
+  // replace a real day with resting energy alone.
+  if (active == null) return res.status(400).json({ ok: false, error: "No active energy was sent — the iPhone was probably locked (Health data is locked too). Nothing was changed." });
 
   let r, body = null;
   try {

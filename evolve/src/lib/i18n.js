@@ -72,7 +72,9 @@ export const STR = {
     soFar: "So far: {k} kcal · {p} g protein", targetsLine: "Target: {k} kcal · {p} g protein", forDay: "Day",
 
     // Burn
-    burnSheet: "Apple Watch burn", autoOn: "Auto-sync is on — last sent {date}.", autoWaiting: "Auto-sync is set up — waiting for the first send tonight.",
+    burnSheet: "Apple Watch burn", autoOn: "Auto-sync is on — last sent {date}.", autoWaiting: "Auto-sync is set up — waiting for the first send (open the app you picked).",
+    autoStale: "Nothing received since {date}. Your iPhone locks Health data while it's locked, so a night-time automation often can't read it — make it run when you open an app (step 6).",
+    fixSync: "Fix auto-sync", syncedStale: "Watch: last {date}",
     autoOff: "Set it up once and your iPhone sends each day's burn by itself — free.", setupSync: "Set up auto-sync",
     manualBurn: "Or type the day's Active + Resting energy (kcal)", burnWhere: "iPhone: Fitness → Activity, or Health → Browse → Activity → Active Energy + Resting Energy.",
     syncTitle: "Apple Watch auto-sync", syncKey: "Your personal key", syncKeyNote: "Shown once. It can only send your burn — nothing else. Make a new one any time (the old one stops working).",
@@ -95,10 +97,10 @@ export const STR = {
       ["Add it up", "Search Statistics → tap “Calculate Statistics”.\nTap the blue word and choose “Sum”."],
       ["Send it to Evolve", "Search URL → tap “Get Contents of URL”.\nTap the blue “URL” → paste your link.\nKeep the cursor at the very end of the link, then tap “Statistics” in the bar above the keyboard. Tap Done."],
       ["Try it", "Tap ▶ at the bottom. Allow Health access the first time.\nThen come back and tap “Check it worked”."],
-      ["Make it automatic", "Shortcuts → “Automation” tab → “+” → “Time of Day” → 11:55 PM, Daily → “Run Immediately” → Next → pick the Shortcut you just made. Done — it runs every night."],
+      ["Make it automatic", "Shortcuts → “Automation” tab → “+” → “App” → “Choose” → tick WhatsApp (or 2–3 apps you open every day) → Done → keep “Is Opened” → “Run Immediately” → turn off “Notify When Run” → Next → pick the Shortcut you just made.\nWhy an app and not a time? Your iPhone locks Health data while the phone is locked, so a night-time automation usually can't read it. Each time you open that app, today's burn so far is sent — the last one of the day stays.\nAlready have the 11:55 PM automation? Delete it (swipe left)."],
     ],
     wsIntro: "Once, about 3 minutes. Then every night your iPhone sends the day's burn from Apple Health to Evolve by itself — free, no app to install.",
-    wsCopy: "Copy my link", wsCheck: "Check it worked", wsNotYet: "Nothing received yet. Run the automation once (step 7), then check again.",
+    wsCopy: "Copy my link", wsCheck: "Check it worked", wsNotYet: "Nothing received yet. Tap ▶ in the Shortcut once (step 5) with the iPhone unlocked, then check again.",
     ws: [
       ["Make your personal link", "This link is your key — it can only send your burn, nothing else. You'll paste it in step 6."],
       ["Create the automation", "Open the Shortcuts app → bottom tab “Automation” → “+” (top right) → “Time of Day” → set 11:55 PM, repeat “Daily” → choose “Run Immediately” → Next → “New Blank Automation”."],
@@ -284,7 +286,9 @@ export const STR = {
     modeAdd: "أضف لليوم", modeSet: "حط المجموع", fieldKcal: "السعرات", fieldProtein: "البروتين (غ)",
     soFar: "لين الحين: {k} سعرة · {p} غ بروتين", targetsLine: "الهدف: {k} سعرة · {p} غ بروتين", forDay: "اليوم",
 
-    burnSheet: "حرق ساعة أبل", autoOn: "المزامنة التلقائية شغّالة — آخر إرسال {date}.", autoWaiting: "المزامنة مجهّزة — ننتظر أول إرسال الليلة.",
+    burnSheet: "حرق ساعة أبل", autoOn: "المزامنة التلقائية شغّالة — آخر إرسال {date}.", autoWaiting: "المزامنة مجهّزة — ننتظر أول إرسال (افتح التطبيق اللي اخترته).",
+    autoStale: "ما وصل شي من {date}. الآيفون يقفل بيانات الصحة وهو مقفول، فالأتمتة الليلية غالباً ما تقدر تقراها — خلّها تشتغل لما تفتح تطبيق (الخطوة 6).",
+    fixSync: "صلّح المزامنة", syncedStale: "الساعة: آخر مرة {date}",
     autoOff: "جهّزها مرة وحدة والآيفون يرسل حرق كل يوم بنفسه — مجاناً.", setupSync: "جهّز المزامنة التلقائية",
     manualBurn: "أو اكتب حرق اليوم (Active + Resting)", burnWhere: "الآيفون: Fitness ← Activity، أو Health ← تصفح ← النشاط ← Active Energy + Resting Energy.",
     syncTitle: "مزامنة ساعة أبل التلقائية", syncKey: "مفتاحك الشخصي", syncKeyNote: "يظهر مرة وحدة. يقدر يرسل حرقك بس — ولا شي ثاني. تقدر تسوي واحد جديد بأي وقت (والقديم يوقف).",
@@ -307,10 +311,10 @@ export const STR = {
       ["اجمعها", "ابحث عن «الإحصائيات» أو Statistics ← اختر «حساب الإحصائيات» (Calculate Statistics).\nاضغط الكلمة الزرقاء واختر «المجموع» (Sum)."],
       ["أرسلها إلى Evolve", "ابحث عن URL ← اختر «الحصول على محتويات URL» (Get Contents of URL).\nاضغط «URL» الأزرق ← الصق رابطك.\nخلّ المؤشر في آخر الرابط بالضبط، وبعدها اضغط «الإحصائيات» (Statistics) في الشريط اللي فوق الكيبورد. اضغط تم."],
       ["جرّبه", "اضغط ▶ تحت. أول مرة يطلب إذن Health — اسمح.\nارجع هنا واضغط «تأكد إنه اشتغل»."],
-      ["خلّه تلقائي", "الاختصارات ← تبويب «الأتمتة» ← «+» ← «وقت من اليوم» ← 11:55 م، يومياً ← «تشغيل فوراً» ← التالي ← اختر الاختصار اللي سويته. خلاص — يشتغل كل ليلة."],
+      ["خلّه تلقائي", "الاختصارات ← تبويب «الأتمتة» (Automation) ← «+» ← «التطبيق» (App) ← «اختيار» (Choose) ← علّم واتساب (أو ٢–٣ تطبيقات تفتحها كل يوم) ← تم ← خلّ «عند الفتح» (Is Opened) ← «تشغيل فوراً» (Run Immediately) ← طفّ «الإشعار عند التشغيل» (Notify When Run) ← التالي ← اختر الاختصار اللي سويته.\nليش تطبيق مو وقت؟ الآيفون يقفل بيانات الصحة وهو مقفول، فالأتمتة الليلية غالباً ما تقدر تقراها. كل ما تفتح التطبيق ينرسل حرق اليوم لين هاللحظة — وآخر إرسال باليوم هو اللي يبقى.\nعندك أتمتة 11:55 م القديمة؟ احذفها (اسحبها لليسار)."],
     ],
     wsIntro: "مرة وحدة، تقريباً 3 دقائق. بعدها كل ليلة الآيفون يرسل حرق اليوم من Apple Health إلى Evolve بنفسه — مجاناً وبدون تنزيل أي تطبيق.",
-    wsCopy: "انسخ رابطي", wsCheck: "تأكد إنه اشتغل", wsNotYet: "ما وصل شي للحين. شغّل الأتمتة مرة (الخطوة 7) وبعدين تأكد مرة ثانية.",
+    wsCopy: "انسخ رابطي", wsCheck: "تأكد إنه اشتغل", wsNotYet: "ما وصل شي للحين. اضغط ▶ في الاختصار مرة (الخطوة 5) والجوال مفتوح، وبعدين تأكد مرة ثانية.",
     ws: [
       ["سوّ رابطك الشخصي", "الرابط هذا هو مفتاحك — يقدر يرسل حرقك بس ولا شي ثاني. بتلصقه في الخطوة 6."],
       ["سوّ الأتمتة", "افتح تطبيق «الاختصارات» ← التبويب تحت «الأتمتة» ← «+» فوق ← «وقت من اليوم» ← حط 11:55 م، والتكرار «يومياً» ← اختر «تشغيل فوراً» ← التالي ← «أتمتة فارغة جديدة»."],

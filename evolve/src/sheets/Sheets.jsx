@@ -165,10 +165,11 @@ function BurnForm() {
   };
   return (
     <>
-      {lastWatch ? <Note>{t("autoOn", { date: fmtDate(lastWatch, lang) })}</Note>
+      {lastWatch && lastWatch < addDays(localISO(), -1) ? <Note kind="warn" icon="info">{t("autoStale", { date: fmtDate(lastWatch, lang) })}</Note>
+        : lastWatch ? <Note>{t("autoOn", { date: fmtDate(lastWatch, lang) })}</Note>
         : hasKey ? <Note kind="plain" icon="watch">{t("autoWaiting")}</Note>
         : <Note kind="plain" icon="watch">{t("autoOff")}</Note>}
-      <button className="btn soft" onClick={() => openSheet("sync", { fromLog: true })}>{t("setupSync")}</button>
+      <button className="btn soft" onClick={() => openSheet("sync", { fromLog: true })}>{lastWatch && lastWatch < addDays(localISO(), -1) ? t("fixSync") : t("setupSync")}</button>
       <div className="divider" />
       <Field label={t("manualBurn")}><input className="input" inputMode="numeric" value={v} onChange={(e) => setV(e.target.value)} placeholder={row.burn_kcal ? String(row.burn_kcal) : "2780"} /></Field>
       <Field label={t("forDay")}><DayPicker value={date} onChange={setDate} /></Field>

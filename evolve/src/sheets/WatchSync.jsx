@@ -8,6 +8,7 @@ import { useApp } from "../ctx.js";
 import { Icon, Note } from "../ui.jsx";
 import { sha256Hex, newSyncKey, store } from "../lib/api.js";
 import { fmtDate, fmtNum } from "../lib/i18n.js";
+import { localISO, addDays } from "../lib/body.js";
 
 function Step({ n, title, children, dim }) {
   return (
@@ -58,7 +59,9 @@ export default function WatchSync() {
   return (
     <>
       <div className="body sub">{t("ws2Intro")}</div>
-      {lastWatch && <Note>{t("autoOn", { date: fmtDate(lastWatch.date, lang) })} · {fmtNum(lastWatch.burn_kcal)} {t("kcal")}</Note>}
+      {lastWatch && (lastWatch.date < addDays(localISO(), -1)
+        ? <Note kind="warn" icon="info">{t("autoStale", { date: fmtDate(lastWatch.date, lang) })}</Note>
+        : <Note>{t("autoOn", { date: fmtDate(lastWatch.date, lang) })} · {fmtNum(lastWatch.burn_kcal)} {t("kcal")}</Note>)}
 
       <Step n={1} title={S(0)[0]}>
         {body(0)}

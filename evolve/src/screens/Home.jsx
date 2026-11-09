@@ -119,7 +119,10 @@ export default function Home({ name }) {
       <div className="row between">
         <span className="card-title">{t("fuelTitle")}</span>
         <span className="row small muted" style={{ gap: 5 }}>
-          {lastWatch ? <><Icon name="check" size={14} stroke={2.4} color="var(--accent)" />{t("synced", { date: fmtDate(lastWatch, lang) })}</> : t("notSynced")}
+          {!lastWatch ? t("notSynced")
+            : lastWatch < yesterday
+              ? <button className="link" style={{ padding: 0, minHeight: 0, color: "var(--warn)", fontSize: "inherit" }} onClick={() => openSheet("sync")}><Icon name="info" size={14} color="var(--warn)" /> {t("syncedStale", { date: fmtDate(lastWatch, lang) })}</button>
+              : <><Icon name="check" size={14} stroke={2.4} color="var(--accent)" />{t("synced", { date: fmtDate(lastWatch, lang) })}</>}
         </span>
       </div>
       {fuelRow(t("calLabel"), kIn, targets?.kcal, t("kcal"), "var(--ok)")}
