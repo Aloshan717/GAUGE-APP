@@ -10,6 +10,7 @@ import { e1rm, bestOf, recordKind, recordIndex, volumeOf, restSeconds } from "..
 import { reportWeek, weekWeight, calorieCheckin, weeklyReport, goalKey, MAX_STEP } from "../src/lib/weekly.js";
 import { remapDone } from "../src/lib/queue.js";
 import { dayRows, lastSeven } from "../src/lib/foodlog.js";
+import { burnWeek, sundayOf } from "../src/lib/burnweek.js";
 import { restingEnergy, formulaMaintenance, maintenance, dailyTargets, goalDirection, feasibility, consistency, currentBody, adaptiveMaintenance, watchAverage, coachTips, localISO } from "../src/lib/body.js";
 import burnHandler, { toKcal, localDate } from "../api/burn.js";
 import { STR } from "../src/lib/i18n.js";
@@ -565,6 +566,34 @@ test("last 7 days: full days only (today is still going), averages over the days
   assert.equal(w.protein, 160);                                                  // days without protein don't pull it down
   assert.equal(w.burn, 2550); assert.equal(w.balance, -550); assert.equal(w.kgPerWeek, -0.5);
   assert.equal(w.rows.length, 7); assert.equal(w.rows[0].date, "2026-11-04");
+});
+test("week burn: the week starts on Sunday", () => {
+  assert.equal(sundayOf("2026-11-11"), "2026-11-08");   // Wednesday
+  assert.equal(sundayOf("2026-11-08"), "2026-11-08");   // Sunday itself
+  assert.equal(sundayOf("2026-11-14"), "2026-11-08");   // Saturday ends it
+  assert.equal(sundayOf("2026-11-15"), "2026-11-15");   // next Sunday starts a new week
+});
+test("week burn: only active calories (resting taken back out), Sunday to now", () => {
+  const days = [
+    { date: "2026-11-07", burn_kcal: 3000, burn_source: "watch" },   // last Saturday — not this week
+    { date: "2026-11-08", burn_kcal: 2600, burn_source: "watch" },
+    { date: "2026-11-10", burn_kcal: 2750, burn_source: "watch" },
+    { date: "2026-11-11", burn_kcal: 2300, burn_source: "watch" },   // today, so far
+  ];
+  const w = burnWeek({ days, sessions: [{ date: "2026-11-09", day_kcal: 2400 }], today: "2026-11-11", resting: 1900 });
+  assert.equal(w.from, "2026-11-08"); assert.equal(w.to, "2026-11-14");
+  assert.deepEqual(w.rows.map((r) => r.active), [700, 500, 850, 400, null, null, null]);
+  assert.equal(w.total, 2450); assert.equal(w.days, 4);
+  assert.equal(w.avg, 683);                                          // full days only — today is still going
+  assert.equal(w.today, 400);
+  assert.deepEqual(w.rows.map((r) => r.future), [false, false, false, false, true, true, true]);
+  assert.equal(w.rows[3].today, true);
+});
+test("week burn: missing days stay empty, never below zero, nothing without resting energy", () => {
+  const w = burnWeek({ days: [{ date: "2026-11-09", burn_kcal: 1800, burn_source: "manual" }], sessions: [], today: "2026-11-11", resting: 1900 });
+  assert.deepEqual(w.rows.slice(0, 4).map((r) => r.active), [null, 0, null, null]);
+  assert.equal(w.total, 0); assert.equal(w.days, 1); assert.equal(w.today, null);
+  assert.equal(burnWeek({ days: [], sessions: [], today: "2026-11-11", resting: null }), null);
 });
 
 // ── Every text exists in both languages ──

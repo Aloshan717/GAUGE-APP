@@ -9,6 +9,7 @@ import { Icon, Note } from "../ui.jsx";
 import { sha256Hex, newSyncKey, store } from "../lib/api.js";
 import { fmtDate, fmtNum } from "../lib/i18n.js";
 import { localISO, addDays } from "../lib/body.js";
+import { saveLinkResting } from "../lib/burnweek.js";
 
 function Step({ n, title, children, dim }) {
   return (
@@ -53,7 +54,9 @@ export default function WatchSync() {
     store.set(keyStore, k);
     setKey(k);
   };
-  const copy = async () => { try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2500); } catch { /* blocked */ } };
+  // Remember the resting energy inside the copied link: Train takes it back out
+  // of each day to show only the active calories.
+  const copy = async () => { try { await navigator.clipboard.writeText(link); saveLinkResting(user?.id, resting); setCopied(true); setTimeout(() => setCopied(false), 2500); } catch { /* blocked */ } };
   const check = async () => { await refresh(); setChecked(true); };
   const S = (i) => (Array.isArray(t("ws2")) ? t("ws2")[i] : ["", ""]);
   const body = (i) => <div className="body" style={{ color: "var(--text2)", whiteSpace: "pre-line" }}>{S(i)[1]}</div>;

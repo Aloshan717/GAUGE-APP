@@ -358,6 +358,14 @@ code.key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-siz
 .wb-bar.none { background: var(--line2); }
 .wb-day { font-size: 10px; font-weight: 700; color: var(--muted); line-height: 13px; height: 13px; }
 .wb-target { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--muted); pointer-events: none; }
+.bw-bars .wb-col { border: none; background: none; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.bw-bars .wb-col:disabled { cursor: default; }
+.bw-v { font-size: 10px; font-weight: 800; color: var(--sub); line-height: 13px; height: 13px; white-space: nowrap; }
+.wb-bar.bw { background: var(--fat); }
+.wb-bar.bw.none { background: var(--line2); }
+.wb-bar.bw.future { background: var(--line); }
+.bw-bars .now .wb-bar.bw:not(.none) { opacity: .6; }
+.bw-bars .now .wb-day { color: var(--fat); }
 .fl-table { display: flex; flex-direction: column; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); overflow: hidden; }
 .fl-row { display: grid; grid-template-columns: minmax(0, 1.5fr) repeat(4, minmax(0, 1fr)); gap: 6px; align-items: center; padding: 10px 12px; border: none; border-top: 1px solid var(--line); background: none; color: inherit; text-align: start; font-size: 13px; width: 100%; }
 .fl-row.head { border-top: none; background: var(--surface2); font-size: 11px; font-weight: 800; color: var(--muted); }

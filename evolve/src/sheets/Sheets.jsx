@@ -239,9 +239,9 @@ function FuelForm({ ctx }) {
   );
 }
 
-function BurnForm() {
+function BurnForm({ ctx }) {
   const { t, lang, data, refresh, closeSheet, toast, user, openSheet } = useApp();
-  const [date, setDate] = useState(addDays(localISO(), -1));
+  const [date, setDate] = useState(ctx?.date || addDays(localISO(), -1));
   const [v, setV] = useState("");
   const [busy, setBusy] = useState(false);
   const lastWatch = (data.days || []).filter((d) => d.burn_source === "watch" && d.burn_kcal).map((d) => d.date).sort().pop();
@@ -286,7 +286,7 @@ export default function Sheets() {
     : sheet.backTo ? () => openSheet(sheet.backTo.name, sheet.backTo.opts)
     : null;
   const body = {
-    log: <LogMenu />, weigh: <WeighForm />, measure: <MeasureForm />, fuel: <FuelForm ctx={sheet} key={sheet.date || "today"} />, burn: <BurnForm />, sync: <WatchSync />,
+    log: <LogMenu />, weigh: <WeighForm />, measure: <MeasureForm />, fuel: <FuelForm ctx={sheet} key={sheet.date || "today"} />, burn: <BurnForm ctx={sheet} key={sheet.date || "yesterday"} />, sync: <WatchSync />,
     scan: <ScanForm />, account: <Account />, invite: <InviteForm />, profile: <ProfileForm />, swap: <SwapSheet ctx={sheet} />, setup: <Setup />, addEx: <AddExercise ctx={sheet} />, exInfo: <ExerciseInfo ctx={sheet} />, summary: <Summary ctx={sheet} />, weekly: <Weekly ctx={sheet} />, foodlog: <FoodLog />,
   }[sheet.name];
   return (
