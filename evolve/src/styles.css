@@ -186,6 +186,9 @@ select.input { appearance: none; }
 .ring > div > div > div { width: 66px; height: 66px; border-radius: 50%; background: var(--surface); display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .ring .v { font-size: 24px; line-height: 1; }
 .ring .u { font-size: 10px; font-weight: 700; color: var(--muted); }
+.ring-delta { display: flex; flex-direction: column; align-items: center; gap: 1px; font-size: 12.5px; line-height: 1.2; white-space: nowrap; }
+.ring-delta b { font-weight: 800; }
+.ring-delta .muted { font-size: 10.5px; font-weight: 600; }
 .legend { display: flex; justify-content: center; gap: 16px; font-size: 11px; color: var(--muted); flex-wrap: wrap; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 
@@ -193,6 +196,23 @@ select.input { appearance: none; }
 .bar { height: 10px; border-radius: 6px; background: var(--surface3); overflow: hidden; }
 .bar > div { height: 100%; border-radius: 6px; transition: width 0.3s; }
 .chart { width: 100%; display: block; overflow: visible; }
+/* Trend chart with a dot and date for every entry */
+.spark-wrap { display: flex; flex-direction: column; gap: 6px; }
+.spark { position: relative; width: 100%; touch-action: pan-y; outline: none; cursor: crosshair; user-select: none; -webkit-user-select: none; }
+.spark:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+.spark-dot { position: absolute; width: 7px; height: 7px; border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 0 2px var(--surface); pointer-events: none; }
+.spark-dot.scan { width: 8px; height: 8px; border-radius: 1.5px; transform: translate(-50%, -50%) rotate(45deg); }
+.spark-dot.last { width: 9px; height: 9px; }
+.spark-dot.scan.last { width: 10px; height: 10px; }
+.spark-dot.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px currentColor; width: 11px; height: 11px; color: var(--text); }
+.spark-target { position: absolute; width: 8px; height: 8px; border-radius: 50%; transform: translate(-50%, -50%); background: var(--surface); border: 1.6px solid var(--muted); pointer-events: none; }
+.spark-date { position: absolute; bottom: 0; font-size: 10.5px; font-weight: 600; color: var(--muted); white-space: nowrap; pointer-events: none; }
+.spark-date.on { color: var(--text); font-weight: 800; }
+.spark-tip { position: absolute; z-index: 2; white-space: nowrap; pointer-events: none; font-size: 12px; padding: 5px 9px; border-radius: 9px; background: var(--text); color: var(--bg); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25); }
+.spark-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; font-weight: 600; color: var(--sub); }
+.spark-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.spark-legend .dot-m { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.spark-legend .dot-s { width: 7px; height: 7px; border-radius: 1.5px; transform: rotate(45deg); display: inline-block; }
 
 /* ── Exercise cards ────────────────────────────────────── */
 .ex-photo { width: 78px; height: 78px; flex: none; border-radius: 14px; background: var(--surface2); border: 1px solid var(--line); overflow: hidden; display: grid; place-items: center; color: var(--muted); }

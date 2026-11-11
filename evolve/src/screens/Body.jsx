@@ -35,7 +35,7 @@ function WeightTab() {
   const latest = series[series.length - 1];
   const trend = weightTrend(series, Date.now(), 28);
   const target = coerceNumber(data.goal?.target_weight);
-  const pts = series.filter((p) => ts(p.date) >= Date.now() - 120 * 86400000).map((p) => ({ t: ts(p.date), v: p.weight }));
+  const pts = series.filter((p) => ts(p.date) >= Date.now() - 120 * 86400000).map((p) => ({ t: ts(p.date), v: p.weight, date: p.date, kind: p.source === "scan" ? "scan" : "manual" }));
   const history = [...series].reverse();
   return (
     <>
@@ -46,7 +46,7 @@ function WeightTab() {
         </div>
         <div><span className="num" style={{ fontSize: 52, lineHeight: 1 }}>{fmtNum(latest.weight, 2)}</span> <span className="muted strong">{t("kg")}</span></div>
         {trend && <div className="small muted">{t("trendLine", { r: signed(trend.kgPerWeek, 2) })}{target != null ? ` · ${t("targetTxt", { v: `${fmtNum(target, 1)} ${t("kg")}` })}` : ""}</div>}
-        {pts.length >= 2 && <Spark points={pts} target={target} height={120} label={t("segWeight")} />}
+        {pts.length >= 2 && <Spark points={pts} target={target} height={120} dates unit={t("kg")} digits={2} label={t("segWeight")} />}
       </div>
       <div className="card flat">
         <ShowMore list={history} render={(w, i) => {

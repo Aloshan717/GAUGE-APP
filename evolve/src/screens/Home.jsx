@@ -12,6 +12,16 @@ const BUCKET = { "On track": "ok", "Target reached": "done", "Slightly behind": 
 const LABEL = { weight: "mWeight", bodyFat: "mFat", muscle: "mMuscle" };
 const DAY = 86400000;
 
+// Change since the reading before the latest one; green when it moves toward the goal.
+function sinceLast(tr) {
+  const pts = tr?.points || [];
+  if (tr?.curr == null || tr?.prev == null || pts.length < 2) return null;
+  const d = Math.round((tr.curr - tr.prev) * 10) / 10;
+  const dir = Math.sign(tr.direction || 0);
+  const color = d === 0 || !dir ? "var(--sub)" : Math.sign(d) === dir ? "var(--ok)" : "var(--bad)";
+  return { d, date: pts[pts.length - 2].date, color };
+}
+
 export default function Home({ name }) {
   const { t, lang, data, derived, openSheet, setTab } = useApp();
   const { tracks, targets } = derived;
@@ -63,9 +73,16 @@ export default function Home({ name }) {
             const tr = tracks[k];
             const p = tr?.pace;
             const has = tr?.curr != null;
+            const ch = sinceLast(tr);
             return (
               <div className="ring-col" key={k}>
                 <Ring value={has ? fmtNum(tr.curr, 1) : "—"} unit={unitOf(k)} progress={p?.progress} time={p?.elapsed} color={STATUS_COLOR[p?.color] || "var(--surface3)"} />
+                {ch && (
+                  <span className="ring-delta" style={{ color: ch.color }}>
+                    <b>{ch.d === 0 ? "=" : ch.d < 0 ? "▼" : "▲"} {fmtNum(Math.abs(ch.d), 1)}{k === "bodyFat" ? "%" : ` ${unitOf(k)}`}</b>
+                    <span className="muted">{t("vsLast", { date: fmtDate(ch.date, lang) })}</span>
+                  </span>
+                )}
                 <span className="row small strong" style={{ gap: 5, color: "var(--text2)", whiteSpace: "nowrap" }}><span className="dot" style={{ background: COLOR[k] }} />{t(LABEL[k])}</span>
                 {p ? (
                   <span className="small strong" style={{ color: STATUS_COLOR[p.color] }}>{Math.round(p.progress)}% <span className="muted" style={{ fontWeight: 600 }}>· {t("timeWord")} {Math.round(p.elapsed ?? 0)}%</span></span>
@@ -97,19 +114,27 @@ export default function Home({ name }) {
   const burnToday = burns.get(today), burnYest = burns.get(yesterday);
   const lastWatch = (data.days || []).filter((d) => d.burn_source === "watch" && d.burn_kcal).map((d) => d.date).sort().pop();
   const kIn = coerceNumber(row.kcal_in) || 0, pIn = coerceNumber(row.protein_g) || 0;
-  const fuelRow = (label, eaten, target, unit, color) => {
+  // The big number is what's left (or over); what you ate of the target sits under the bar.
+  const fuelRow = (label, eaten, target, unit, color, isCal) => {
     const pct = target ? (eaten / target) * 100 : 0;
-    const diff = target ? target - eaten : null;
+    const diff = target ? Math.round(target - eaten) : null;
+    const warn = diff != null && diff < 0 && isCal;
+    const tone = warn ? "var(--warn)" : color;
+    // Put the number big inside its own sentence ("80 kcal left" / "باقي 80 سعرة").
+    const big = (key, n) => {
+      const [before, after] = t(key, { n: "\u0000", u: unit }).split("\u0000");
+      return <span className="small strong" style={{ color: tone }}>{before}<span className="num" style={{ fontSize: 24, color: warn ? "var(--warn)" : "var(--text)" }}>{fmtNum(n)}</span>{after}</span>;
+    };
     return (
       <div className="col" style={{ gap: 6 }}>
         <div className="row between" style={{ alignItems: "baseline" }}>
           <span className="small strong sub">{label}</span>
-          <span className="small muted"><span className="num" style={{ fontSize: 22, color: "var(--text)" }}>{fmtNum(eaten)}</span>{target ? ` / ${fmtNum(target)} ${unit}` : ` ${unit}`}</span>
+          {diff == null
+            ? <span className="small muted"><span className="num" style={{ fontSize: 24, color: "var(--text)" }}>{fmtNum(eaten)}</span> {unit}</span>
+            : diff > 0 ? big("left", diff) : diff === 0 ? <span className="small strong" style={{ color: tone }}>{t("reachedFuel")}</span> : big("over", -diff)}
         </div>
-        <Bar pct={pct} color={diff != null && diff < 0 && label === t("calLabel") ? "var(--warn)" : color} />
-        {diff != null && <span className="small strong" style={{ color: diff < 0 && label === t("calLabel") ? "var(--warn)" : color }}>
-          {diff > 0 ? t("left", { n: fmtNum(diff), u: unit }) : diff === 0 ? t("reachedFuel") : label === t("calLabel") ? t("over", { n: fmtNum(-diff), u: unit }) : t("reachedFuel")}
-        </span>}
+        <Bar pct={pct} color={tone} />
+        {target ? <span className="small muted">{t("eatenOf", { n: fmtNum(eaten), t: fmtNum(target), u: unit })}</span> : null}
       </div>
     );
   };
@@ -125,8 +150,8 @@ export default function Home({ name }) {
               : <><Icon name="check" size={14} stroke={2.4} color="var(--accent)" />{t("synced", { date: fmtDate(lastWatch, lang) })}</>}
         </span>
       </div>
-      {fuelRow(t("calLabel"), kIn, targets?.kcal, t("kcal"), "var(--ok)")}
-      {fuelRow(t("proLabel"), pIn, targets?.protein, t("g"), "var(--muscle)")}
+      {fuelRow(t("calLabel"), kIn, targets?.kcal, t("kcal"), "var(--ok)", true)}
+      {fuelRow(t("proLabel"), pIn, targets?.protein, t("g"), "var(--muscle)", false)}
       {!goal && <div className="small muted">{t("noTargets")}</div>}
       {goal && targets && !targets.kcal && (
         <div className="note warn"><Icon name="info" size={16} color="var(--warn)" /><span>{t("needProfile")} <button className="link" style={{ padding: 0, minHeight: 0 }} onClick={() => openSheet("profile")}>{t("addProfile")}</button></span></div>
@@ -144,7 +169,8 @@ export default function Home({ name }) {
   const trendCards = keys.map((k) => {
     const tr = tracks[k];
     const pts = (tr?.points || []).filter((p) => new Date(p.date + "T00:00:00").getTime() >= since)
-      .map((p) => ({ t: new Date(p.date + "T00:00:00").getTime(), v: coerceNumber(p[tr.field]) })).filter((p) => p.v != null);
+      .map((p) => ({ t: new Date(p.date + "T00:00:00").getTime(), v: coerceNumber(p[tr.field]), date: p.date, kind: k === "weight" ? (p.source === "scan" ? "scan" : "manual") : "scan" }))
+      .filter((p) => p.v != null);
     const ch = tr ? changeOver(tr.points, tr.field, 30) : null;
     const a = tr ? arrival(tr) : null;
     const good = ch && tr?.direction ? Math.sign(ch.delta) === Math.sign(tr.direction) || ch.delta === 0 : true;
@@ -160,7 +186,8 @@ export default function Home({ name }) {
             {a && (a.reached ? <div className="small muted">{t("etaReached")}</div> : a.date ? <div className="small muted">{t("eta", { date: fmtDate(a.date, lang) })}</div> : null)}
           </div>
         </div>
-        {pts.length >= 2 ? <Spark points={pts} target={tr.target} color={COLOR[k]} label={`${t(LABEL[k])}: ${pts.map((p) => p.v).join(", ")}`} /> : <div className="small muted">{t("noTrend")}</div>}
+        {pts.length >= 2 ? <Spark points={pts} target={tr.target} color={COLOR[k]} dates unit={k === "bodyFat" ? "%" : unitOf(k)} height={86}
+          label={`${t(LABEL[k])}: ${pts.map((p) => `${fmtDate(p.date, lang)} ${p.v}`).join(", ")}`} /> : <div className="small muted">{t("noTrend")}</div>}
         <div className="row between muted" style={{ fontSize: 11 }}><span>{t("lastNDays", { n: 90 })}</span>{tr?.target != null && <span>{t("targetTxt", { v: `${fmtNum(tr.target, 1)} ${unitOf(k)}` })}</span>}</div>
       </div>
     );

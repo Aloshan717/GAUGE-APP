@@ -24,7 +24,7 @@ export default function ExerciseInfo({ ctx }) {
   const other = view === "front" ? "back" : "front";
   const history = ex ? liftHistory(data.logs, ex.id) : liftHistory(data.logs, null, customMatch(ctx.name));
   const best = history.length ? Math.max(...history.map((h) => Math.max(...h.sets.map((s) => s.weight_kg)))) : null;
-  const points = [...history].reverse().map((h) => ({ t: new Date(`${h.date}T12:00:00`).getTime(), v: Math.max(...h.sets.map((s) => s.weight_kg)) }));
+  const points = [...history].reverse().map((h) => ({ t: new Date(`${h.date}T12:00:00`).getTime(), v: Math.max(...h.sets.map((s) => s.weight_kg)), date: h.date }));
 
   return (
     <>
@@ -60,7 +60,7 @@ export default function ExerciseInfo({ ctx }) {
       </div>
       {history.length ? (
         <>
-          {points.length > 1 && points.some((p) => p.v > 0) && <Spark points={points} height={64} label={t("histChart")} />}
+          {points.length > 1 && points.some((p) => p.v > 0) && <Spark points={points} height={70} dates unit={t("kg")} label={t("histChart")} />}
           <div className="hist">
             {history.map((h) => (
               <div key={h.date} className="hist-row">

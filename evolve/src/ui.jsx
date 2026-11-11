@@ -1,6 +1,7 @@
 // EVOLVE — shared UI pieces.
 import React, { useEffect, useRef } from "react";
 import { useApp } from "./ctx.js";
+import { fmtDate, fmtNum } from "./lib/i18n.js";
 import { exerciseImages } from "./lib/exercises.js";
 import { FRONT, BACK } from "./lib/bodymap.js";
 import { regionLevels, focusBox, mainView } from "./lib/muscles.js";
@@ -74,31 +75,111 @@ export function Ring({ value, unit, progress, time, color }) {
   );
 }
 
-// Small trend chart: the line, a dashed target line, and a dashed projection to the target.
-export function Spark({ points, target, color = "var(--accent)", height = 74, label, targetDate }) {
-  const W = 300, H = height;
+// Trend chart: the line, a dot for every entry (◆ = InBody, ● = weigh-in), its
+// date underneath, a dashed target line and a dashed projection to the target.
+// Tap or drag across it to see any entry's date and value.
+// points: [{ t, v, date?, kind?: "scan" | "manual" }]
+export function Spark({ points, target, color = "var(--accent)", height = 74, label, dates = false, unit = "", digits = 1 }) {
+  const { t, lang } = useApp();
+  const [sel, setSel] = React.useState(null);
+  const [cw, setCw] = React.useState(330);   // real width in px, for spacing the date labels
+  const box = useRef(null);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(([e]) => { if (e?.contentRect?.width) setCw(e.contentRect.width); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const W = 300, H = height, PAD = 6;
   const vals = points.map((p) => p.v);
   if (!vals.length) return null;
   const all = target != null ? [...vals, target] : vals;
   let min = Math.min(...all), max = Math.max(...all);
   const pad = (max - min) * 0.15 || 1;
   min -= pad; max += pad;
-  const y = (v) => (H - 6) - ((v - min) / (max - min)) * (H - 12);
+  const y = (v) => (H - 7) - ((v - min) / (max - min)) * (H - 14);
   const span = target != null ? W * 0.72 : W;
   const ts = points.map((p) => p.t);
   const t0 = Math.min(...ts), t1 = Math.max(...ts);
-  const x = (t) => (t1 === t0 ? span : ((t - t0) / (t1 - t0)) * span);
+  const x = (tt) => (t1 === t0 ? span - PAD : PAD + ((tt - t0) / (t1 - t0)) * (span - PAD * 2));
   const line = points.map((p) => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
   const last = points[points.length - 1];
   const lx = x(last.t), ly = y(last.v);
+  // The line is drawn in a 300-wide box stretched to the card; dots and labels are
+  // HTML on top (so they stay round and sharp): x in %, y in px (1 unit = 1 px).
+  const pctX = (v) => `${(v / W) * 100}%`;
+  const pxY = (v) => `${v}px`;
+  // Keep a label off the edges: left-aligned near the start, right-aligned near the end.
+  const shift = (px) => (px < W * 0.1 ? "0%" : px > W * 0.9 ? "-100%" : "-50%");
+
+  // Dates under the chart: every entry that fits without touching its neighbour,
+  // always the latest (estimated text widths, real card width).
+  const shown = [];
+  if (dates) {
+    let leftEdge = Infinity;
+    for (let i = points.length - 1; i >= 0; i--) {
+      if (!points[i].date) continue;
+      const cx = (x(points[i].t) / W) * cw;
+      const wpx = fmtDate(points[i].date, lang).length * (lang === "ar" ? 5.6 : 6.1) + 4;
+      const s0 = shift(x(points[i].t));
+      const a = s0 === "0%" ? cx : s0 === "-100%" ? cx - wpx : cx - wpx / 2;
+      if (a + wpx + 6 <= leftEdge) { shown.push(i); leftEdge = a; }
+    }
+  }
+  const kinds = new Set(points.map((p) => p.kind).filter(Boolean));
+  const pick = (e) => {
+    const r = box.current?.getBoundingClientRect();
+    if (!r || !r.width) return;
+    const at = ((e.clientX - r.left) / r.width) * W;
+    let best = 0;
+    points.forEach((p, i) => { if (Math.abs(x(p.t) - at) < Math.abs(x(points[best].t) - at)) best = i; });
+    setSel(best);
+  };
+  const onKey = (e) => {
+    if (e.key === "ArrowRight") { setSel((s) => Math.min(points.length - 1, (s ?? points.length - 1) + 1)); e.preventDefault(); }
+    if (e.key === "ArrowLeft") { setSel((s) => Math.max(0, (s ?? points.length) - 1)); e.preventDefault(); }
+    if (e.key === "Escape") setSel(null);
+  };
+  const S = sel != null ? points[sel] : null;
+  const kindName = (k) => (k === "scan" ? "InBody" : k === "manual" ? t("chartWeighIn") : "");
+
   return (
-    <svg className="chart ltr" viewBox={`0 0 ${W} ${H}`} height={H} role="img" aria-label={label} preserveAspectRatio="none">
-      {target != null && <line x1="0" y1={y(target)} x2={W} y2={y(target)} stroke="var(--grid)" strokeWidth="1" strokeDasharray="3 4" vectorEffect="non-scaling-stroke" />}
-      {target != null && <polyline points={`${lx},${ly} ${W - 4},${y(target)}`} fill="none" stroke="var(--faint)" strokeWidth="1.6" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />}
-      {points.length > 1 && <polyline points={line} fill="none" stroke={color} strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
-      <circle cx={lx} cy={ly} r="4" fill={color} />
-      {target != null && <circle cx={W - 4} cy={y(target)} r="4" fill="var(--surface)" stroke="var(--muted)" strokeWidth="1.6" />}
-    </svg>
+    <div className="spark-wrap">
+      <div ref={box} className="spark ltr" style={{ height: H + (dates ? 20 : 0) }} role="img" aria-label={label} tabIndex={0}
+        onPointerDown={pick} onPointerMove={(e) => { if (e.buttons || e.pointerType === "mouse") pick(e); }} onKeyDown={onKey} onBlur={() => setSel(null)}>
+        <svg className="chart" viewBox={`0 0 ${W} ${H}`} height={H} preserveAspectRatio="none" aria-hidden="true">
+          {target != null && <line x1="0" y1={y(target)} x2={W} y2={y(target)} stroke="var(--grid)" strokeWidth="1" strokeDasharray="3 4" vectorEffect="non-scaling-stroke" />}
+          {target != null && <polyline points={`${lx},${ly} ${W - 4},${y(target)}`} fill="none" stroke="var(--faint)" strokeWidth="1.6" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />}
+          {points.length > 1 && <polyline points={line} fill="none" stroke={color} strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
+          {S && <line x1={x(S.t)} y1="0" x2={x(S.t)} y2={H} stroke="var(--line2)" strokeWidth="1" vectorEffect="non-scaling-stroke" />}
+        </svg>
+        {points.map((p, i) => (
+          <span key={i} className={`spark-dot${p.kind === "scan" ? " scan" : ""}${i === sel ? " on" : ""}${i === points.length - 1 ? " last" : ""}`}
+            style={{ left: pctX(x(p.t)), top: pxY(y(p.v)), background: color }} />
+        ))}
+        {target != null && <span className="spark-target" style={{ left: pctX(W - 4), top: pxY(y(target)) }} />}
+        {shown.map((i) => (
+          <span key={`d${i}`} className={`spark-date${i === sel ? " on" : ""}`} style={{ left: pctX(x(points[i].t)), transform: `translateX(${shift(x(points[i].t))})` }}>
+            {fmtDate(points[i].date, lang)}
+          </span>
+        ))}
+        {S && (
+          <span className="spark-tip" dir="auto"
+            style={{ left: pctX(x(S.t)), top: y(S.v) < 34 ? `${y(S.v) + 12}px` : `${y(S.v) - 36}px`, transform: `translateX(${shift(x(S.t))})` }}>
+            <b>{fmtNum(S.v, digits)}{unit ? ` ${unit}` : ""}</b>{S.date ? ` · ${fmtDate(S.date, lang)}` : ""}{S.kind ? ` · ${kindName(S.kind)}` : ""}
+          </span>
+        )}
+      </div>
+      {kinds.size > 1 && (
+        <div className="spark-legend">
+          <span><i className="dot-m" style={{ background: color }} />{t("chartWeighIn")}</span>
+          <span><i className="dot-s" style={{ background: color }} />InBody</span>
+          <span className="muted">· {t("chartTap")}</span>
+        </div>
+      )}
+      {kinds.size <= 1 && dates && points.length > 1 && <div className="spark-legend"><span className="muted">{t("chartTap")}</span></div>}
+    </div>
   );
 }
 
