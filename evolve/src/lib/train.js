@@ -334,3 +334,52 @@ export function slotsFromItems(items = [], { profile = {}, muscle, mine } = {}) 
 
 // Same exercise already in the list (library id, or your own by name)?
 export const sameExercise = (a, b) => (a.ex && a.ex === b.ex) || (!!a.custom && !!b.custom && a.name.toLowerCase() === b.name.toLowerCase());
+
+// ─── Records ────────────────────────────────────────────────────────────────
+// Estimated one-rep max (Epley), capped at 12 reps where it stays sensible.
+export const e1rm = (w, r) => (w > 0 && r > 0 ? w * (1 + Math.min(r, 12) / 30) : 0);
+
+// Your best before today for one exercise (from liftHistory, today left out).
+export function bestOf(history) {
+  let weight = 0, oneRm = 0, reps = 0, any = false;
+  for (const h of history || []) {
+    for (const s of h.sets || []) {
+      any = true;
+      weight = Math.max(weight, s.weight_kg || 0);
+      oneRm = Math.max(oneRm, e1rm(s.weight_kg, s.reps));
+      if (!(s.weight_kg > 0)) reps = Math.max(reps, s.reps || 0);
+    }
+  }
+  return any ? { weight, oneRm, reps } : null;
+}
+
+// Does a set beat those bests? "weight" (heaviest ever), "e1rm" (more reps at a
+// weight = stronger), "reps" (bodyweight) — or null. The first time is not a record.
+export function recordKind(set, best) {
+  if (!best || !set) return null;
+  const w = set.kg ?? set.weight_kg ?? 0, r = set.reps || 0;
+  if (w > 0 && w > best.weight) return "weight";
+  if (w > 0 && e1rm(w, r) > best.oneRm + 0.01) return "e1rm";
+  if (!(w > 0) && best.reps > 0 && r > best.reps) return "reps";
+  return null;
+}
+
+// The one set today that is the record (the strongest of those that beat your best).
+export function recordIndex(done, best) {
+  let at = -1, top = 0;
+  (done || []).forEach((d, i) => {
+    if (!d || !recordKind(d, best)) return;
+    const score = d.kg > 0 ? e1rm(d.kg, d.reps) : d.reps;
+    if (score > top) { top = score; at = i; }
+  });
+  return at;
+}
+
+// Total weight moved: Σ kg × reps (bodyweight sets add nothing).
+export const volumeOf = (sets) => Math.round((sets || []).reduce((a, s) => a + (s && (s.kg ?? s.weight_kg) > 0 ? (s.kg ?? s.weight_kg) * (s.reps || 0) : 0), 0));
+
+// Rest between sets: big lifts 2 min (3 for strength), small ones 1:30 — or what you set.
+export function restSeconds({ compound, focus, saved }) {
+  if (saved > 0) return saved;
+  return compound ? (focus === "strength" ? 180 : 120) : 90;
+}

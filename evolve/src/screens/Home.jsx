@@ -5,6 +5,10 @@ import { Icon, Ring, Spark, Bar } from "../ui.jsx";
 import { fmtDate, fmtNum, signed, joinList } from "../lib/i18n.js";
 import { localISO, addDays, dayRow, burnByDate, arrival, changeOver } from "../lib/body.js";
 import { coerceNumber } from "../lib/core.js";
+import { MealChips } from "../sheets/Sheets.jsx";
+import { store } from "../lib/api.js";
+import { reportWeek, hasContent } from "../lib/weekly.js";
+import { useWeekly, seenKey, weekRange } from "../sheets/Weekly.jsx";
 
 const COLOR = { weight: "var(--accent)", bodyFat: "var(--fat)", muscle: "var(--muscle)" };
 const STATUS_COLOR = { ok: "var(--ok)", warn: "var(--warn)", bad: "var(--bad)", neutral: "var(--accent)" };
@@ -23,13 +27,30 @@ function sinceLast(tr) {
 }
 
 export default function Home({ name }) {
-  const { t, lang, data, derived, openSheet, setTab } = useApp();
+  const { t, lang, data, derived, openSheet, setTab, user, sheet } = useApp();
   const { tracks, targets } = derived;
   const goal = data.goal;
   const hour = new Date().getHours();
   const greet = name ? t(hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening", { name }) : t("hello");
   const keys = ["weight", "bodyFat", "muscle"];
   const unitOf = (k) => (k === "bodyFat" ? "%" : t("kg"));
+
+  // ── Weekly report (until you've opened it) ──
+  const week = reportWeek(localISO());
+  const wr = useWeekly(week);
+  const unseen = !!user?.id && store.get(seenKey(user.id)) !== week.key && !sheet;
+  const weeklyCard = unseen && hasContent(wr) ? (
+    <div className="card accent">
+      <div className="row between"><span className="card-title">{t("wkTitle")}</span><span className="small muted">{weekRange(wr, lang)}</span></div>
+      <div className="wk-stats">
+        <div><div className="num ltr">{wr.weight.delta != null ? signed(wr.weight.delta) : "—"}</div><div className="small muted strong">{t("wkKgShort")}</div></div>
+        <div><div className="num">{wr.food.days ? fmtNum(wr.food.kcal) : "—"}</div><div className="small muted strong">{t("wkAvgShort")}</div></div>
+        <div><div className="num">{wr.training.workouts}</div><div className="small muted strong">{t("wkWorkoutsShort")}</div></div>
+      </div>
+      {wr.checkin.status === "adjust" && <div className="small strong" style={{ color: "var(--accent-text)" }}>{t("wkCiHint", { k: fmtNum(wr.checkin.suggested) })}</div>}
+      <button className="btn primary" onClick={() => openSheet("weekly", { week })}>{t("wkOpen")}</button>
+    </div>
+  ) : null;
 
   // ── Goal card ──
   let goalCard;
@@ -160,6 +181,7 @@ export default function Home({ name }) {
         <span className="row small sub" style={{ gap: 8 }}><Icon name="flame" size={18} color="var(--fat)" />{burnToday ? t("burnToday") : burnYest ? t("burnYesterday") : t("noBurn")}</span>
         {(burnToday || burnYest) && <span className="num" style={{ fontSize: 20 }}>{fmtNum(burnToday || burnYest)} <span className="small muted" style={{ fontFamily: "inherit" }}>{t("kcal")}</span></span>}
       </button>
+      <MealChips date={today} row={row} limit={4} />
       <button className="btn soft" onClick={() => openSheet("fuel")}>{t("addFuel")}</button>
     </div>
   );
@@ -199,6 +221,7 @@ export default function Home({ name }) {
         <div className="sub">{fmtDate(today, lang, "weekday")}</div>
         <h1>{greet}</h1>
       </div>
+      {weeklyCard}
       {goalCard}
       {fuelCard}
       <div className="card-title" style={{ padding: "2px 2px 0" }}>{t("trends")}</div>

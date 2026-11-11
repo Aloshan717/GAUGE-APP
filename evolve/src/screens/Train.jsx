@@ -8,7 +8,9 @@ import { sb, store } from "../lib/api.js";
 import { fmtNum, fmtDate } from "../lib/i18n.js";
 import { BY_ID, GROUPS, MUSCLES, MUSCLE_NAMES } from "../lib/exercises.js";
 import { liftHistory, recommend, setsText, recommendedCounts, adjustSession, slotMuscle, customMatch, setAllSets, suggestedSets,
-  pastWorkouts, lastTimeFor, slotsFromItems, sameExercise, MAX_PER_MUSCLE, MAX_SETS } from "../lib/train.js";
+  pastWorkouts, lastTimeFor, slotsFromItems, sameExercise, bestOf, recordKind, recordIndex, volumeOf, restSeconds, MAX_PER_MUSCLE, MAX_SETS } from "../lib/train.js";
+import { enqueue, patchQueued, dropQueued, tempId, isTemp } from "../lib/queue.js";
+import { primeSound, scheduleBeep, cancelBeep, buzz } from "../lib/sound.js";
 import { slotMuscles, muscleNames } from "../lib/muscles.js";
 import { findMine } from "../lib/myex.js";
 import { planDayFor, nextPlanDay, slotMinutes, WEEKDAYS_FULL } from "../lib/plan.js";
@@ -54,7 +56,7 @@ function History({ history, onAll }) {
 
 // One set: kg, reps, how it felt. A saved set stays editable — change anything
 // and ✓ saves the change; the bin removes it (tap twice).
-function SetRow({ n, prev, initKg, initReps, done, onSave, onDelete, bodyweight }) {
+function SetRow({ n, prev, initKg, initReps, done, onSave, onDelete, bodyweight, pr }) {
   const { t } = useApp();
   const [kg, setKg] = useState(done ? String(done.kg) : initKg != null ? String(initKg) : "");
   const [reps, setReps] = useState(done ? String(done.reps) : initReps != null ? String(initReps) : "");
@@ -72,6 +74,7 @@ function SetRow({ n, prev, initKg, initReps, done, onSave, onDelete, bodyweight 
   }, [arm]);
   const save = async () => {
     if (!valid || busy || (done && !changed)) return;
+    primeSound();   // inside the tap, so the rest timer may beep later
     setBusy(true);
     await onSave({ kg: w, reps: Math.round(r), effort });
     setBusy(false);
@@ -82,14 +85,14 @@ function SetRow({ n, prev, initKg, initReps, done, onSave, onDelete, bodyweight 
     await onDelete();
     setBusy(false);
   };
-  const what = changed ? t("saveChange") : done ? t("setSaved") : t("saveSet");
+  const what = changed ? t("saveChange") : done?.pending ? t("setWaiting") : done ? t("setSaved") : t("saveSet");
   return (
     <div className={`set-row${done ? " done" : ""}${changed ? " changed" : ""}`}>
-      <span className="n">{n}</span>
+      <span className="n">{pr ? <span title={t("prTag")} aria-label={t("prTag")}>🏆</span> : n}</span>
       <span className="prev ltr">{prev || "—"}</span>
       <input className="input sm" inputMode="decimal" aria-label={`${t("colKg")} ${n}`} value={kg} onChange={(e) => setKg(e.target.value)} />
       <input className="input sm" inputMode="numeric" aria-label={`${t("colReps")} ${n}`} value={reps} onChange={(e) => setReps(e.target.value)} />
-      <button type="button" className={`check${done && !changed ? " on" : ""}${changed ? " dirty" : ""}`} onClick={save} disabled={busy} aria-label={`${what} ${n}`}><Icon name="check" size={18} stroke={2.6} /></button>
+      <button type="button" className={`check${done && !changed ? " on" : ""}${changed ? " dirty" : ""}${done?.pending && !changed ? " pending" : ""}`} onClick={save} disabled={busy} aria-label={`${what} ${n}`}><Icon name="check" size={18} stroke={2.6} /></button>
       <div className="effort-line">
         <div className="effort" role="group" aria-label={`${t("colEffort")} ${n}`}>
           {["easy", "ok", "hard"].map((e) => (
@@ -106,8 +109,8 @@ function SetRow({ n, prev, initKg, initReps, done, onSave, onDelete, bodyweight 
   );
 }
 
-function ExerciseCard({ slot, logs, session, setSession, open, onToggle, onRemove, onComplete }) {
-  const { t, lang, user, openSheet, refresh } = useApp();
+function ExerciseCard({ slot, logs, session, setSession, open, onToggle, onRemove, onComplete, onRest }) {
+  const { t, lang, user, openSheet, refresh, toast } = useApp();
   const own = slot.custom ? findMine(slot.name) : null;
   const ex = slot.custom || !BY_ID[slot.ex] ? customEx({ ...slot, name: slot.name || String(slot.ex || "?") }, own) : BY_ID[slot.ex];
   const muscle = slotMuscle(slot);
@@ -139,36 +142,68 @@ function ExerciseCard({ slot, logs, session, setSession, open, onToggle, onRemov
   const insertSet = (i, v) => sb.insert("workout_logs", {
     user_id: user.id, date: today, muscle_group: muscle, exercise: ex.name[0], exercise_id: ex.id,
     weight_kg: v.kg, reps: v.reps, effort: v.effort, set_no: i + 1,
-  }, { optional: ["exercise_id", "effort", "set_no"] });
+  }, { optional: ["exercise_id", "effort", "set_no"], quiet: true });
+
+  const best = useMemo(() => bestOf(history), [history]);
+  const prAt = recordIndex(done, best);
+  // No signal: keep it on the phone; it is sent as soon as you're online.
+  const offline = () => toast(t("savedOffline"));
+  const fields = (v) => ({ weight_kg: v.kg, reps: v.reps, effort: v.effort });
 
   const saveSet = async (i, v) => {
+    const fresh = !done[i];
     const oldId = done[i]?.logId;
-    let id = oldId;
-    if (oldId) {
+    let id = oldId, pending = false;
+    if (oldId && isTemp(oldId)) {
+      patchQueued(user.id, oldId, fields(v));          // still waiting to be sent: change the waiting copy
+      pending = true;
+    } else if (oldId) {
       // Correct a saved set. Where the database doesn't allow edits, save it
       // again and remove the old one — your history ends up the same.
-      const { data, error } = await sb.update("workout_logs", oldId, { weight_kg: v.kg, reps: v.reps, effort: v.effort }, { optional: ["effort"] });
-      if (error) return;
-      if (!data) {
+      const { data, error, network } = await sb.update("workout_logs", oldId, fields(v), { optional: ["effort"], quiet: true });
+      if (network) { enqueue(user.id, { op: "update", table: "workout_logs", id: oldId, data: fields(v), optional: ["effort"] }); pending = true; offline(); }
+      else if (error) { toast(error); return; }
+      else if (!data) {
         const ins = await insertSet(i, v);
-        if (ins.error) return;
+        if (ins.error) { toast(ins.error); return; }
         id = ins.data?.id;
-        await sb.delete("workout_logs", oldId);
+        await sb.delete("workout_logs", oldId, { quiet: true });
       }
     } else {
-      const { data, error } = await insertSet(i, v);
-      if (error) return;
-      id = data?.id;
+      const row = { user_id: user.id, date: today, muscle_group: muscle, exercise: ex.name[0], exercise_id: ex.id, weight_kg: v.kg, reps: v.reps, effort: v.effort, set_no: i + 1 };
+      const { data, error, network } = await sb.insert("workout_logs", row, { optional: ["exercise_id", "effort", "set_no"], quiet: true });
+      if (network) {
+        id = tempId();
+        enqueue(user.id, { op: "insert", table: "workout_logs", data: row, optional: ["exercise_id", "effort", "set_no"], temp: id });
+        pending = true;
+        offline();
+      } else if (error) { if (error !== "setup") toast(error); return; }
+      else id = data?.id;
     }
-    storeDone(i, { ...v, logId: id });
-    refresh();
-    if (!done[i] && saved + 1 >= rows) onComplete?.();
+    storeDone(i, { ...v, logId: id, pending });
+    if (!pending) refresh();
+    // A new best? Say it once per exercise per workout.
+    const kind = recordKind(v, best);
+    if (kind && !session.prs?.[slot.id]) {
+      toast(t(`pr_${kind}`, { name, v: kind === "reps" ? v.reps : fmtNum(v.kg, 2) }));
+    }
+    if (kind) setSession((s) => {
+      const was = s.prs?.[slot.id];
+      const score = v.kg > 0 ? v.kg * (1 + Math.min(v.reps, 12) / 30) : v.reps;
+      return was && was.score >= score ? s : { ...s, prs: { ...(s.prs || {}), [slot.id]: { name: ex.name, kind, kg: v.kg, reps: v.reps, score } } };
+    });
+    if (fresh) {
+      onRest?.(slot);
+      if (saved + 1 >= rows) onComplete?.();
+    }
   };
   const deleteSet = async (i) => {
     const id = done[i]?.logId;
-    if (id) {
-      const { error } = await sb.delete("workout_logs", id);
-      if (error) return;
+    if (id && isTemp(id)) dropQueued(user.id, id);       // never sent: nothing to delete on the server
+    else if (id) {
+      const { error, network } = await sb.delete("workout_logs", id, { quiet: true });
+      if (network) { enqueue(user.id, { op: "delete", table: "workout_logs", id }); offline(); }
+      else if (error) { toast(error); return; }
     }
     storeDone(i, null);
     refresh();
@@ -237,12 +272,43 @@ function ExerciseCard({ slot, logs, session, setSession, open, onToggle, onRemov
             return (
               <SetRow key={`${slot.ex || slot.name}-${i}`} n={i + 1} prev={prev ? `${+prev.weight_kg}×${prev.reps}` : ""}
                 initKg={rec.weight ?? (bodyweight ? 0 : prev?.weight_kg)} initReps={rec.reps} done={done[i] || null} bodyweight={bodyweight}
-                onSave={(v) => saveSet(i, v)} onDelete={() => deleteSet(i)} />
+                pr={i === prAt} onSave={(v) => saveSet(i, v)} onDelete={() => deleteSet(i)} />
             );
           })}
           <div className="small muted">{t("effortHint")} {t("editHint")}</div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Rest between sets: a countdown above the menu, ±15 s (remembered), beep at the end.
+function RestBar({ rest, onAdjust, onSkip }) {
+  const { t } = useApp();
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 250);
+    document.body.classList.add("has-rest");
+    return () => { clearInterval(id); document.body.classList.remove("has-rest"); };
+  }, []);
+  const left = Math.ceil((rest.endsAt - now) / 1000);
+  const over = left <= 0;
+  useEffect(() => { if (over) buzz(); }, [over]);
+  useEffect(() => { if (left < -10) onSkip(); }, [left < -10]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const pct = over ? 100 : Math.max(0, Math.min(100, 100 - (left / rest.total) * 100));
+  const mm = Math.floor(Math.max(0, left) / 60), ss = String(Math.max(0, left) % 60).padStart(2, "0");
+  return (
+    <div className={`rest-bar${over ? " over" : ""}`} role="timer" aria-live={over ? "assertive" : "off"}>
+      <div className="rest-fill" style={{ width: `${pct}%` }} />
+      <div className="rest-in">
+        <Icon name={over ? "check" : "watch"} size={18} />
+        <span className="rest-lbl">{over ? t("restOver") : t("restLbl")}</span>
+        {!over && <span className="num rest-time ltr">{mm}:{ss}</span>}
+        <span className="grow" />
+        {!over && <button type="button" onClick={() => onAdjust(-15)} aria-label={t("restLess")}>−15</button>}
+        {!over && <button type="button" onClick={() => onAdjust(15)} aria-label={t("restMore")}>+15</button>}
+        <button type="button" className="skip" onClick={onSkip}>{over ? t("close") : t("restSkip")}</button>
+      </div>
     </div>
   );
 }
@@ -270,7 +336,7 @@ function RepeatList({ workouts, onRepeat, current }) {
 }
 
 export default function Train() {
-  const { t, lang, data, user, trainSession: session, setTrainSession: setSession, refresh, toast, openSheet } = useApp();
+  const { t, lang, data, user, trainSession: session, setTrainSession: setSession, refresh, toast, openSheet, pending } = useApp();
   const [open, setOpen] = useState(null);
   const profile = data.profile || {};
   const today = localISO();
@@ -382,15 +448,47 @@ export default function Train() {
   };
   const suggestion = t("suggestLine", { list: muscles.map((m) => `${mname(m)} ${rec[m] ?? 0}`).join(" · "), s: 3 });
 
+  // Rest timer: starts after every new set; big lifts rest longer.
+  const restKey = (big) => `evolve_rest_${big ? "big" : "small"}`;
+  const startRest = (slot) => {
+    const big = !!GROUPS[slot.group]?.compound;
+    const secs = restSeconds({ compound: big, focus: profile.focus, saved: Number(store.get(restKey(big))) || 0 });
+    const endsAt = Date.now() + secs * 1000;
+    scheduleBeep(endsAt);
+    setActive((s) => ({ ...s, rest: { endsAt, total: secs, big } }));
+  };
+  const adjustRest = (d) => setActive((s) => {
+    if (!s.rest) return s;
+    const total = Math.max(30, s.rest.total + d);
+    const endsAt = Math.max(Date.now() + 5000, s.rest.endsAt + d * 1000);
+    store.set(restKey(s.rest.big), String(total));
+    scheduleBeep(endsAt);
+    return { ...s, rest: { ...s.rest, total, endsAt } };
+  });
+  const skipRest = () => { cancelBeep(); setActive((s) => ({ ...s, rest: null })); };
+
   const finish = async () => {
     if (!setsDone) { toast(t("noSets")); return; }
     const ms = [...new Set(slots.map(slotMuscle).filter(Boolean))];
     const dur = active.startedAt ? Math.max(1, Math.round((Date.now() - active.startedAt) / 60000)) : minutes;
-    const { error } = await sb.insert("sessions", { user_id: user.id, date: today, duration_min: dur, muscles: ms.join(", ") });
-    if (error) return;
-    setActive((s) => ({ ...s, finished: true }));
-    await refresh();
-    toast(t("finished", { sets: setsDone, min: dur }));
+    const row = { user_id: user.id, date: today, duration_min: dur, muscles: ms.join(", ") };
+    const { error, network } = await sb.insert("sessions", row, { quiet: true });
+    if (network) enqueue(user.id, { op: "insert", table: "sessions", data: row });
+    else if (error) { if (error !== "setup") toast(error); return; }
+    // Summary: time, sets, weight moved, records, and how it compares with the last time.
+    const doneSets = slots.flatMap((x) => (active.done?.[x.id] || []).filter(Boolean));
+    const volume = volumeOf(doneSets);
+    const lastSame = workouts.find((w) => w.muscles.some((m) => ms.includes(m)));
+    const lastVolume = lastSame ? volumeOf((data.logs || []).filter((l) => l.date === lastSame.date && ms.includes(l.muscle_group)).map((l) => ({ kg: Number(l.weight_kg), reps: Number(l.reps) }))) : 0;
+    const summary = {
+      date: today, minutes: dur, sets: doneSets.length, volume, muscles: ms,
+      exercises: slots.filter((x) => (active.done?.[x.id] || []).some(Boolean)).length,
+      records: Object.values(active.prs || {}), lastDate: lastSame?.date || null, lastVolume,
+    };
+    cancelBeep();
+    setActive((s) => ({ ...s, finished: true, finishPending: !!network, rest: null, summary }));
+    if (!network) await refresh();
+    openSheet("summary", { summary });
   };
   const addExercise = () => { setActive((s) => s); openSheet("addEx", { muscle: muscles[0] || slotMuscle(slots[0] || {}) || "Chest" }); };
 
@@ -400,6 +498,8 @@ export default function Train() {
         <div className="sub">{active?.source === "plan" && active.name ? t("trainToday", { name: active.name[L(lang)] }) : t("trainPick")}</div>
         <h1>{t("trainTitle")}</h1>
       </div>
+
+      {pending > 0 && <Note kind="plain" icon="info">{t("pendingSync", { n: pending })}</Note>}
 
       {data.plan && !planDay && next && (
         <Note kind="plain" icon="info">{t("restDay", { name: next.day.name[L(lang)], day: WEEKDAYS_FULL[next.day.weekday][L(lang)] })}</Note>
@@ -479,7 +579,7 @@ export default function Train() {
       )}
       {slots.map((slot) => (
         <ExerciseCard key={slot.id} slot={slot} logs={data.logs} session={active} setSession={setActive}
-          open={open === slot.id} onToggle={() => setOpen(open === slot.id ? null : slot.id)} onRemove={() => removeSlot(slot)} onComplete={() => advance(slot.id)} />
+          open={open === slot.id} onToggle={() => setOpen(open === slot.id ? null : slot.id)} onRemove={() => removeSlot(slot)} onComplete={() => advance(slot.id)} onRest={startRest} />
       ))}
       {(slots.length > 0 || (picking && muscles.length > 0)) && !active?.finished && (
         <button className="btn" onClick={addExercise}><Icon name="plus" size={18} />{t("addExercise")}</button>
@@ -488,11 +588,15 @@ export default function Train() {
         <>
           <div className="small muted center">{t("swapNote")}</div>
           {active.finished
-            ? <Note>{t("sessionDone")} · {fmtDate(today, lang)}</Note>
+            ? <>
+                <Note>{t("sessionDone")} · {fmtDate(today, lang)}</Note>
+                {active.summary && <button className="btn soft" onClick={() => openSheet("summary", { summary: active.summary })}>{t("seeSummary")}</button>}
+              </>
             : <button className={`btn primary lg${completeCount === slots.length ? " glow" : ""}`} onClick={finish}>{t("finish")}</button>}
         </>
       )}
       {!slots.length && picking && !muscles.length && <div className="small muted center">{t("noMuscle")}</div>}
+      {active?.rest && !active.finished && <RestBar rest={active.rest} onAdjust={adjustRest} onSkip={skipRest} />}
     </>
   );
 }

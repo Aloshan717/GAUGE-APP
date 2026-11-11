@@ -5,6 +5,7 @@ import { Icon, Seg, Spark, Empty } from "../ui.jsx";
 import { fmtDate, fmtNum, signed } from "../lib/i18n.js";
 import { sb, store } from "../lib/api.js";
 import { coerceNumber, mergeWeightSeries, withMuscleKg, weightTrend } from "../lib/core.js";
+import PhotosTab from "./Photos.jsx";
 
 const ts = (d) => new Date(d + "T00:00:00").getTime();
 
@@ -166,10 +167,11 @@ export default function Body() {
   return (
     <>
       <div className="screen-head"><div className="sub">{t("bodySub")}</div><h1>{t("bodyTitle")}</h1></div>
-      <Seg options={[["weight", t("segWeight")], ["inbody", t("segInbody")], ["measure", t("segMeasure")]]} value={seg} onChange={pick} label={t("bodyTitle")} />
+      <Seg options={[["weight", t("segWeight")], ["inbody", t("segInbody")], ["measure", t("segMeasure")], ["photos", t("segPhotos")]]} value={seg} onChange={pick} label={t("bodyTitle")} />
       {seg === "weight" && <WeightTab />}
       {seg === "inbody" && <InbodyTab />}
       {seg === "measure" && <MeasureTab />}
+      {seg === "photos" && <PhotosTab />}
     </>
   );
 }

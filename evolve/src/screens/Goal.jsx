@@ -7,12 +7,13 @@ import { sb, store } from "../lib/api.js";
 import { coerceNumber, goalMuscleKg, musclePercent } from "../lib/core.js";
 import { feasibility, consistency, goalDirection, localISO } from "../lib/body.js";
 import { weeklySets } from "../lib/plan.js";
+import { reportWeek } from "../lib/weekly.js";
 
 const TAG = { ok: "tagOk", warn: "tagWarn", bad: "tagBad", done: "tagDone" };
 const num = (s) => { const n = coerceNumber(s); return n == null ? null : n; };
 
 export default function Goal() {
-  const { t, lang, data, derived, user, refresh, toast, setTab, openSheet } = useApp();
+  const { t, lang, data, derived, user, refresh, toast, setTab, openSheet, setKcalLock } = useApp();
   const { body, targets, maint, tips } = derived;
   const goal = data.goal;
   const profile = data.profile || {};
@@ -193,7 +194,9 @@ export default function Goal() {
                 <div className="box" style={{ borderTop: "2px solid var(--accent)" }}>
                   <div className="label">{t("calories")}</div>
                   <div><span className="num" style={{ fontSize: 30 }}>{fmtNum(targets.kcal)}</span> <span className="small muted">{t("kcal")}</span></div>
-                  <div className="small sub">{t("calMath", { m: fmtNum(targets.maintenance), s: targets.adjust < 0 ? "−" : "+", d: fmtNum(Math.abs(targets.adjust)) })}</div>
+                  {targets.lock
+                    ? <div className="small sub">{t("lockNote", { date: fmtDate(targets.lock.since, lang) })}</div>
+                    : <div className="small sub">{t("calMath", { m: fmtNum(targets.maintenance), s: targets.adjust < 0 ? "−" : "+", d: fmtNum(Math.abs(targets.adjust)) })}</div>}
                 </div>
                 <div className="box" style={{ borderTop: "2px solid var(--muscle)" }}>
                   <div className="label">{t("protein")}</div>
@@ -202,6 +205,13 @@ export default function Goal() {
                 </div>
               </div>
               {targets.floorHit && <Note kind="warn" icon="info">{t("floorNote")}</Note>}
+              {targets.lock && targets.autoKcal && Math.abs(targets.autoKcal - targets.kcal) >= 50 && (
+                <div className="row between small">
+                  <span className="muted">{t("lockAuto", { k: fmtNum(targets.autoKcal) })}</span>
+                  <button className="link" style={{ minHeight: 0, padding: 0 }} onClick={() => setKcalLock({ ...targets.lock, kcal: targets.autoKcal, since: localISO() })}>{t("lockUse")}</button>
+                </div>
+              )}
+              <button className="btn soft sm" onClick={() => openSheet("weekly", { week: reportWeek(localISO()) })}>{t("wkOpenGoal")}</button>
               {srcs.length > 0 && <div className="small muted">{t("from", { list: srcs.join(" + ") })}</div>}
             </>
           ) : (

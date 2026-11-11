@@ -152,7 +152,7 @@ export const sb = {
     if (res.ok) return { data: Array.isArray(res.body) ? res.body[0] : res.body, error: null };
     const error = isMissingTable(res.body) ? "setup" : errText(res, currentLang);
     if (!quiet && error !== "setup") notify(error);
-    return { data: null, error };
+    return { data: null, error, network: !!res.network };
   },
 
   // Insert or update by primary key / unique columns.
@@ -166,7 +166,7 @@ export const sb = {
 
   // Change one row by id: { data, error }. data is null when nothing was changed
   // (no such row, or the database doesn't allow edits on this table).
-  async update(table, id, data, { optional = [] } = {}) {
+  async update(table, id, data, { optional = [], quiet = false } = {}) {
     const path = `/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`;
     let res = await this.request(path, { method: "PATCH", body: data });
     const missing = optional.filter((k) => k in data);
@@ -177,16 +177,16 @@ export const sb = {
     }
     if (res.ok) return { data: Array.isArray(res.body) ? res.body[0] || null : res.body, error: null };
     const error = errText(res, currentLang);
-    notify(error);
-    return { data: null, error };
+    if (!quiet) notify(error);
+    return { data: null, error, network: !!res.network };
   },
 
-  async delete(table, id) {
+  async delete(table, id, { quiet = false } = {}) {
     const res = await this.request(`/rest/v1/${table}?id=eq.${id}`, { method: "DELETE" });
     if (res.ok) return { error: null };
     const error = errText(res, currentLang);
-    notify(error);
-    return { error };
+    if (!quiet) notify(error);
+    return { error, network: !!res.network };
   },
 
   // Calls to Evolve's own serverless functions.

@@ -6,6 +6,9 @@ import { buildSession, recommend, liftHistory, weightStep, exercisesFor, adjustS
 import { generatePlan, weeklySets, swapInPlan, toggleKept, setSlotSets, reviewCount, planDayFor, nextPlanDay, DEFAULT_DAYS } from "../src/lib/plan.js";
 import { musclesOf, slotMuscles, regionLevels, REGIONS, MUSCLE_LABELS, PARTS, mainView, focusBox, searchExercises, customMuscles } from "../src/lib/muscles.js";
 import { FRONT, BACK } from "../src/lib/bodymap.js";
+import { e1rm, bestOf, recordKind, recordIndex, volumeOf, restSeconds } from "../src/lib/train.js";
+import { reportWeek, weekWeight, calorieCheckin, weeklyReport, goalKey, MAX_STEP } from "../src/lib/weekly.js";
+import { remapDone } from "../src/lib/queue.js";
 import { restingEnergy, formulaMaintenance, maintenance, dailyTargets, goalDirection, feasibility, consistency, currentBody, adaptiveMaintenance, watchAverage, coachTips, localISO } from "../src/lib/body.js";
 import burnHandler, { toKcal, localDate } from "../api/burn.js";
 import { STR } from "../src/lib/i18n.js";
@@ -457,6 +460,87 @@ test("your own exercise keeps its history by name", () => {
   assert.equal(h.length, 1); assert.equal(h[0].sets[0].weight_kg, 10);
 });
 
+// ── Records, volume, rest ──
+test("records: heaviest, stronger (e1RM) and bodyweight reps; never on a first time", () => {
+  const best = bestOf(hist(["2026-11-01", [[80, 8], [80, 7]]], ["2026-10-25", [[77.5, 9]]]));
+  assert.equal(best.weight, 80);
+  assert.equal(recordKind({ kg: 82.5, reps: 5 }, best), "weight");
+  assert.equal(recordKind({ kg: 80, reps: 10 }, best), "e1rm");
+  assert.equal(recordKind({ kg: 80, reps: 8 }, best), null);
+  assert.equal(recordKind({ kg: 82.5, reps: 5 }, null), null);
+  const bw = bestOf(hist(["2026-11-01", [[0, 12]]]));
+  assert.equal(recordKind({ kg: 0, reps: 14 }, bw), "reps");
+  assert.equal(recordIndex([{ kg: 80, reps: 9 }, { kg: 82.5, reps: 8 }, null], best), 1);
+  assert.ok(e1rm(100, 30) === e1rm(100, 12));
+  assert.equal(volumeOf([{ kg: 80, reps: 10 }, { kg: 0, reps: 15 }, null, { weight_kg: 50, reps: 2 }]), 900);
+  assert.equal(restSeconds({ compound: true }), 120);
+  assert.equal(restSeconds({ compound: true, focus: "strength" }), 180);
+  assert.equal(restSeconds({ compound: false, saved: 75 }), 75);
+});
+test("offline sets get their real ids once sent; a refused one shows as not saved", () => {
+  const s = { done: { a: [{ kg: 80, reps: 8, logId: "tmp_1", pending: true }, { kg: 80, reps: 8, logId: "x9", pending: true }], b: [{ kg: 20, reps: 10, logId: "tmp_2", pending: true }] } };
+  const r = remapDone(s, { tmp_1: "n1", tmp_2: false }, true);
+  assert.deepEqual(r.done.a.map((d) => [d.logId, d.pending]), [["n1", false], ["x9", false]]);
+  assert.equal(r.done.b[0], null);
+});
+
+// ── Weekly report and calorie check-in ──
+test("the report covers the 7 days before the latest Saturday", () => {
+  assert.deepEqual(reportWeek("2026-11-14"), { key: "2026-11-14", from: "2026-11-07", to: "2026-11-13" });
+  assert.deepEqual(reportWeek("2026-11-13"), { key: "2026-11-07", from: "2026-10-31", to: "2026-11-06" });
+  assert.equal(goalKey(null), null);
+  assert.notEqual(goalKey({ id: 1, target_weight: 80 }), goalKey({ id: 1, target_weight: 79 }));
+});
+test("weight change works with one weigh-in a week", () => {
+  const w = weekWeight([{ date: "2026-11-01", weight: 86 }, { date: "2026-11-08", weight: 85.4 }], [], { from: "2026-11-07", to: "2026-11-13" });
+  assert.equal(w.delta, -0.6); assert.equal(w.perWeek, -0.6);
+  assert.equal(weekWeight([{ date: "2026-11-08", weight: 85.4 }], [], { from: "2026-11-07", to: "2026-11-13" }).start, null);
+});
+const ciData = (kcal, weights) => {
+  const days = [];
+  for (let i = 0; i < 28; i++) days.push({ date: new Date(Date.UTC(2026, 10, 13) - i * 864e5).toISOString().slice(0, 10), kcal_in: kcal, protein_g: 160 });
+  return { days, weights, sessions: [], scans: [] };
+};
+const ciGoal = { id: "g", start_date: "2026-10-01", target_date: "2027-02-01", target_weight: 78 };
+const ciProfile = { sex: "m", birth_year: 1992, height_cm: 178, activity: "feet" };
+test("check-in: losing slower than the goal → a small cut, capped at 150", () => {
+  const d = ciData(2400, [{ date: "2026-10-18", weight: 86 }, { date: "2026-10-25", weight: 85.95 }, { date: "2026-11-01", weight: 85.9 }, { date: "2026-11-08", weight: 85.85 }, { date: "2026-11-13", weight: 85.8 }]);
+  const c = calorieCheckin({ goal: ciGoal, profile: ciProfile, body: { weight: 85.8 }, ...d, current: 2400, to: "2026-11-13" });
+  assert.equal(c.status, "adjust");
+  assert.ok(c.change < 0 && c.change >= -MAX_STEP, JSON.stringify(c));
+  assert.ok(c.burn > 2300 && c.burn < 2500, JSON.stringify(c));   // weight barely moved → burn ≈ what you ate
+});
+test("check-in: losing much faster than planned → eat a little more", () => {
+  const d = ciData(1700, [{ date: "2026-10-18", weight: 90 }, { date: "2026-10-25", weight: 88.9 }, { date: "2026-11-01", weight: 87.8 }, { date: "2026-11-08", weight: 86.7 }, { date: "2026-11-13", weight: 85.9 }]);
+  const c = calorieCheckin({ goal: { ...ciGoal, target_weight: 84, target_date: "2027-04-01" }, profile: ciProfile, body: { weight: 85.9 }, ...d, current: 1700, to: "2026-11-13" });
+  assert.equal(c.status, "adjust", JSON.stringify(c));
+  assert.ok(c.change > 0 && c.change <= MAX_STEP);
+});
+test("check-in needs food logged 5+ days and weigh-ins; waits 2 weeks for a new goal", () => {
+  const d = ciData(2200, [{ date: "2026-10-25", weight: 86 }, { date: "2026-11-08", weight: 85.5 }]);
+  assert.equal(calorieCheckin({ goal: ciGoal, ...d, days: d.days.slice(0, 3), current: 2200, to: "2026-11-13" }).status, "need-food");
+  assert.equal(calorieCheckin({ goal: ciGoal, ...d, weights: [], current: 2200, to: "2026-11-13" }).status, "need-weight");
+  assert.equal(calorieCheckin({ goal: { ...ciGoal, start_date: "2026-11-08" }, ...d, current: 2200, to: "2026-11-13" }).status, "early");
+  assert.equal(calorieCheckin({ goal: null, ...d, current: 2200, to: "2026-11-13" }).status, "no-goal");
+});
+test("weekly report: food average, workouts, sets and records of the week", () => {
+  const data = {
+    days: [{ date: "2026-11-08", kcal_in: 2000, protein_g: 150 }, { date: "2026-11-09", kcal_in: 2400, protein_g: 170 }, { date: "2026-11-01", kcal_in: 9999 }],
+    logs: [
+      { date: "2026-11-01", exercise_id: "bench_press", weight_kg: 80, reps: 8 },
+      { date: "2026-11-10", exercise_id: "bench_press", weight_kg: 82.5, reps: 8 },
+      { date: "2026-11-10", exercise_id: "bench_press", weight_kg: 80, reps: 8 },
+      { date: "2026-11-12", exercise_id: "lat_pulldown", weight_kg: 60, reps: 10 },
+    ],
+    weights: [], inbody: [], sessions: [], goal: null,
+  };
+  const r = weeklyReport({ week: reportWeek("2026-11-14"), data, current: 2200, protein: 170 });
+  assert.equal(r.food.days, 2); assert.equal(r.food.kcal, 2200); assert.equal(r.food.protein, 160);
+  assert.equal(r.training.workouts, 2); assert.equal(r.training.sets, 3);
+  assert.deepEqual(r.training.records.map((x) => [x.id, x.kg]), [["bench_press", 82.5]]);
+  assert.equal(r.checkin.status, "no-goal");
+});
+
 // ── Every text exists in both languages ──
 test("every t(\"key\") used in the app exists in English and Arabic", () => {
   const files = [];
@@ -469,7 +553,7 @@ test("every t(\"key\") used in the app exists in English and Arabic", () => {
   ["plStep1", "plStep2", "plStep3", "plNext1", "plNext2", "plNext3", "plFoot1", "plFoot2", "plFoot3",
    ...["up", "same", "hold", "stall", "down", "fresh", "reps"].flatMap((k) => [`rec_${k}`, `recT_${k}`]),
    ...["onTrack", "slower", "faster", "gainSlow", "gainFast", "muscleDown", "protein", "logFood", "rescan"].map((k) => `tip_${k}`),
-   "painShoulder", "painBack", "painKnee", "painWrist", "easy", "ok", "hard", "waist", "chest", "hips", "arms", "thighs",
+   "painShoulder", "painBack", "painKnee", "painWrist", "pr_weight", "pr_e1rm", "pr_reps", "sumMore", "sumLess", "ph_front", "ph_side", "ph_back", "ciWhyDown", "ciWhyUp", "ciNeedFood", "ciNeedWeight", "ciEarly", "ciNoGoal", "easy", "ok", "hard", "waist", "chest", "hips", "arms", "thighs",
    "mWeight", "mFat", "mMuscle", "goalLose", "goalGain", "goalRecomp", "goalMaintain", "tagOk", "tagWarn", "tagBad", "tagDone",
   ].forEach((k) => keys.add(k));
   const missing = [...keys].filter((k) => STR.en[k] === undefined || STR.ar[k] === undefined);

@@ -12,7 +12,10 @@ import SwapSheet from "./Swap.jsx";
 import Setup from "./Setup.jsx";
 import AddExercise from "./AddExercise.jsx";
 import WatchSync from "./WatchSync.jsx";
+import { myMeals, saveMeal, deleteMeal, addMealTo, restoreDay } from "../lib/meals.js";
 import ExerciseInfo from "./ExerciseInfo.jsx";
+import Summary from "./Summary.jsx";
+import Weekly from "./Weekly.jsx";
 
 function DayPicker({ value, onChange }) {
   const { t } = useApp();
@@ -105,12 +108,52 @@ function MeasureForm() {
   );
 }
 
+// Your saved meals: one tap adds one (with Undo); "Edit" removes them.
+export function MealChips({ date, row, onAdded, limit }) {
+  const { t, user, refresh, toast } = useApp();
+  const [, setRev] = useState(0);
+  const meals = myMeals();            // read fresh each time: a meal saved in the sheet shows up right away
+  const [edit, setEdit] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (!meals.length) return null;
+  const add = async (meal) => {
+    if (busy) return;
+    setBusy(true);
+    const { error, before } = await addMealTo({ userId: user.id, date, meal, row });
+    setBusy(false);
+    if (error) return;
+    await refresh();
+    toast(t("mealAdded", { name: meal.name }), { label: t("undo"), run: async () => { await restoreDay({ userId: user.id, date, before }); refresh(); } });
+    onAdded?.();
+  };
+  const shown = limit ? meals.slice(0, limit) : meals;
+  return (
+    <div className="col" style={{ gap: 8 }}>
+      <div className="row between">
+        <span className="label" style={{ margin: 0 }}>{t("myMeals")}</span>
+        {!limit && <button className="link" style={{ minHeight: 0, padding: 0 }} onClick={() => setEdit((e) => !e)}>{edit ? t("done") : t("edit")}</button>}
+      </div>
+      <div className="meal-chips">
+        {shown.map((m) => (
+          <button key={m.name} type="button" className="meal-chip" disabled={busy} onClick={() => (edit ? null : add(m))} aria-label={`${t("add")} ${m.name}`}>
+            <span className="n">{m.name}</span>
+            <span className="k ltr">{m.kcal ? `${m.kcal} ${t("kcal")}` : ""}{m.kcal && m.protein ? " · " : ""}{m.protein ? `${m.protein} ${t("g")}` : ""}</span>
+            {edit && <span className="x" role="button" aria-label={`${t("del")} ${m.name}`} onClick={(e) => { e.stopPropagation(); deleteMeal(m.name); setRev((r) => r + 1); }}><Icon name="close" size={12} stroke={3} /></span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function FuelForm() {
   const { t, data, derived, refresh, closeSheet, toast, user } = useApp();
   const [date, setDate] = useState(localISO());
   const [mode, setMode] = useState("add");
   const [k, setK] = useState("");
   const [p, setP] = useState("");
+  const [asMeal, setAsMeal] = useState(false);
+  const [mealName, setMealName] = useState("");
   const [busy, setBusy] = useState(false);
   const row = dayRow(data.days, date) || {};
   const curK = coerceNumber(row.kcal_in) || 0, curP = coerceNumber(row.protein_g) || 0;
@@ -128,16 +171,24 @@ function FuelForm() {
     const { error } = await sb.upsert("ev_days", next, "user_id,date");
     setBusy(false);
     if (error) return;
-    await refresh(); toast(t("saved")); closeSheet();
+    if (asMeal && mealName.trim() && mode === "add") saveMeal({ name: mealName, kcal: dk || 0, protein: dp || 0 });
+    await refresh(); toast(asMeal && mealName.trim() && mode === "add" ? t("mealSaved", { name: mealName.trim() }) : t("saved")); closeSheet();
   };
   return (
     <>
       <div className="small sub">{t("fuelIntro")}</div>
+      <MealChips date={date} row={row} />
       <Seg options={[["add", t("modeAdd")], ["set", t("modeSet")]]} value={mode} onChange={setMode} label={t("fuelSheet")} />
       <div className="grid2">
-        <Field label={t("fieldKcal")}><input className="input" inputMode="numeric" autoFocus value={k} onChange={(e) => setK(e.target.value)} placeholder={mode === "set" && curK ? String(curK) : "650"} /></Field>
+        <Field label={t("fieldKcal")}><input className="input" inputMode="numeric" value={k} onChange={(e) => setK(e.target.value)} placeholder={mode === "set" && curK ? String(curK) : "650"} /></Field>
         <Field label={t("fieldProtein")}><input className="input" inputMode="numeric" value={p} onChange={(e) => setP(e.target.value)} placeholder={mode === "set" && curP ? String(curP) : "45"} /></Field>
       </div>
+      {mode === "add" && (
+        <>
+          <button type="button" className="chip sm" aria-pressed={asMeal} onClick={() => setAsMeal((x) => !x)} style={{ alignSelf: "flex-start" }}>★ {t("saveAsMeal")}</button>
+          {asMeal && <input className="input" value={mealName} onChange={(e) => setMealName(e.target.value)} placeholder={t("mealNamePh")} aria-label={t("mealNamePh")} />}
+        </>
+      )}
       <Field label={t("forDay")}><DayPicker value={date} onChange={setDate} /></Field>
       <div className="small muted">{t("soFar", { k: fmtNum(curK), p: fmtNum(curP) })}{tg?.kcal ? ` · ${t("targetsLine", { k: fmtNum(tg.kcal), p: fmtNum(tg.protein) })}` : ""}</div>
       <button className="btn primary lg" onClick={save} disabled={busy}>{busy ? t("saving") : t("save")}</button>
@@ -181,7 +232,7 @@ function BurnForm() {
 
 const TITLES = {
   log: "logTitle", weigh: "weighTitle", measure: "measureTitle", fuel: "fuelSheet", burn: "burnSheet", sync: "syncTitle",
-  scan: "scanTitle", account: "accountSheet", invite: "inviteTitle", profile: "profileTitle", swap: "swapSheet", setup: "setupTitle", addEx: "addExTitle", exInfo: "exInfoTitle",
+  scan: "scanTitle", account: "accountSheet", invite: "inviteTitle", profile: "profileTitle", swap: "swapSheet", setup: "setupTitle", addEx: "addExTitle", exInfo: "exInfoTitle", summary: "sumTitle", weekly: "wkTitle",
 };
 
 export default function Sheets() {
@@ -193,7 +244,7 @@ export default function Sheets() {
     : null;
   const body = {
     log: <LogMenu />, weigh: <WeighForm />, measure: <MeasureForm />, fuel: <FuelForm />, burn: <BurnForm />, sync: <WatchSync />,
-    scan: <ScanForm />, account: <Account />, invite: <InviteForm />, profile: <ProfileForm />, swap: <SwapSheet ctx={sheet} />, setup: <Setup />, addEx: <AddExercise ctx={sheet} />, exInfo: <ExerciseInfo ctx={sheet} />,
+    scan: <ScanForm />, account: <Account />, invite: <InviteForm />, profile: <ProfileForm />, swap: <SwapSheet ctx={sheet} />, setup: <Setup />, addEx: <AddExercise ctx={sheet} />, exInfo: <ExerciseInfo ctx={sheet} />, summary: <Summary ctx={sheet} />, weekly: <Weekly ctx={sheet} />,
   }[sheet.name];
   return (
     <Sheet title={t(TITLES[sheet.name] || "logTitle")} onClose={closeSheet} onBack={back} closeLabel={t("close")} backLabel={t("back")} rtl={rtl}>

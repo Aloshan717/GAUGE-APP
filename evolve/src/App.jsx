@@ -2,9 +2,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppCtx } from "./ctx.js";
 import { store, auth, sb, setNotify, setApiLang, readAuthHash, isMissingTable } from "./lib/api.js";
+import { queued, flush, onQueue, remapDone } from "./lib/queue.js";
 import { makeT } from "./lib/i18n.js";
 import { goalTracks } from "./lib/core.js";
-import { currentBody, maintenance, dailyTargets, feasibility, consistency, coachTips } from "./lib/body.js";
+import { currentBody, maintenance, dailyTargets, feasibility, consistency, coachTips, localISO } from "./lib/body.js";
+import { goalKey } from "./lib/weekly.js";
 import { Icon, Logo } from "./ui.jsx";
 import SignIn, { SetPassword } from "./screens/SignIn.jsx";
 import Home from "./screens/Home.jsx";
@@ -14,7 +16,7 @@ import Goal from "./screens/Goal.jsx";
 import Planner from "./screens/Planner.jsx";
 import Sheets from "./sheets/Sheets.jsx";
 
-export const VERSION = "1.3.0";
+export const VERSION = "1.4.0";
 
 const EMPTY = { weights: [], inbody: [], measurements: [], logs: [], sessions: [], goal: null, days: [], profile: null, plan: null, planRow: null };
 
@@ -27,6 +29,16 @@ function initialTheme() {
   const s = store.get("evolve_theme");
   if (s === "light" || s === "dark") return s;
   return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function Toast({ value, onDone }) {
+  if (!value.action) return <div className="toast" role="status">{value}</div>;
+  return (
+    <div className="toast row" role="status" style={{ gap: 12 }}>
+      <span>{value.msg}</span>
+      <button className="toast-act" onClick={() => { value.action.run(); onDone(); }}>{value.action.label}</button>
+    </div>
+  );
 }
 
 export default function App() {
@@ -59,6 +71,9 @@ export default function App() {
     if (next) store.setJson(`evolve_plandraft_${ownerRef.current}`, next); else store.del(`evolve_plandraft_${ownerRef.current}`);
     return next;
   }), []);
+  // The calorie target in use: it only changes at the weekly check-in (or a new goal).
+  const [kcalLock, setKcalLockRaw] = useState(() => store.json(`evolve_kcal_lock_${store.json("evolve_user")?.id}`));
+  const setKcalLock = useCallback((v) => { setKcalLockRaw(v); if (ownerRef.current) store.setJson(`evolve_kcal_lock_${ownerRef.current}`, v); }, []);
   const [banner, setBanner] = useState("");
   const [setupMissing, setSetupMissing] = useState(false);
   const ownerRef = useRef(user?.id || null);
@@ -77,8 +92,9 @@ export default function App() {
     setApiLang(lang);
   }, [lang]);
 
-  const toast = useCallback((msg) => { setToastMsg(msg); }, []);
-  useEffect(() => { if (!toastMsg) return; const id = setTimeout(() => setToastMsg(""), 3200); return () => clearTimeout(id); }, [toastMsg]);
+  // toast("Saved") or toast("Added", { label: "Undo", run }) — the action keeps it up longer.
+  const toast = useCallback((msg, action) => { setToastMsg(action ? { msg, action } : msg); }, []);
+  useEffect(() => { if (!toastMsg) return; const id = setTimeout(() => setToastMsg(""), toastMsg.action ? 6000 : 3200); return () => clearTimeout(id); }, [toastMsg]);
   useEffect(() => { setNotify((m) => setToastMsg(m)); }, []);
 
   // Session from an email link
@@ -112,6 +128,7 @@ export default function App() {
         if (ownerRef.current) setData(EMPTY);
         setTrainSessionRaw(store.json(`evolve_train_${u.id}`));
         setPlanDraftRaw(store.json(`evolve_plandraft_${u.id}`));
+        setKcalLockRaw(store.json(`evolve_kcal_lock_${u.id}`));
       }
       ownerRef.current = u.id;
       setUser(u);
@@ -158,13 +175,31 @@ export default function App() {
     });
   }, [t]);
 
+  // Saved offline (no signal at the gym): send it as soon as we're online again.
+  const [pending, setPending] = useState(() => queued(store.json("evolve_user")?.id).length);
+  useEffect(() => onQueue(() => setPending(queued(ownerRef.current).length)), []);
+  const flushQueue = useCallback(async () => {
+    const uid = ownerRef.current;
+    if (!uid || !queued(uid).length) return;
+    const r = await flush(uid);
+    if (r.sent) {
+      setTrainSession((s) => (s ? remapDone(s, r.ids, r.left === 0) : s));
+      if (r.refused.length) setToastMsg(r.refused[0]);
+      refresh();
+    }
+    setPending(queued(uid).length);
+  }, [refresh, setTrainSession]);
+
   useEffect(() => {
     if (mode !== "app") return;
-    (async () => { const u = await loadUser(); if (u?.id) refresh(u.id); })();
+    (async () => { const u = await loadUser(); if (u?.id) { refresh(u.id); flushQueue(); } })();
     // Reload when the app comes back to the foreground.
-    const onVis = () => { if (document.visibilityState === "visible" && ownerRef.current) refresh(); };
+    const onVis = () => { if (document.visibilityState === "visible" && ownerRef.current) { refresh(); flushQueue(); } };
+    const onOnline = () => flushQueue();
     document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
+    window.addEventListener("online", onOnline);
+    const retry = setInterval(() => { if (queued(ownerRef.current).length) flushQueue(); }, 20000);
+    return () => { document.removeEventListener("visibilitychange", onVis); window.removeEventListener("online", onOnline); clearInterval(retry); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
@@ -193,12 +228,23 @@ export default function App() {
     const body = currentBody({ weights: data.weights, scans: data.inbody });
     const tracks = goalTracks({ goal: data.goal, weights: data.weights, scans: data.inbody, now });
     const maint = maintenance({ profile: data.profile || {}, body, days: data.days, sessions: data.sessions, weights: data.weights, scans: data.inbody, now });
-    const targets = dailyTargets({ goal: data.goal, body, maint, profile: data.profile || {}, now });
+    const auto = dailyTargets({ goal: data.goal, body, maint, profile: data.profile || {}, now });
+    const gk = goalKey(data.goal);
+    const lock = auto?.kcal && kcalLock && kcalLock.goalKey === gk ? kcalLock : null;
+    const targets = lock ? { ...auto, autoKcal: auto.kcal, kcal: lock.kcal, lock } : auto;
     const feas = feasibility({ goal: data.goal, body, profile: data.profile || {}, now });
     const fit = consistency({ goal: data.goal, body });
     const tips = coachTips({ goal: data.goal, body, targets, tracks, days: data.days, weights: data.weights, scans: data.inbody, now });
-    return { body, tracks, maint, targets, feas, fit, tips };
-  }, [data]);
+    return { body, tracks, maint, targets, feas, fit, tips, goalKey: gk };
+  }, [data, kcalLock]);
+
+  // First time (or a new goal): lock today's target so it doesn't drift day to day.
+  useEffect(() => {
+    const tg = derived.targets;
+    if (mode === "app" && ownerRef.current && tg?.kcal && !tg.lock && derived.goalKey) {
+      setKcalLock({ kcal: tg.kcal, goalKey: derived.goalKey, since: localISO() });
+    }
+  }, [derived, mode, setKcalLock]);
 
   const openSheet = useCallback((name, opts = {}) => setSheet({ name, ...opts }), []);
   const closeSheet = useCallback(() => setSheet(null), []);
@@ -206,7 +252,7 @@ export default function App() {
   const ctx = {
     t, lang, theme, rtl: lang === "ar", user, data, setData, derived, refresh, saveProfile, setupMissing,
     tab, setTab, openSheet, closeSheet, sheet, toast, changeLang, changeTheme, signOutLocal, version: VERSION,
-    trainSession, setTrainSession, planDraft, setPlanDraft,
+    trainSession, setTrainSession, planDraft, setPlanDraft, pending, flushQueue, kcalLock, setKcalLock,
   };
 
   if (mode === "signin") return <AppCtx.Provider value={ctx}><SignIn onSignedIn={() => setMode("app")} /></AppCtx.Provider>;
@@ -222,7 +268,7 @@ export default function App() {
       <AppCtx.Provider value={ctx}>
         <Planner />
         {sheet && <Sheets />}
-        {toastMsg && <div className="toast" role="status">{toastMsg}</div>}
+        {toastMsg && <Toast value={toastMsg} onDone={() => setToastMsg("")} />}
       </AppCtx.Provider>
     );
   }
@@ -272,7 +318,7 @@ export default function App() {
         </nav>
       </div>
       {sheet && <Sheets />}
-      {toastMsg && <div className="toast" role="status">{toastMsg}</div>}
+      {toastMsg && <Toast value={toastMsg} onDone={() => setToastMsg("")} />}
     </AppCtx.Provider>
   );
 }
