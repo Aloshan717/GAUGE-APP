@@ -13,6 +13,8 @@ import Setup from "./Setup.jsx";
 import AddExercise from "./AddExercise.jsx";
 import WatchSync from "./WatchSync.jsx";
 import { myMeals, saveMeal, deleteMeal, addMealTo, restoreDay } from "../lib/meals.js";
+import { itemsFor, addItem, removeItem } from "../lib/foodlog.js";
+import FoodLog from "./FoodLog.jsx";
 import ExerciseInfo from "./ExerciseInfo.jsx";
 import Summary from "./Summary.jsx";
 import Weekly from "./Weekly.jsx";
@@ -122,8 +124,9 @@ export function MealChips({ date, row, onAdded, limit }) {
     const { error, before } = await addMealTo({ userId: user.id, date, meal, row });
     setBusy(false);
     if (error) return;
+    const itemId = addItem(date, { kcal: meal.kcal, protein: meal.protein, name: meal.name });
     await refresh();
-    toast(t("mealAdded", { name: meal.name }), { label: t("undo"), run: async () => { await restoreDay({ userId: user.id, date, before }); refresh(); } });
+    toast(t("mealAdded", { name: meal.name }), { label: t("undo"), run: async () => { await restoreDay({ userId: user.id, date, before }); removeItem(date, itemId); refresh(); } });
     onAdded?.();
   };
   const shown = limit ? meals.slice(0, limit) : meals;
@@ -137,7 +140,7 @@ export function MealChips({ date, row, onAdded, limit }) {
         {shown.map((m) => (
           <button key={m.name} type="button" className="meal-chip" disabled={busy} onClick={() => (edit ? null : add(m))} aria-label={`${t("add")} ${m.name}`}>
             <span className="n">{m.name}</span>
-            <span className="k ltr">{m.kcal ? `${m.kcal} ${t("kcal")}` : ""}{m.kcal && m.protein ? " · " : ""}{m.protein ? `${m.protein} ${t("g")}` : ""}</span>
+            <span className="k">{m.kcal ? `${m.kcal} ${t("kcal")}` : ""}{m.kcal && m.protein ? " · " : ""}{m.protein ? `${m.protein} ${t("g")}` : ""}</span>
             {edit && <span className="x" role="button" aria-label={`${t("del")} ${m.name}`} onClick={(e) => { e.stopPropagation(); deleteMeal(m.name); setRev((r) => r + 1); }}><Icon name="close" size={12} stroke={3} /></span>}
           </button>
         ))}
@@ -146,9 +149,11 @@ export function MealChips({ date, row, onAdded, limit }) {
   );
 }
 
-function FuelForm() {
-  const { t, data, derived, refresh, closeSheet, toast, user } = useApp();
-  const [date, setDate] = useState(localISO());
+function FuelForm({ ctx }) {
+  const { t, lang, data, derived, refresh, closeSheet, openSheet, toast, user } = useApp();
+  const [date, setDate] = useState(ctx?.date || localISO());
+  const [armed, setArmed] = useState(null);
+  const [, setRev] = useState(0);
   const [mode, setMode] = useState("add");
   const [k, setK] = useState("");
   const [p, setP] = useState("");
@@ -172,8 +177,27 @@ function FuelForm() {
     setBusy(false);
     if (error) return;
     if (asMeal && mealName.trim() && mode === "add") saveMeal({ name: mealName, kcal: dk || 0, protein: dp || 0 });
-    await refresh(); toast(asMeal && mealName.trim() && mode === "add" ? t("mealSaved", { name: mealName.trim() }) : t("saved")); closeSheet();
+    addItem(date, mode === "add"
+      ? { kcal: dk || 0, protein: dp || 0, name: asMeal ? mealName : "" }
+      : { kcal: next.kcal_in, protein: next.protein_g, kind: "set" });
+    await refresh(); toast(asMeal && mealName.trim() && mode === "add" ? t("mealSaved", { name: mealName.trim() }) : t("saved"));
+    if (ctx?.backTo) openSheet(ctx.backTo.name, ctx.backTo.opts); else closeSheet();
   };
+  // Take back one entry: the day's totals go down by it.
+  const items = itemsFor(date);
+  const known = items.reduce((a, x) => ({ k: a.k + x.kcal, p: a.p + x.protein }), { k: 0, p: 0 });
+  const earlier = items.some((x) => x.kind === "set") ? 0 : Math.max(0, curK - known.k);
+  const removeEntry = async (it) => {
+    if (armed !== it.id) { setArmed(it.id); return; }
+    setArmed(null);
+    const { error } = await sb.upsert("ev_days", { user_id: user.id, date, kcal_in: Math.max(0, Math.round(curK - it.kcal)), protein_g: Math.max(0, Math.round(curP - it.protein)), updated_at: new Date().toISOString() }, "user_id,date");
+    if (error) return;
+    removeItem(date, it.id);
+    setRev((r) => r + 1);
+    await refresh();
+    toast(t("flRemoved"));
+  };
+  const time = (ms) => new Intl.DateTimeFormat(lang === "ar" ? "ar-SA-u-nu-latn" : "en-GB", { hour: "numeric", minute: "2-digit" }).format(new Date(ms));
   return (
     <>
       <div className="small sub">{t("fuelIntro")}</div>
@@ -192,6 +216,25 @@ function FuelForm() {
       <Field label={t("forDay")}><DayPicker value={date} onChange={setDate} /></Field>
       <div className="small muted">{t("soFar", { k: fmtNum(curK), p: fmtNum(curP) })}{tg?.kcal ? ` · ${t("targetsLine", { k: fmtNum(tg.kcal), p: fmtNum(tg.protein) })}` : ""}</div>
       <button className="btn primary lg" onClick={save} disabled={busy}>{busy ? t("saving") : t("save")}</button>
+      {(items.length > 0 || earlier > 0) && (
+        <div className="fl-items">
+          <div className="label" style={{ margin: 0 }}>{t("flEntries", { date: fmtDate(date, lang) })}</div>
+          {items.map((it) => (
+            <div key={it.id} className="fl-item">
+              <span className="grow">
+                <span className="strong">{it.name || (it.kind === "set" ? t("flSetTo") : t("flAdded"))}</span>
+                <span className="small muted"> · {time(it.at)}</span>
+              </span>
+              <span className="small strong">{fmtNum(it.kcal)} {t("kcal")}{it.protein ? ` · ${fmtNum(it.protein)} ${t("g")}` : ""}</span>
+              <button type="button" className={armed === it.id ? "btn danger sm" : "del"} onClick={() => removeEntry(it)} onBlur={() => setArmed(null)} aria-label={`${t("del")} ${it.name || ""}`}>
+                {armed === it.id ? t("delQ") : <Icon name="trash" size={16} />}
+              </button>
+            </div>
+          ))}
+          {earlier > 0 && <div className="small muted">{t("flEarlier", { k: fmtNum(earlier) })}</div>}
+        </div>
+      )}
+      <button className="link" style={{ alignSelf: "center" }} onClick={() => openSheet("foodlog")}>{t("flOpen")}</button>
     </>
   );
 }
@@ -232,7 +275,7 @@ function BurnForm() {
 
 const TITLES = {
   log: "logTitle", weigh: "weighTitle", measure: "measureTitle", fuel: "fuelSheet", burn: "burnSheet", sync: "syncTitle",
-  scan: "scanTitle", account: "accountSheet", invite: "inviteTitle", profile: "profileTitle", swap: "swapSheet", setup: "setupTitle", addEx: "addExTitle", exInfo: "exInfoTitle", summary: "sumTitle", weekly: "wkTitle",
+  scan: "scanTitle", account: "accountSheet", invite: "inviteTitle", profile: "profileTitle", swap: "swapSheet", setup: "setupTitle", addEx: "addExTitle", exInfo: "exInfoTitle", summary: "sumTitle", weekly: "wkTitle", foodlog: "flTitle",
 };
 
 export default function Sheets() {
@@ -243,8 +286,8 @@ export default function Sheets() {
     : sheet.backTo ? () => openSheet(sheet.backTo.name, sheet.backTo.opts)
     : null;
   const body = {
-    log: <LogMenu />, weigh: <WeighForm />, measure: <MeasureForm />, fuel: <FuelForm />, burn: <BurnForm />, sync: <WatchSync />,
-    scan: <ScanForm />, account: <Account />, invite: <InviteForm />, profile: <ProfileForm />, swap: <SwapSheet ctx={sheet} />, setup: <Setup />, addEx: <AddExercise ctx={sheet} />, exInfo: <ExerciseInfo ctx={sheet} />, summary: <Summary ctx={sheet} />, weekly: <Weekly ctx={sheet} />,
+    log: <LogMenu />, weigh: <WeighForm />, measure: <MeasureForm />, fuel: <FuelForm ctx={sheet} key={sheet.date || "today"} />, burn: <BurnForm />, sync: <WatchSync />,
+    scan: <ScanForm />, account: <Account />, invite: <InviteForm />, profile: <ProfileForm />, swap: <SwapSheet ctx={sheet} />, setup: <Setup />, addEx: <AddExercise ctx={sheet} />, exInfo: <ExerciseInfo ctx={sheet} />, summary: <Summary ctx={sheet} />, weekly: <Weekly ctx={sheet} />, foodlog: <FoodLog />,
   }[sheet.name];
   return (
     <Sheet title={t(TITLES[sheet.name] || "logTitle")} onClose={closeSheet} onBack={back} closeLabel={t("close")} backLabel={t("back")} rtl={rtl}>

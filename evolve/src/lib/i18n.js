@@ -82,6 +82,17 @@ export const STR = {
     ciEarly: "Your goal is new — the first check-in comes after 2 weeks of data.", ciNoGoal: "Set a goal to get calorie check-ins.",
     ciRules: "Your target only changes when you tap Apply, never more than 150 kcal at a time, and never below a safe minimum.",
     lockNote: "Set on {date} — changes only at your weekly check-in", lockAuto: "Calculated from today's data: {k} kcal", lockUse: "Use it now",
+
+    // Food log
+    flTitle: "Food log", flOpen: "Open your food log", flOpenShort: "Food log", flWeek: "Last 7 days", flWeekShort: "Last 7 days",
+    flTotal: "kcal in total", flAvg: "kcal a day (avg)", flVsTarget: "vs target a day", flLogged: "Logged {n} of 7 days",
+    flProtein: "protein {p} g a day (target {t})", flDeficit: "Burn {b} a day → about {d} kcal a day under it (≈ {k} kg a week).",
+    flSurplus: "Burn {b} a day → about {d} kcal a day over it (≈ +{k} kg a week).", flNone: "Nothing logged in the last 7 days.",
+    flTable: "Calories by day", flDay: "Day", flPro: "Protein", flBurn: "Burn", flDiff: "± target", flNotLogged: "not logged",
+    flHint: "Tap a day to see its entries or fix it. ± target is against your current target ({k} kcal).",
+    flAvgLine: "Average {k} kcal a day ({n}/7 days)", flTotalLine: "{k} kcal in total", flVsLine: "{d} a day vs target",
+    flEntries: "Entries · {date}", flAdded: "Added", flSetTo: "Day total set", flEarlier: "Earlier entries: {k} kcal",
+    flRemoved: "Entry removed",
     burnYesterday: "Burned yesterday", burnToday: "Burned today", noBurn: "No burn logged yet", addFuel: "+ Add calories & protein",
     noTargets: "Set a goal to get daily targets.", needProfile: "Add your sex, age and height so Evolve can work out your calories.", addProfile: "Add profile",
     trends: "Trends", lastNDays: "Last {n} days", changeIn: "{d} {u} in {n} days", eta: "ETA {date}", etaReached: "Reached", targetTxt: "Target {v}", noTrend: "Not enough readings yet",
@@ -343,6 +354,16 @@ export const STR = {
     ciEarly: "هدفك جديد — أول مراجعة بعد أسبوعين من البيانات.", ciNoGoal: "حط هدف عشان تجيك مراجعة السعرات.",
     ciRules: "هدفك ما يتغيّر إلا لما تضغط «اعتمد»، وبحد أقصى ١٥٠ سعرة كل مرة، وما ينزل تحت الحد الآمن.",
     lockNote: "محدّد من {date} — يتغيّر بس في المراجعة الأسبوعية", lockAuto: "المحسوب من بيانات اليوم: {k} سعرة", lockUse: "استخدمه الحين",
+
+    flTitle: "سجل الأكل", flOpen: "افتح سجل الأكل", flOpenShort: "سجل الأكل", flWeek: "آخر 7 أيام", flWeekShort: "آخر 7 أيام",
+    flTotal: "سعرة بالمجموع", flAvg: "سعرة باليوم (متوسط)", flVsTarget: "عن الهدف باليوم", flLogged: "سجّلت {n} من 7 أيام",
+    flProtein: "البروتين {p} غ باليوم (الهدف {t})", flDeficit: "حرقك {b} باليوم ← أقل منه بـ {d} سعرة باليوم تقريباً (≈ {k} كجم بالأسبوع).",
+    flSurplus: "حرقك {b} باليوم ← أكثر منه بـ {d} سعرة باليوم تقريباً (≈ +{k} كجم بالأسبوع).", flNone: "ما سجّلت أكل آخر 7 أيام.",
+    flTable: "السعرات حسب اليوم", flDay: "اليوم", flPro: "بروتين", flBurn: "حرق", flDiff: "± الهدف", flNotLogged: "ما انسجّل",
+    flHint: "اضغط على أي يوم تشوف إدخالاته أو تعدّله. «± الهدف» مقارنة بهدفك الحالي ({k} سعرة).",
+    flAvgLine: "المتوسط {k} سعرة باليوم ({n}/7 أيام)", flTotalLine: "المجموع {k} سعرة", flVsLine: "{d} باليوم عن الهدف",
+    flEntries: "الإدخالات · {date}", flAdded: "إضافة", flSetTo: "تحديد مجموع اليوم", flEarlier: "إدخالات قبل: {k} سعرة",
+    flRemoved: "انحذف الإدخال",
     burnYesterday: "الحرق أمس", burnToday: "الحرق اليوم", noBurn: "ما انسجل حرق للحين", addFuel: "+ أضف السعرات والبروتين",
     noTargets: "حدد هدف عشان تطلع لك أهداف يومية.", needProfile: "أضف جنسك وعمرك وطولك عشان Evolve يحسب سعراتك.", addProfile: "أضف ملفك",
     trends: "الاتجاهات", lastNDays: "آخر {n} يوم", changeIn: "{d} {u} في {n} يوم", eta: "متوقع {date}", etaReached: "وصلت", targetTxt: "الهدف {v}", noTrend: "القراءات للحين قليلة",
@@ -533,6 +554,7 @@ export function fmtDate(iso, lang = "en", style = "short") {
   if (!iso) return "—";
   const d = new Date(String(iso).slice(0, 10) + "T12:00:00");
   if (isNaN(d.getTime())) return "—";
+  if (style === "wday") return new Intl.DateTimeFormat(LOCALE[lang] || LOCALE.en, { weekday: lang === "ar" ? "long" : "short" }).format(d);
   const opts = style === "long" ? { day: "numeric", month: "short", year: "numeric" }
     : style === "weekday" ? { weekday: "long", day: "numeric", month: "long" }
     : style === "day" ? { weekday: "short", day: "numeric", month: "short" }
@@ -545,6 +567,8 @@ export const fmtNum = (n, digits = 0) =>
   n == null || !isFinite(n) ? "—" : Number(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: digits });
 
 export const signed = (n, digits = 1) => (n == null ? "—" : `${n > 0 ? "+" : n < 0 ? "−" : ""}${fmtNum(Math.abs(n), digits)}`);
+// Same, kept in one piece with the sign on the left inside Arabic text.
+export const signedIso = (n, digits = 0) => (n == null ? "—" : `\u2066${signed(n, digits)}\u2069`);
 
 // Two names → "A and B"; three → "A, B and C".
 export function joinList(items, t) {

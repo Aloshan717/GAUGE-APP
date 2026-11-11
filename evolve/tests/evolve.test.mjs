@@ -9,6 +9,7 @@ import { FRONT, BACK } from "../src/lib/bodymap.js";
 import { e1rm, bestOf, recordKind, recordIndex, volumeOf, restSeconds } from "../src/lib/train.js";
 import { reportWeek, weekWeight, calorieCheckin, weeklyReport, goalKey, MAX_STEP } from "../src/lib/weekly.js";
 import { remapDone } from "../src/lib/queue.js";
+import { dayRows, lastSeven } from "../src/lib/foodlog.js";
 import { restingEnergy, formulaMaintenance, maintenance, dailyTargets, goalDirection, feasibility, consistency, currentBody, adaptiveMaintenance, watchAverage, coachTips, localISO } from "../src/lib/body.js";
 import burnHandler, { toKcal, localDate } from "../api/burn.js";
 import { STR } from "../src/lib/i18n.js";
@@ -539,6 +540,31 @@ test("weekly report: food average, workouts, sets and records of the week", () =
   assert.equal(r.training.workouts, 2); assert.equal(r.training.sets, 3);
   assert.deepEqual(r.training.records.map((x) => [x.id, x.kg]), [["bench_press", 82.5]]);
   assert.equal(r.checkin.status, "no-goal");
+});
+
+// ── Food log ──
+test("food log: a row per day, newest first, with burn and ± target", () => {
+  const days = [{ date: "2026-11-11", kcal_in: 800 }, { date: "2026-11-10", kcal_in: 2400, protein_g: 160, burn_kcal: 2700 }];
+  const rows = dayRows({ days, sessions: [{ date: "2026-11-09", day_kcal: 2500 }], today: "2026-11-11", n: 5, target: 2200 });
+  assert.deepEqual(rows.map((r) => r.date), ["2026-11-11", "2026-11-10", "2026-11-09", "2026-11-08", "2026-11-07"]);
+  assert.equal(rows[0].today, true);
+  assert.equal(rows[1].diff, 200); assert.equal(rows[1].burn, 2700);
+  assert.equal(rows[2].logged, false); assert.equal(rows[2].burn, 2500); assert.equal(rows[2].diff, null);
+});
+test("last 7 days: full days only (today is still going), averages over the days you logged", () => {
+  const days = [
+    { date: "2026-11-11", kcal_in: 900 },                                        // today — not counted
+    { date: "2026-11-10", kcal_in: 2100, protein_g: 150, burn_kcal: 2600 },
+    { date: "2026-11-09", kcal_in: 2500, protein_g: 170 },
+    { date: "2026-11-04", kcal_in: 1900, burn_kcal: 2500 },
+    { date: "2026-11-03", kcal_in: 3000 },                                        // 8 days ago — not counted
+  ];
+  const w = lastSeven({ days, sessions: [], today: "2026-11-11", target: 2200, proteinTarget: 170 });
+  assert.equal(w.from, "2026-11-04"); assert.equal(w.to, "2026-11-10");
+  assert.equal(w.logged, 3); assert.equal(w.total, 6500); assert.equal(w.avg, 2167); assert.equal(w.vsTarget, -33);
+  assert.equal(w.protein, 160);                                                  // days without protein don't pull it down
+  assert.equal(w.burn, 2550); assert.equal(w.balance, -550); assert.equal(w.kgPerWeek, -0.5);
+  assert.equal(w.rows.length, 7); assert.equal(w.rows[0].date, "2026-11-04");
 });
 
 // ── Every text exists in both languages ──

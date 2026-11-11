@@ -2,13 +2,14 @@
 import React from "react";
 import { useApp } from "../ctx.js";
 import { Icon, Ring, Spark, Bar } from "../ui.jsx";
-import { fmtDate, fmtNum, signed, joinList } from "../lib/i18n.js";
+import { fmtDate, fmtNum, signed, signedIso, joinList } from "../lib/i18n.js";
 import { localISO, addDays, dayRow, burnByDate, arrival, changeOver } from "../lib/body.js";
 import { coerceNumber } from "../lib/core.js";
 import { MealChips } from "../sheets/Sheets.jsx";
 import { store } from "../lib/api.js";
 import { reportWeek, hasContent } from "../lib/weekly.js";
 import { useWeekly, seenKey, weekRange } from "../sheets/Weekly.jsx";
+import { WeekBars, useWeekFood } from "../sheets/FoodLog.jsx";
 
 const COLOR = { weight: "var(--accent)", bodyFat: "var(--fat)", muscle: "var(--muscle)" };
 const STATUS_COLOR = { ok: "var(--ok)", warn: "var(--warn)", bad: "var(--bad)", neutral: "var(--accent)" };
@@ -38,6 +39,7 @@ export default function Home({ name }) {
   // ── Weekly report (until you've opened it) ──
   const week = reportWeek(localISO());
   const wr = useWeekly(week);
+  const food7 = useWeekFood();
   const unseen = !!user?.id && store.get(seenKey(user.id)) !== week.key && !sheet;
   const weeklyCard = unseen && hasContent(wr) ? (
     <div className="card accent">
@@ -181,8 +183,21 @@ export default function Home({ name }) {
         <span className="row small sub" style={{ gap: 8 }}><Icon name="flame" size={18} color="var(--fat)" />{burnToday ? t("burnToday") : burnYest ? t("burnYesterday") : t("noBurn")}</span>
         {(burnToday || burnYest) && <span className="num" style={{ fontSize: 20 }}>{fmtNum(burnToday || burnYest)} <span className="small muted" style={{ fontFamily: "inherit" }}>{t("kcal")}</span></span>}
       </button>
+      {food7.logged > 0 && (
+        <button type="button" className="fl-week" onClick={() => openSheet("foodlog")} aria-label={t("flOpen")}>
+          <span className="row between" style={{ width: "100%" }}>
+            <span className="small strong sub">{t("flWeekShort")}</span>
+            <span className="small strong">{t("flAvgLine", { k: fmtNum(food7.avg), n: food7.logged })}</span>
+          </span>
+          <WeekBars week={food7} height={38} />
+          <span className="small muted" style={{ width: "100%" }}>{t("flTotalLine", { k: fmtNum(food7.total) })}{food7.vsTarget != null ? ` · ${t("flVsLine", { d: signedIso(food7.vsTarget) })}` : ""}</span>
+        </button>
+      )}
       <MealChips date={today} row={row} limit={4} />
-      <button className="btn soft" onClick={() => openSheet("fuel")}>{t("addFuel")}</button>
+      <div className="grid2">
+        <button className="btn soft" onClick={() => openSheet("fuel")}>{t("addFuel")}</button>
+        <button className="btn" onClick={() => openSheet("foodlog")}><Icon name="file" size={17} />{t("flOpenShort")}</button>
+      </div>
     </div>
   );
 
