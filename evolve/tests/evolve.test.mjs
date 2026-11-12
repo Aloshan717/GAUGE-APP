@@ -11,6 +11,7 @@ import { reportWeek, weekWeight, calorieCheckin, weeklyReport, goalKey, MAX_STEP
 import { remapDone } from "../src/lib/queue.js";
 import { dayRows, lastSeven } from "../src/lib/foodlog.js";
 import { burnWeek, sundayOf } from "../src/lib/burnweek.js";
+import { primeSound, scheduleBeep, cancelBeep } from "../src/lib/sound.js";
 import { restingEnergy, formulaMaintenance, maintenance, dailyTargets, goalDirection, feasibility, consistency, currentBody, adaptiveMaintenance, watchAverage, coachTips, localISO } from "../src/lib/body.js";
 import burnHandler, { toKcal, localDate } from "../api/burn.js";
 import { STR } from "../src/lib/i18n.js";
@@ -661,6 +662,33 @@ test("week burn: missing days stay empty, never below zero, nothing without rest
   assert.deepEqual(w.rows.slice(0, 4).map((r) => r.active), [null, 0, null, null]);
   assert.equal(w.total, 0); assert.equal(w.days, 1); assert.equal(w.today, null);
   assert.equal(burnWeek({ days: [], sessions: [], today: "2026-11-11", resting: null }), null);
+});
+test("rest beep mixes with your music (never pauses it) and lets go of the audio after", () => {
+  const calls = [];
+  class FakeAC {
+    constructor() { this.state = "running"; this.currentTime = 0; this.destination = {}; }
+    resume() { this.state = "running"; calls.push("resume"); }
+    suspend() { this.state = "suspended"; calls.push("suspend"); }
+    createOscillator() { return { type: "", frequency: {}, connect: (g) => g, start() {}, stop() {} }; }
+    createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect: (d) => d }; }
+  }
+  const session = { type: "auto" };
+  Object.defineProperty(globalThis.navigator, "audioSession", { value: session, configurable: true });
+  globalThis.window = { AudioContext: FakeAC };
+  try {
+    primeSound();
+    assert.equal(session.type, "ambient");            // "playback" would stop the music
+    scheduleBeep(Date.now() + 60000);
+    assert.equal(session.type, "ambient");
+    cancelBeep();
+    assert.deepEqual(calls, ["suspend"]);             // audio off again once nothing is waiting
+    primeSound();
+    assert.equal(calls.at(-1), "resume");             // the next ✓ tap wakes it
+    cancelBeep();
+  } finally {
+    delete globalThis.window;
+    delete globalThis.navigator.audioSession;
+  }
 });
 
 // ── Every text exists in both languages ──
