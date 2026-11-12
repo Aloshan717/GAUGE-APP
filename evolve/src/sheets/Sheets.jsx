@@ -18,6 +18,7 @@ import FoodLog from "./FoodLog.jsx";
 import ExerciseInfo from "./ExerciseInfo.jsx";
 import Summary from "./Summary.jsx";
 import Weekly from "./Weekly.jsx";
+import Weeks from "./Weeks.jsx";
 
 function DayPicker({ value, onChange }) {
   const { t } = useApp();
@@ -275,7 +276,7 @@ function BurnForm({ ctx }) {
 
 const TITLES = {
   log: "logTitle", weigh: "weighTitle", measure: "measureTitle", fuel: "fuelSheet", burn: "burnSheet", sync: "syncTitle",
-  scan: "scanTitle", account: "accountSheet", invite: "inviteTitle", profile: "profileTitle", swap: "swapSheet", setup: "setupTitle", addEx: "addExTitle", exInfo: "exInfoTitle", summary: "sumTitle", weekly: "wkTitle", foodlog: "flTitle",
+  scan: "scanTitle", account: "accountSheet", invite: "inviteTitle", profile: "profileTitle", swap: "swapSheet", setup: "setupTitle", addEx: "addExTitle", exInfo: "exInfoTitle", summary: "sumTitle", weekly: "wkTitle", weeks: "wksTitle", foodlog: "flTitle",
 };
 
 export default function Sheets() {
@@ -287,7 +288,7 @@ export default function Sheets() {
     : null;
   const body = {
     log: <LogMenu />, weigh: <WeighForm />, measure: <MeasureForm />, fuel: <FuelForm ctx={sheet} key={sheet.date || "today"} />, burn: <BurnForm ctx={sheet} key={sheet.date || "yesterday"} />, sync: <WatchSync />,
-    scan: <ScanForm />, account: <Account />, invite: <InviteForm />, profile: <ProfileForm />, swap: <SwapSheet ctx={sheet} />, setup: <Setup />, addEx: <AddExercise ctx={sheet} />, exInfo: <ExerciseInfo ctx={sheet} />, summary: <Summary ctx={sheet} />, weekly: <Weekly ctx={sheet} />, foodlog: <FoodLog />,
+    scan: <ScanForm />, account: <Account />, invite: <InviteForm />, profile: <ProfileForm />, swap: <SwapSheet ctx={sheet} />, setup: <Setup />, addEx: <AddExercise ctx={sheet} />, exInfo: <ExerciseInfo ctx={sheet} />, summary: <Summary ctx={sheet} />, weekly: <Weekly ctx={sheet} key={sheet.week?.key || "latest"} />, weeks: <Weeks />, foodlog: <FoodLog />,
   }[sheet.name];
   return (
     <Sheet title={t(TITLES[sheet.name] || "logTitle")} onClose={closeSheet} onBack={back} closeLabel={t("close")} backLabel={t("back")} rtl={rtl}>

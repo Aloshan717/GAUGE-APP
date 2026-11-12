@@ -16,7 +16,6 @@ import { findMine } from "../lib/myex.js";
 import { planDayFor, nextPlanDay, slotMinutes, WEEKDAYS_FULL } from "../lib/plan.js";
 import { localISO } from "../lib/body.js";
 import { coerceNumber } from "../lib/core.js";
-import WeekBurn from "./WeekBurn.jsx";
 
 const L = (lang) => (lang === "ar" ? 1 : 0);
 const MODE_KEY = "evolve_train_mode";
@@ -505,8 +504,6 @@ export default function Train() {
       {data.plan && !planDay && next && (
         <Note kind="plain" icon="info">{t("restDay", { name: next.day.name[L(lang)], day: WEEKDAYS_FULL[next.day.weekday][L(lang)] })}</Note>
       )}
-
-      <WeekBurn />
 
       {!picking ? (
         <>

@@ -10,7 +10,7 @@ import { store } from "../lib/api.js";
 import { reportWeek, hasContent } from "../lib/weekly.js";
 import { useWeekly, seenKey, weekRange } from "../sheets/Weekly.jsx";
 import { useWeekFood } from "../sheets/FoodLog.jsx";
-import WeekBurn, { useResting } from "./WeekBurn.jsx";
+import { useResting } from "../hooks.js";
 import { activeOf } from "../lib/burnweek.js";
 
 const COLOR = { weight: "var(--accent)", bodyFat: "var(--fat)", muscle: "var(--muscle)" };
@@ -192,11 +192,17 @@ export default function Home({ name }) {
       <button className="row between box" style={{ border: "none", width: "100%", color: "inherit", textAlign: "start", gap: 10 }} onClick={() => openSheet("burn")}>
         <span className="col" style={{ gap: 2 }}>
           <span className="row small sub" style={{ gap: 8 }}><Icon name="flame" size={18} color="var(--fat)" />{burnToday ? t("burnToday") : burnYest ? t("burnYesterday") : t("noBurn")}</span>
-          {extraBurn != null && <span className="small muted">{t("burnExtra", { k: fmtNum(extraBurn) })}</span>}
+          {extraBurn != null && <span className="small muted">{t("rpBurnSplit", { b: fmtNum(Math.min(resting, burnToday || burnYest)), m: fmtNum(extraBurn) })}</span>}
         </span>
         {(burnToday || burnYest) && <span className="num" style={{ fontSize: 20, flex: "none" }}>{fmtNum(burnToday || burnYest)} <span className="small muted" style={{ fontFamily: "inherit" }}>{t("kcal")}</span></span>}
       </button>
-      <WeekBurn compact />
+      <button className="row between box" style={{ border: "none", width: "100%", color: "inherit", textAlign: "start", gap: 10 }} onClick={() => openSheet("weekly", { week })} aria-label={t("avgBurnTitle")}>
+        <span className="col" style={{ gap: 2 }}>
+          <span className="row small sub" style={{ gap: 8 }}><Icon name="flame" size={18} color="var(--fat)" />{t("avgBurnTitle")}</span>
+          <span className="small muted">{wr.burn ? (wr.burn.body != null ? t("rpBurnSplit", { b: fmtNum(wr.burn.body), m: fmtNum(wr.burn.moving) }) : weekRange(wr, lang)) : t("avgBurnNone")}</span>
+        </span>
+        {wr.burn && <span className="num" style={{ fontSize: 20, flex: "none" }}>{fmtNum(wr.burn.avg)} <span className="small muted" style={{ fontFamily: "inherit" }}>{t("kcalDay")}</span></span>}
+      </button>
       {food7.logged > 0 && (
         <button type="button" className="row between box" style={{ border: "none", width: "100%", color: "inherit", textAlign: "start", gap: 10 }} onClick={() => openSheet("foodlog")} aria-label={t("flOpen")}>
           <span className="col" style={{ gap: 2 }}>

@@ -7,14 +7,16 @@ import { generatePlan, weeklySets, swapInPlan, toggleKept, setSlotSets, reviewCo
 import { musclesOf, slotMuscles, regionLevels, REGIONS, MUSCLE_LABELS, PARTS, mainView, focusBox, searchExercises, customMuscles, sameAngle } from "../src/lib/muscles.js";
 import { FRONT, BACK } from "../src/lib/bodymap.js";
 import { e1rm, bestOf, recordKind, recordIndex, volumeOf, restSeconds } from "../src/lib/train.js";
-import { reportWeek, weekWeight, calorieCheckin, weeklyReport, goalKey, MAX_STEP } from "../src/lib/weekly.js";
+import { reportWeek, weekWeight, calorieCheckin, weeklyReport, goalKey, MAX_STEP, pastWeeks, weekBefore } from "../src/lib/weekly.js";
 import { remapDone } from "../src/lib/queue.js";
 import { dayRows, lastSeven } from "../src/lib/foodlog.js";
-import { burnWeek, sundayOf } from "../src/lib/burnweek.js";
+import { activeOf } from "../src/lib/burnweek.js";
 import { primeSound, scheduleBeep, cancelBeep } from "../src/lib/sound.js";
 import { restingEnergy, formulaMaintenance, maintenance, dailyTargets, goalDirection, feasibility, consistency, currentBody, adaptiveMaintenance, watchAverage, coachTips, localISO } from "../src/lib/body.js";
 import burnHandler, { toKcal, localDate } from "../api/burn.js";
-import { STR } from "../src/lib/i18n.js";
+import { STR, makeT } from "../src/lib/i18n.js";
+import { reportDoc, docText } from "../src/lib/reportdoc.js";
+import { pdfBytes } from "../src/lib/pdf.js";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
@@ -555,9 +557,11 @@ test("offline sets get their real ids once sent; a refused one shows as not save
 });
 
 // ── Weekly report and calorie check-in ──
-test("the report covers the 7 days before the latest Saturday", () => {
-  assert.deepEqual(reportWeek("2026-11-14"), { key: "2026-11-14", from: "2026-11-07", to: "2026-11-13" });
-  assert.deepEqual(reportWeek("2026-11-13"), { key: "2026-11-07", from: "2026-10-31", to: "2026-11-06" });
+test("the report covers Sunday to Saturday, the week before the latest Sunday", () => {
+  assert.deepEqual(reportWeek("2026-11-15"), { key: "2026-11-15", from: "2026-11-08", to: "2026-11-14" });   // Sunday
+  assert.deepEqual(reportWeek("2026-11-14"), { key: "2026-11-08", from: "2026-11-01", to: "2026-11-07" });   // Saturday
+  assert.deepEqual(pastWeeks("2026-11-12", 3).map((w) => w.from), ["2026-11-01", "2026-10-25", "2026-10-18"]);
+  assert.deepEqual(weekBefore(reportWeek("2026-11-15")), { key: "2026-11-08", from: "2026-11-01", to: "2026-11-07" });
   assert.equal(goalKey(null), null);
   assert.notEqual(goalKey({ id: 1, target_weight: 80 }), goalKey({ id: 1, target_weight: 79 }));
 });
@@ -604,11 +608,105 @@ test("weekly report: food average, workouts, sets and records of the week", () =
     ],
     weights: [], inbody: [], sessions: [], goal: null,
   };
-  const r = weeklyReport({ week: reportWeek("2026-11-14"), data, current: 2200, protein: 170 });
+  const r = weeklyReport({ week: reportWeek("2026-11-15"), data, current: 2200, protein: 170 });
   assert.equal(r.food.days, 2); assert.equal(r.food.kcal, 2200); assert.equal(r.food.protein, 160);
   assert.equal(r.training.workouts, 2); assert.equal(r.training.sets, 3);
   assert.deepEqual(r.training.records.map((x) => [x.id, x.kg]), [["bench_press", 82.5]]);
   assert.equal(r.checkin.status, "no-goal");
+});
+test("weekly report: time, weight moved, sets per muscle, each exercise vs last time, burn, comparison, advice", () => {
+  const set = (date, id, muscle, kg, reps) => ({ date, exercise_id: id, exercise: BY_ID[id].name[0], muscle_group: muscle, weight_kg: kg, reps });
+  const data = {
+    logs: [
+      set("2026-11-03", "bench_press", "Chest", 80, 8), set("2026-11-03", "bench_press", "Chest", 80, 8),
+      set("2026-11-03", "incline_db_curl", "Biceps", 12, 12), set("2026-11-03", "incline_db_curl", "Biceps", 12, 12),
+      set("2026-11-10", "bench_press", "Chest", 82.5, 8), set("2026-11-10", "bench_press", "Chest", 82.5, 8), set("2026-11-10", "bench_press", "Chest", 82.5, 7),
+      set("2026-11-12", "incline_db_curl", "Biceps", 12, 15), set("2026-11-12", "incline_db_curl", "Biceps", 12, 15), set("2026-11-12", "incline_db_curl", "Biceps", 12, 15),
+      set("2026-11-12", "lat_pulldown", "Back", 60, 10),
+    ],
+    sessions: [{ date: "2026-11-10", duration_min: 55 }, { date: "2026-11-12", duration_min: 48 }, { date: "2026-11-03", duration_min: 40 }],
+    days: [
+      { date: "2026-11-08", kcal_in: 2000, protein_g: 120, burn_kcal: 2500 }, { date: "2026-11-09", kcal_in: 2400, protein_g: 130, burn_kcal: 2700 },
+      { date: "2026-11-10", kcal_in: 2200, protein_g: 140, burn_kcal: 2600 }, { date: "2026-11-03", kcal_in: 2600, burn_kcal: 2400 },
+    ],
+    weights: [{ date: "2026-11-02", weight: 86 }, { date: "2026-11-13", weight: 85.4 }], inbody: [], goal: null,
+  };
+  const r = weeklyReport({ week: reportWeek("2026-11-15"), data, current: 2200, protein: 170, resting: 1900 });
+  assert.equal(r.training.minutes, 103); assert.equal(r.training.sessions, 2);
+  assert.equal(r.training.volume, Math.round(82.5 * 8 * 2 + 82.5 * 7 + 12 * 15 * 3 + 60 * 10));
+  assert.deepEqual(r.training.muscles, { Chest: 3, Biceps: 3, Back: 1 });
+  const bench = r.training.exercises.find((x) => x.id === "bench_press");
+  assert.deepEqual([bench.sets, bench.top, bench.prevTop, bench.change, bench.record], [3, 82.5, 80, 2.5, true]);
+  const curl = r.training.exercises.find((x) => x.id === "incline_db_curl");
+  assert.equal(curl.change, 0); assert.equal(curl.next.kind, "up");               // top of 10–15 in every set → go up
+  assert.equal(curl.repsChange, 3);                                                 // same 12 kg, 15 reps vs 12 last time
+  assert.equal(bench.repsChange, null);
+  assert.equal(r.training.exercises[0].muscle, "Chest");                            // ordered by muscle
+  assert.deepEqual([r.burn.avg, r.burn.body, r.burn.moving, r.burn.days], [2600, 1900, 700, 3]);
+  assert.deepEqual(r.balance, { kcal: -400, kgPerWeek: -0.36 });
+  assert.equal(r.food.daily.length, 7); assert.equal(r.food.daily[0].kcal, 2000); assert.equal(r.food.daily[6].kcal, null);
+  assert.equal(r.food.proteinHit, 0);
+  assert.equal(r.weight.delta, -0.6);
+  assert.deepEqual([r.prev.workouts, r.prev.sets, r.prev.minutes, r.prev.kcal], [1, 4, 40, 2600]);
+  const ks = r.recs.map((x) => x.k);
+  assert.ok(ks.includes("recProtein"), ks.join());
+  assert.ok(ks.includes("recLogMore"));
+  assert.ok(ks.includes("recUp"));
+  assert.ok(ks.includes("recSetsLow"));
+  assert.equal(r.recs.find((x) => x.k === "recUp").p.name[0], "Incline dumbbell curl");
+  assert.ok(r.recs.length <= 8);
+  // A week with nothing at all asks for training first.
+  const empty = weeklyReport({ week: reportWeek("2026-11-22"), data, current: 2200, protein: 170, resting: 1900 });
+  assert.equal(empty.recs[0].k, "recNoTraining");
+});
+test("report document: every section, in both languages, and as text to paste anywhere", () => {
+  const set = (date, id, muscle, kg, reps) => ({ date, exercise_id: id, exercise: BY_ID[id].name[0], muscle_group: muscle, weight_kg: kg, reps });
+  const data = {
+    logs: [set("2026-11-03", "bench_press", "Chest", 80, 8), set("2026-11-10", "bench_press", "Chest", 82.5, 8), set("2026-11-12", "lat_pulldown", "Back", 60, 10)],
+    sessions: [{ date: "2026-11-10", duration_min: 75 }],
+    days: [{ date: "2026-11-09", kcal_in: 2400, protein_g: 130, burn_kcal: 2700 }, { date: "2026-11-10", kcal_in: 2200, protein_g: 175, burn_kcal: 2600 }],
+    weights: [{ date: "2026-11-02", weight: 86 }, { date: "2026-11-13", weight: 85.4 }], inbody: [], goal: null,
+  };
+  const r = weeklyReport({ week: reportWeek("2026-11-15"), data, current: 2200, protein: 170, resting: 1900 });
+  for (const lang of ["en", "ar"]) {
+    const t = makeT(lang);
+    const blocks = reportDoc(r, { t, lang, name: "Ali" });
+    const types = blocks.map((b) => b.type);
+    for (const ty of ["title", "sub", "stats", "h2", "bars", "table", "list", "checkin"]) assert.ok(types.includes(ty), `${lang} ${ty}`);
+    assert.equal(blocks.find((b) => b.type === "stats").items.length, 7);
+    const text = docText(blocks);
+    assert.ok(!/\{[a-z0-9]+\}/i.test(text), `${lang}: an unfilled {placeholder} in the text`);
+    assert.ok(text.includes("82.5×8"), lang);
+    assert.ok(text.includes("1,250") || text.includes("1250") || text.length > 400);
+    if (lang === "en") {
+      assert.ok(text.startsWith("# Weekly report"));
+      assert.ok(text.includes("| Exercise | Sets | Best set | vs last time |"));
+      assert.ok(text.includes("Bench press"));
+      assert.ok(text.includes("body 1,900 + movement 750"));     // (2,700 + 2,600) / 2 = 2,650
+      assert.ok(text.includes("## For next week"));
+    } else {
+      assert.ok(text.startsWith("# التقرير الأسبوعي"));
+      assert.ok(text.includes("بنش برس"));
+      assert.ok(text.includes("جسمك 1,900 + حركتك 750"));
+    }
+  }
+});
+test("PDF file: valid structure, one A4 page per image, offsets that match", () => {
+  const fakeJpeg = (n) => ({ bytes: new Uint8Array(Array.from({ length: n }, (_, i) => i % 251)), w: 1190, h: 1684 });
+  const bytes = pdfBytes([fakeJpeg(300), fakeJpeg(200)], { title: "التقرير الأسبوعي 1 Nov" });
+  const text = Buffer.from(bytes).toString("latin1");
+  assert.ok(text.startsWith("%PDF-1.4\n"));
+  assert.ok(text.trimEnd().endsWith("%%EOF"));
+  assert.equal((text.match(/\/Type \/Page /g) || []).length, 2);
+  assert.ok(text.includes("/Count 2"));
+  assert.ok(text.includes("/MediaBox [0 0 595.28 841.89]"));
+  // every xref entry points at "n 0 obj"
+  const xrefAt = Number(text.match(/startxref\n(\d+)/)[1]);
+  assert.ok(text.slice(xrefAt).startsWith("xref"));
+  const entries = text.slice(xrefAt).split("\n").slice(3).filter((l) => /^\d{10} 00000 n $/.test(l));
+  entries.forEach((l, i) => { const at = Number(l.slice(0, 10)); assert.ok(text.slice(at).startsWith(`${i + 1} 0 obj`), `object ${i + 1}`); });
+  assert.equal(entries.length, 1 + 1 + 3 * 2 + 1);   // catalog, pages, 3 per page, info
+  assert.ok(text.includes("/Title <FEFF"));           // the title as UTF-16, so Arabic shows right
 });
 
 // ── Food log ──
@@ -635,44 +733,11 @@ test("last 7 days: full days only (today is still going), averages over the days
   assert.equal(w.burn, 2550); assert.equal(w.balance, -550); assert.equal(w.kgPerWeek, -0.5);
   assert.equal(w.rows.length, 7); assert.equal(w.rows[0].date, "2026-11-04");
 });
-test("week burn: the week starts on Sunday", () => {
-  assert.equal(sundayOf("2026-11-11"), "2026-11-08");   // Wednesday
-  assert.equal(sundayOf("2026-11-08"), "2026-11-08");   // Sunday itself
-  assert.equal(sundayOf("2026-11-14"), "2026-11-08");   // Saturday ends it
-  assert.equal(sundayOf("2026-11-15"), "2026-11-15");   // next Sunday starts a new week
-});
-test("week burn: only active calories (resting taken back out), Sunday to now", () => {
-  const days = [
-    { date: "2026-11-07", burn_kcal: 3000, burn_source: "watch" },   // last Saturday — not this week
-    { date: "2026-11-08", burn_kcal: 2600, burn_source: "watch" },
-    { date: "2026-11-10", burn_kcal: 2750, burn_source: "watch" },
-    { date: "2026-11-11", burn_kcal: 2300, burn_source: "watch" },   // today, so far
-  ];
-  const w = burnWeek({ days, sessions: [{ date: "2026-11-09", day_kcal: 2400 }], today: "2026-11-11", resting: 1900 });
-  assert.equal(w.from, "2026-11-08"); assert.equal(w.to, "2026-11-14");
-  assert.deepEqual(w.rows.map((r) => r.active), [700, 500, 850, 400, null, null, null]);
-  assert.equal(w.total, 2450); assert.equal(w.days, 4);
-  assert.equal(w.avg, 683);                                          // full days only — today is still going
-  assert.equal(w.today, 400);
-  assert.deepEqual(w.rows.map((r) => r.future), [false, false, false, false, true, true, true]);
-  assert.equal(w.rows[3].today, true);
-  // Last week (1–7 Nov): only Saturday came from the watch → its average is that day.
-  assert.equal(w.last.from, "2026-11-01"); assert.equal(w.last.to, "2026-11-07");
-  assert.equal(w.last.days, 1); assert.equal(w.last.avg, 1100); assert.equal(w.last.total, 1100);
-});
-test("week burn: last week's average from its readings; a new Sunday starts at zero", () => {
-  const days = ["2026-11-01", "2026-11-03", "2026-11-05", "2026-11-07"].map((date, i) => ({ date, burn_kcal: 2400 + i * 100, burn_source: "watch" }));
-  const sunday = burnWeek({ days, sessions: [], today: "2026-11-08", resting: 1900 });   // Sunday, nothing yet
-  assert.equal(sunday.total, 0); assert.equal(sunday.days, 0); assert.equal(sunday.avg, null);
-  assert.deepEqual([sunday.last.days, sunday.last.total, sunday.last.avg], [4, 2600, 650]);   // 500 + 600 + 700 + 800
-  const saturday = burnWeek({ days, sessions: [], today: "2026-11-07", resting: 1900 });
-  assert.equal(saturday.total, 2600); assert.equal(saturday.last.days, 0); assert.equal(saturday.last.avg, null);
-});
-test("week burn: missing days stay empty, never below zero, nothing without resting energy", () => {
-  const w = burnWeek({ days: [{ date: "2026-11-09", burn_kcal: 1800, burn_source: "manual" }], sessions: [], today: "2026-11-11", resting: 1900 });
-  assert.deepEqual(w.rows.slice(0, 4).map((r) => r.active), [null, 0, null, null]);
-  assert.equal(w.total, 0); assert.equal(w.days, 1); assert.equal(w.today, null);
-  assert.equal(burnWeek({ days: [], sessions: [], today: "2026-11-11", resting: null }), null);
+test("a day's burn splits into body (resting) + movement", () => {
+  assert.equal(activeOf(2417, 1900), 517);
+  assert.equal(activeOf(1800, 1900), 0);
+  assert.equal(activeOf(2417, null), null);
+  assert.equal(activeOf(null, 1900), null);
 });
 test("rest beep mixes with your music (never pauses it) and lets go of the audio after", () => {
   const calls = [];
