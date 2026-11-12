@@ -50,7 +50,7 @@ export default function ExerciseInfo({ ctx }) {
           {helps.length > 0 && <div><div className="k"><span className="dot s" />{t("helperMuscles")}</div><div className="v">{helps.join(" · ")}</div></div>}
         </div>
       </div>
-      {g && <div className="row wrap" style={{ gap: 6 }}><span className="tag ok">{g.job[L]}</span>{ex.tag === "angle" && <span className="tag muscle">{t("tagAngle")}</span>}</div>}
+      {g && <div className="row wrap" style={{ gap: 6 }}><span className="tag ok">{g.job[L]}</span></div>}
       {ex ? <div className="small sub">{ex.why[L]}</div> : !own?.parts?.length && <div className="small muted">{t("ownExMap")}</div>}
 
       <div className="divider" />

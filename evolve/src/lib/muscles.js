@@ -1,8 +1,11 @@
 // EVOLVE — which muscles an exercise works, for the body map.
 //
 // Every movement group has a default (main muscles + helpers); exercises that
-// load the body differently (close-grip bench → triceps, hammer curls → forearms,
-// deadlifts → the whole back chain) override it.
+// load the body differently override it, down to the part of the muscle:
+// incline curls → the biceps' long head, preacher curls → the short head,
+// hammer curls → brachialis and forearm, overhead extensions → the triceps'
+// long head, pushdowns → the outer heads, wide pulldowns → upper lats,
+// leg extensions → the middle of the quads, RDLs → upper hamstrings…
 import { BY_ID, GROUPS, EXERCISES } from "./exercises.js";
 import { FRONT, BACK } from "./bodymap.js";
 
@@ -14,17 +17,33 @@ export const MUSCLE_LABELS = {
   sideDelts: ["Side shoulders", "الكتف الجانبي"],
   rearDelts: ["Rear shoulders", "الكتف الخلفي"],
   triceps: ["Triceps", "الترايسبس"],
+  tricepsLong: ["Triceps long head", "الرأس الطويل للترايسبس"],
+  tricepsLateral: ["Triceps outer (lateral) head", "الرأس الجانبي للترايسبس (الخارجي)"],
+  tricepsMedial: ["Triceps medial head (above the elbow)", "الرأس الإنسي للترايسبس (فوق الكوع)"],
   biceps: ["Biceps", "البايسبس"],
+  bicepsLong: ["Biceps long head (outer)", "الرأس الطويل للبايسبس (الخارجي)"],
+  bicepsShort: ["Biceps short head (inner)", "الرأس القصير للبايسبس (الداخلي)"],
+  brachialis: ["Brachialis (under the biceps)", "العضلة العضدية (تحت البايسبس)"],
   forearms: ["Forearms", "الساعد"],
+  brachioradialis: ["Top of the forearm (brachioradialis)", "أعلى الساعد (العضدية الكعبرية)"],
+  forearmFlexors: ["Grip (inner forearm)", "القبضة (باطن الساعد)"],
+  forearmExtensors: ["Back of the forearm", "ظهر الساعد"],
   traps: ["Upper traps", "الترابيس العلوي"],
   midBack: ["Mid back", "منتصف الظهر"],
   lats: ["Lats", "المجنص"],
+  upperLats: ["Upper lats (width)", "أعلى المجنص (العرض)"],
+  lowerLats: ["Lower lats", "أسفل المجنص"],
   lowerBack: ["Lower back", "أسفل الظهر"],
   upperAbs: ["Upper abs", "أعلى البطن"],
   lowerAbs: ["Lower abs", "أسفل البطن"],
   obliques: ["Obliques", "الخواصر"],
   quads: ["Quads", "الفخذ الأمامي"],
+  quadsOuter: ["Outer quads", "الفخذ الأمامي الخارجي"],
+  rectusFemoris: ["Middle quads (rectus femoris)", "منتصف الفخذ الأمامي"],
+  quadsInner: ["Inner quads (teardrop)", "الفخذ الأمامي الداخلي (الدمعة)"],
   hamstrings: ["Hamstrings", "الفخذ الخلفي"],
+  hamsUpper: ["Upper hamstrings (under the glutes)", "أعلى الفخذ الخلفي (تحت المؤخرة)"],
+  hamsLower: ["Lower hamstrings (above the knee)", "أسفل الفخذ الخلفي (فوق الركبة)"],
   glutes: ["Glutes", "المؤخرة"],
   abductors: ["Side glutes", "جانب المؤخرة"],
   adductors: ["Inner thighs", "الفخذ الداخلي"],
@@ -33,6 +52,7 @@ export const MUSCLE_LABELS = {
 };
 
 // The parts of the map (bodymap.js) each muscle lights up, front and back.
+// A whole muscle (biceps, triceps, lats, quads…) lights all of its parts.
 export const REGIONS = {
   upperChest: { front: ["chest-upper"] },
   midChest: { front: ["chest-mid"] },
@@ -40,18 +60,34 @@ export const REGIONS = {
   frontDelts: { front: ["delt-front"] },
   sideDelts: { front: ["delt-side-f"], back: ["delt-side-b"] },
   rearDelts: { back: ["delt-rear"] },
-  triceps: { front: ["triceps"], back: ["triceps"] },
-  biceps: { front: ["biceps"] },
-  forearms: { front: ["forearm"], back: ["forearm"] },
+  triceps: { front: ["tri-long"], back: ["tri-long", "tri-lateral", "tri-medial"] },
+  tricepsLong: { front: ["tri-long"], back: ["tri-long"] },
+  tricepsLateral: { back: ["tri-lateral"] },
+  tricepsMedial: { back: ["tri-medial"] },
+  biceps: { front: ["biceps-long", "biceps-short", "brachialis"] },
+  bicepsLong: { front: ["biceps-long"] },
+  bicepsShort: { front: ["biceps-short"] },
+  brachialis: { front: ["brachialis"] },
+  forearms: { front: ["brachiorad", "forearm-flex"], back: ["brachiorad", "forearm-ext"] },
+  brachioradialis: { front: ["brachiorad"], back: ["brachiorad"] },
+  forearmFlexors: { front: ["forearm-flex"] },
+  forearmExtensors: { back: ["forearm-ext"] },
   traps: { front: ["neck"], back: ["traps-upper"] },
   midBack: { back: ["traps-mid"] },
-  lats: { back: ["upper-back"] },
+  lats: { back: ["lats-upper", "lats-lower"] },
+  upperLats: { back: ["lats-upper"] },
+  lowerLats: { back: ["lats-lower"] },
   lowerBack: { back: ["lower-back"] },
   upperAbs: { front: ["abs-upper"] },
   lowerAbs: { front: ["abs-lower"] },
   obliques: { front: ["obliques"] },
-  quads: { front: ["quadriceps"] },
-  hamstrings: { back: ["hamstring"] },
+  quads: { front: ["quad-vl", "quad-rf", "quad-vm"] },
+  quadsOuter: { front: ["quad-vl"] },
+  rectusFemoris: { front: ["quad-rf"] },
+  quadsInner: { front: ["quad-vm"] },
+  hamstrings: { back: ["ham-upper", "ham-lower"] },
+  hamsUpper: { back: ["ham-upper"] },
+  hamsLower: { back: ["ham-lower"] },
   glutes: { back: ["glute-max"] },
   abductors: { back: ["glute-med"] },
   adductors: { front: ["abductors"], back: ["adductor"] },   // the source names the inner-thigh shape "abductors" on the front view
@@ -62,16 +98,17 @@ export const REGIONS = {
 // The parts you can pick for your own exercise, per muscle on the Train page.
 export const PARTS = {
   Chest: ["upperChest", "midChest", "lowerChest"],
-  Back: ["lats", "midBack", "lowerBack", "traps"],
+  Back: ["upperLats", "lowerLats", "midBack", "lowerBack", "traps"],
   Shoulders: ["frontDelts", "sideDelts", "rearDelts", "traps"],
-  Biceps: ["biceps", "forearms"],
-  Triceps: ["triceps"],
-  Legs: ["quads", "hamstrings", "glutes", "abductors", "adductors", "calves"],
+  Biceps: ["bicepsLong", "bicepsShort", "brachialis", "brachioradialis"],
+  Triceps: ["tricepsLong", "tricepsLateral", "tricepsMedial"],
+  Legs: ["quadsOuter", "rectusFemoris", "quadsInner", "hamsUpper", "hamsLower", "glutes", "abductors", "adductors", "calves"],
   Core: ["upperAbs", "lowerAbs", "obliques"],
 };
 
 const CHEST = ["upperChest", "midChest", "lowerChest"];
 const ABS = ["upperAbs", "lowerAbs"];
+const VASTI = ["quadsOuter", "quadsInner"];   // squats and presses work these most; leg extensions the middle
 
 // [main muscles, helpers] for each movement group.
 const BY_GROUP = {
@@ -81,19 +118,19 @@ const BY_GROUP = {
   triceps: [["triceps"], []],
   row: [["midBack", "lats"], ["rearDelts", "biceps", "traps"]],
   vpull: [["lats"], ["midBack", "biceps", "rearDelts"]],
-  ohp: [["frontDelts", "sideDelts"], ["triceps", "traps", "upperChest"]],
+  ohp: [["frontDelts"], ["sideDelts", "triceps", "traps", "upperChest"]],   // presses lead with the front; raises build the side
   lateral: [["sideDelts"], ["traps"]],
   frontraise: [["frontDelts"], ["sideDelts", "upperChest"]],
   rear: [["rearDelts"], ["midBack", "traps"]],
-  shrug: [["traps"], ["forearms"]],
-  curl: [["biceps"], ["forearms"]],
-  squat: [["quads", "glutes"], ["adductors", "lowerBack"]],
-  hinge: [["hamstrings", "glutes"], ["lowerBack"]],
-  legpress: [["quads", "glutes"], ["adductors"]],
-  lunge: [["quads", "glutes"], ["adductors", "hamstrings", "abductors"]],
-  glutes: [["glutes"], ["hamstrings", "abductors"]],
-  legcurl: [["hamstrings"], ["calves"]],
-  legext: [["quads"], []],
+  shrug: [["traps"], ["forearmFlexors"]],
+  curl: [["biceps"], ["brachioradialis"]],
+  squat: [[...VASTI, "glutes"], ["rectusFemoris", "adductors", "lowerBack"]],
+  hinge: [["hamsUpper", "glutes"], ["hamsLower", "lowerBack"]],
+  legpress: [[...VASTI, "glutes"], ["rectusFemoris", "adductors"]],
+  lunge: [["glutes", ...VASTI], ["rectusFemoris", "adductors", "hamstrings", "abductors"]],
+  glutes: [["glutes"], ["hamsUpper", "abductors"]],
+  legcurl: [["hamsLower"], ["hamsUpper", "calves"]],
+  legext: [["rectusFemoris"], VASTI],
   calf: [["calves"], ["soleus"]],
   abduction: [["abductors"], ["glutes"]],
   adduction: [["adductors"], []],
@@ -102,13 +139,33 @@ const BY_GROUP = {
 
 const LOWER_CHEST_PRESS = [["lowerChest"], ["midChest", "triceps", "frontDelts"]];
 const UPPER_FLY = [["upperChest"], ["midChest", "frontDelts"]];
-const DIP_TRICEPS = [["triceps"], ["lowerChest", "frontDelts"]];
-const CLOSE_PRESS = [["triceps"], ["midChest", "frontDelts"]];
-const HAMMER = [["biceps", "forearms"], []];
-const REVERSE_CURL = [["forearms", "biceps"], []];
+// Presses and dips: the outer and medial heads; overhead work stretches the long head.
+const DIP_TRICEPS = [["tricepsLateral", "tricepsMedial"], ["tricepsLong", "lowerChest", "frontDelts"]];
+const CLOSE_PRESS = [["tricepsLateral", "tricepsMedial"], ["tricepsLong", "midChest", "frontDelts"]];
+const TRI_LONG = [["tricepsLong"], ["tricepsLateral", "tricepsMedial"]];
+const TRI_OUTER = [["tricepsLateral"], ["tricepsMedial", "tricepsLong"]];
+const TRI_PUSHDOWN = [["tricepsLateral", "tricepsMedial"], ["tricepsLong"]];
+const TRI_MEDIAL = [["tricepsMedial"], ["tricepsLateral", "tricepsLong"]];
+// Curls: arm behind you → long head; arm in front (preacher, spider) → short head;
+// neutral grip → brachialis and forearm; palms down → the forearm most.
+const CURL_LONG = [["bicepsLong"], ["bicepsShort", "brachialis"]];
+const CURL_SHORT = [["bicepsShort"], ["bicepsLong", "brachialis"]];
+const HAMMER = [["brachialis", "brachioradialis"], ["bicepsLong"]];
+const REVERSE_CURL = [["brachioradialis", "brachialis"], ["forearmExtensors", "biceps"]];
+// Back: wide pulls → upper lats (width); elbows close to the body → lower lats.
+const ROW_UPPER = [["midBack", "upperLats"], ["rearDelts", "biceps", "traps"]];
+const ROW_LOWER = [["lowerLats", "midBack"], ["upperLats", "biceps"]];
+const ROW_ONE_ARM = [["lowerLats"], ["upperLats", "midBack", "biceps"]];
+const PULL_WIDE = [["upperLats"], ["lowerLats", "midBack", "biceps", "rearDelts"]];
+const PULL_CLOSE = [["lowerLats"], ["upperLats", "midBack", "biceps"]];
+const PULL_UNDER = [["lowerLats", "biceps"], ["upperLats", "midBack"]];
 const LOWER_ABS = [["lowerAbs"], ["upperAbs", "obliques"]];
 const OBLIQUES = [["obliques"], ABS];
 const SEATED_CALF = [["soleus"], ["calves"]];
+const NORDIC = [["hamsLower"], ["hamsUpper", "glutes", "calves"]];
+const OUTER_QUADS = [["quadsOuter"], ["quadsInner", "rectusFemoris", "glutes"]];
+const STEP_UP = [["glutes", ...VASTI], ["hamstrings", "calves"]];
+const BACK_EXT = [["lowerBack", "glutes"], ["hamsUpper"]];
 
 const BY_EXERCISE = {
   decline_bench_press: LOWER_CHEST_PRESS,
@@ -133,15 +190,29 @@ const BY_EXERCISE = {
   dip_machine: DIP_TRICEPS,
   parallel_bar_dip: DIP_TRICEPS,
   assisted_dip: DIP_TRICEPS,
+  overhead_cable_ext: TRI_LONG, skull_crusher: TRI_LONG, db_overhead_ext: TRI_LONG, seated_triceps_press: TRI_LONG,
+  lying_db_triceps_ext: TRI_LONG, cable_lying_triceps_ext: TRI_LONG, kneeling_cable_ext: TRI_LONG, overhead_bar_ext: TRI_LONG,
+  low_cable_triceps_ext: TRI_LONG, incline_cable_triceps_ext: TRI_LONG,
+  rope_pushdown: TRI_OUTER, db_kickback: TRI_OUTER,
+  bar_pushdown: TRI_PUSHDOWN, vbar_pushdown: TRI_PUSHDOWN,
+  reverse_pushdown: TRI_MEDIAL, one_arm_cable_ext: TRI_MEDIAL,
 
-  underhand_bb_row: [["lats", "midBack"], ["biceps", "rearDelts"]],
-  db_pullover: [["lats", "lowerChest"], ["triceps", "midChest"]],
-  straight_arm_pulldown: [["lats"], ["triceps"]],
-  rope_straight_arm: [["lats"], ["triceps", "rearDelts"]],
-  chin_up: [["lats", "biceps"], ["midBack"]],
-  underhand_pulldown: [["lats", "biceps"], ["midBack"]],
+  seated_cable_row: ROW_LOWER, low_row_machine: ROW_LOWER,
+  chest_supported_db_row: ROW_UPPER, inverted_row: ROW_UPPER, chest_supported_tbar: ROW_UPPER, incline_bench_pull: ROW_UPPER, trx_row: ROW_UPPER,
+  high_row_machine: [["upperLats", "midBack"], ["rearDelts", "biceps"]],
+  kneeling_high_row: [["upperLats", "midBack"], ["rearDelts", "biceps"]],
+  one_arm_db_row: ROW_ONE_ARM, one_arm_cable_row: ROW_ONE_ARM, shotgun_row: ROW_ONE_ARM,
+  neutral_db_row: [["lats"], ["midBack", "biceps"]],
+  barbell_row: [["midBack", "lats"], ["rearDelts", "traps", "lowerBack", "biceps"]],
+  underhand_bb_row: [["lowerLats", "midBack"], ["biceps", "upperLats"]],
+  lat_pulldown: PULL_WIDE, pull_up: PULL_WIDE, assisted_pull_up: PULL_WIDE,
+  close_grip_pulldown: PULL_CLOSE, vbar_pulldown: PULL_CLOSE, vbar_pull_up: PULL_CLOSE,
+  chin_up: PULL_UNDER, underhand_pulldown: PULL_UNDER,
   mixed_grip_chin: [["lats", "biceps"], ["midBack"]],
-  pullover_machine: [["lats"], ["lowerChest", "triceps"]],
+  db_pullover: [["lats", "lowerChest"], ["tricepsLong", "midChest"]],
+  straight_arm_pulldown: [["lats"], ["tricepsLong"]],
+  rope_straight_arm: [["lats"], ["tricepsLong", "rearDelts"]],
+  pullover_machine: [["lats"], ["lowerChest", "tricepsLong"]],
 
   push_press: [["frontDelts", "sideDelts"], ["triceps", "quads", "glutes"]],
   upright_bb_row: [["sideDelts", "traps"], ["frontDelts", "biceps"]],
@@ -154,35 +225,48 @@ const BY_EXERCISE = {
   face_pull: [["rearDelts", "midBack"], ["traps"]],
   cable_row_to_neck: [["rearDelts", "midBack"], ["traps", "biceps"]],
   cable_external_rotation: [["rearDelts"], ["midBack"]],
-  smith_shrug: [["traps", "midBack"], ["forearms"]],
+  smith_shrug: [["traps", "midBack"], ["forearmFlexors"]],
 
-  hammer_curl: HAMMER, alt_hammer_curl: HAMMER, cross_body_hammer: HAMMER, rope_hammer_curl: HAMMER, incline_hammer_curl: HAMMER, zottman_curl: HAMMER,
+  incline_db_curl: CURL_LONG, close_ez_curl: CURL_LONG, drag_curl: CURL_LONG,
+  machine_preacher_curl: CURL_SHORT, db_preacher_curl: CURL_SHORT, cable_preacher_curl: CURL_SHORT, spider_curl: CURL_SHORT,
+  prone_incline_curl: CURL_SHORT, concentration_curl: CURL_SHORT, high_cable_curl: CURL_SHORT, overhead_cable_curl: CURL_SHORT, machine_curl: CURL_SHORT,
+  preacher_curl: [["bicepsShort", "brachialis"], ["bicepsLong"]],
+  hammer_curl: HAMMER, alt_hammer_curl: HAMMER, rope_hammer_curl: HAMMER,
+  cross_body_hammer: [["brachialis"], ["brachioradialis", "bicepsLong"]],
+  incline_hammer_curl: [["brachialis", "bicepsLong"], ["brachioradialis"]],
+  zottman_curl: [["biceps", "brachioradialis"], ["forearmExtensors"]],
   reverse_bb_curl: REVERSE_CURL, reverse_cable_curl: REVERSE_CURL,
 
-  front_squat: [["quads", "glutes"], ["upperAbs", "lowerBack"]],
-  zercher_squat: [["quads", "glutes"], ["upperAbs", "lowerBack", "biceps"]],
-  sumo_db_squat: [["quads", "glutes", "adductors"], []],
-  pendulum_squat: [["quads"], ["glutes", "adductors"]],
-  belt_squat: [["quads", "glutes"], ["adductors"]],
-  side_split_squat: [["quads", "glutes", "adductors"], ["hamstrings"]],
-  db_step_up: [["quads", "glutes"], ["hamstrings", "calves"]],
-  bb_step_up: [["quads", "glutes"], ["hamstrings", "calves"]],
+  front_squat: [VASTI, ["glutes", "rectusFemoris", "upperAbs", "lowerBack"]],
+  zercher_squat: [[...VASTI, "glutes"], ["upperAbs", "lowerBack", "biceps"]],
+  hack_squat: [VASTI, ["glutes", "rectusFemoris"]],
+  narrow_hack_squat: OUTER_QUADS,
+  narrow_leg_press: OUTER_QUADS,
+  sumo_db_squat: [["adductors", "glutes", "quadsInner"], ["quadsOuter"]],
+  pendulum_squat: [VASTI, ["rectusFemoris", "glutes", "adductors"]],
+  belt_squat: [[...VASTI, "glutes"], ["adductors"]],
+  side_split_squat: [["adductors", "glutes", "quadsInner"], ["quadsOuter", "hamstrings"]],
+  db_step_up: STEP_UP,
+  bb_step_up: STEP_UP,
+  deficit_reverse_lunge: [["glutes"], [...VASTI, "adductors", "hamsUpper"]],
+  sissy_squat: [["rectusFemoris", "quadsInner"], ["quadsOuter"]],
 
-  deadlift: [["hamstrings", "glutes", "lowerBack"], ["traps", "midBack", "lats", "quads", "forearms"]],
-  sumo_deadlift: [["glutes", "adductors", "hamstrings"], ["quads", "lowerBack", "traps", "forearms"]],
-  trap_bar_deadlift: [["quads", "glutes", "hamstrings"], ["lowerBack", "traps", "forearms"]],
-  machine_deadlift: [["quads", "glutes", "hamstrings"], ["lowerBack", "traps", "forearms"]],
-  good_morning: [["hamstrings", "lowerBack"], ["glutes"]],
-  back_extension: [["lowerBack", "glutes"], ["hamstrings"]],
-  floor_back_ext: [["lowerBack", "glutes"], ["hamstrings"]],
-  reverse_hyper: [["glutes", "hamstrings"], ["lowerBack"]],
+  deadlift: [["hamstrings", "glutes", "lowerBack"], ["traps", "midBack", "lats", "quads", "forearmFlexors"]],
+  sumo_deadlift: [["glutes", "adductors", "hamstrings"], ["quads", "lowerBack", "traps", "forearmFlexors"]],
+  trap_bar_deadlift: [["quads", "glutes", "hamstrings"], ["lowerBack", "traps", "forearmFlexors"]],
+  machine_deadlift: [["quads", "glutes", "hamstrings"], ["lowerBack", "traps", "forearmFlexors"]],
+  good_morning: [["hamsUpper", "lowerBack"], ["glutes", "hamsLower"]],
+  back_extension: BACK_EXT,
+  floor_back_ext: BACK_EXT,
+  reverse_hyper: [["glutes", "hamsUpper"], ["lowerBack"]],
   single_leg_bridge: [["glutes", "hamstrings"], []],
-  cable_pull_through: [["glutes", "hamstrings"], ["lowerBack"]],
+  cable_pull_through: [["glutes", "hamsUpper"], ["lowerBack"]],
 
-  nordic_curl: [["hamstrings"], ["glutes", "calves"]],
+  seated_leg_curl: [["hamstrings"], ["calves"]],
+  nordic_curl: NORDIC,
+  floor_glute_ham: NORDIC,
   glute_ham_raise: [["hamstrings"], ["glutes", "calves"]],
-  floor_glute_ham: [["hamstrings"], ["glutes", "calves"]],
-  ball_leg_curl: [["hamstrings"], ["glutes", "calves"]],
+  ball_leg_curl: [["hamsLower"], ["glutes", "calves"]],
   monster_walk: [["abductors"], ["glutes", "quads"]],
 
   seated_calf_raise: SEATED_CALF, bb_seated_calf: SEATED_CALF, db_seated_calf: SEATED_CALF,
@@ -205,13 +289,24 @@ const BY_CHIP = {
   Chest: [CHEST, ["frontDelts", "triceps"]],
   Back: [["lats", "midBack"], ["biceps", "rearDelts"]],
   Shoulders: [["frontDelts", "sideDelts", "rearDelts"], []],
-  Biceps: [["biceps"], ["forearms"]],
+  Biceps: [["biceps"], ["brachioradialis"]],
   Triceps: [["triceps"], []],
   Legs: [["quads", "glutes", "hamstrings"], ["calves"]],
   Core: [ABS, ["obliques"]],
 };
 
 const shape = ([main, helpers] = [[], []]) => ({ primary: main, secondary: helpers.filter((m) => !main.includes(m)) });
+
+// A whole muscle stands for all of its parts.
+export const SUBPARTS = {
+  biceps: ["bicepsLong", "bicepsShort", "brachialis"],
+  triceps: ["tricepsLong", "tricepsLateral", "tricepsMedial"],
+  lats: ["upperLats", "lowerLats"],
+  quads: ["quadsOuter", "rectusFemoris", "quadsInner"],
+  hamstrings: ["hamsUpper", "hamsLower"],
+  forearms: ["brachioradialis", "forearmFlexors", "forearmExtensors"],
+};
+export const partsOf = (keys) => [...new Set((keys || []).flatMap((k) => [k, ...(SUBPARTS[k] || [])]))];
 
 // { primary: [muscle keys], secondary: [muscle keys] } for an exercise (object or id).
 export function musclesOf(exOrId) {
@@ -233,6 +328,15 @@ export function regionLevels({ primary = [], secondary = [] } = {}, view = "fron
   return out;
 }
 
+// Same angle: two exercises that work the same part of the muscle — the same
+// main muscles, or the same one first (preacher and concentration curls both
+// lead with the short head; hammer and cross-body hammer with the brachialis).
+export function sameAngle(a, b) {
+  const A = musclesOf(a).primary, B = musclesOf(b).primary;
+  if (!A.length || !B.length) return false;
+  return A[0] === B[0] || (A.length === B.length && A.every((k) => B.includes(k)));
+}
+
 export const muscleNames = (keys, lang) => (keys || []).map((k) => (MUSCLE_LABELS[k] || [k, k])[lang === "ar" ? 1 : 0]);
 
 // ── Zoom: small maps show the target up close ───────────────────────────────
@@ -241,22 +345,37 @@ const GEO = { front: Object.fromEntries(FRONT.map(([r, ps]) => [r, ps.map(parseP
 const areaOf = (p) => Math.abs(p.reduce((a, [x, y], i) => { const [x2, y2] = p[(i + 1) % p.length]; return a + x * y2 - x2 * y; }, 0)) / 2;
 
 // The view (front or back) where the main muscles show most. Back-side jobs
-// (rows, pulldowns, hinges, shrugs, calves…) are always drawn from behind.
-const BACK_GROUPS = new Set(["row", "vpull", "rear", "shrug", "hinge", "legcurl", "glutes", "abduction", "calf"]);
+// (rows, pulldowns, triceps, hinges, shrugs, calves…) are always drawn from behind.
+const BACK_GROUPS = new Set(["row", "vpull", "rear", "shrug", "triceps", "hinge", "legcurl", "glutes", "abduction", "calf"]);
+// Squats, presses, extensions and lunges are drawn from the front (the quads)
+// unless the exercise has no main muscle there (a glute-only lunge).
+const FRONT_GROUPS = new Set(["squat", "legpress", "legext", "lunge"]);
 export function mainView(m, group) {
   if (group && BACK_GROUPS.has(group)) return "back";
+  if (group && FRONT_GROUPS.has(group) && Object.values(regionLevels(m, "front")).includes("primary")) return "front";
   const weight = (view) => Object.entries(regionLevels(m, view))
     .reduce((a, [r, lv]) => a + (lv === "primary" ? 1 : 0.1) * (GEO[view][r] || []).reduce((s, p) => s + areaOf(p), 0), 0);
   return weight("back") > weight("front") ? "back" : "front";
 }
 
 // A viewBox [x, y, w, h] around the lit parts of one view (main muscles only,
-// or with helpers when `all`), padded and kept to a pleasant shape.
+// or with helpers when `all`), padded and kept to a pleasant shape. When only
+// the arms light up, the box takes one arm (the one on the right of the
+// picture) with its shoulder — big enough to see which head is working.
+const ARM = /^(biceps|brachialis|tri-|brachiorad|forearm)/;
+const SHOULDER = { front: ["delt-front", "delt-side-f"], back: ["delt-rear", "delt-side-b"] };   // so an arm reads as an arm
+const midX = (p) => p.reduce((a, [x]) => a + x, 0) / p.length;
 export function focusBox(m, view, { all = false, pad = 6, minH = 46 } = {}) {
+  const lit = Object.entries(regionLevels(m, view)).filter(([, lv]) => all || lv === "primary").map(([r]) => r);
+  const arm = lit.length > 0 && lit.every((r) => ARM.test(r));
+  if (arm) minH = Math.min(minH, 34);
+  const frame = arm ? [...lit, ...SHOULDER[view]] : lit;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const [r, lv] of Object.entries(regionLevels(m, view))) {
-    if (!all && lv !== "primary") continue;
-    for (const p of GEO[view][r] || []) for (const [x, y] of p) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  for (const r of frame) {
+    for (const p of GEO[view][r] || []) {
+      if (arm && midX(p) < 50) continue;
+      for (const [x, y] of p) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    }
   }
   if (!Number.isFinite(x0)) return null;
   let w = x1 - x0 + pad * 2, h = Math.max(minH, y1 - y0 + pad * 2);

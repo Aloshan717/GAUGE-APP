@@ -13,6 +13,14 @@ import { WeekBars, useWeekFood } from "../sheets/FoodLog.jsx";
 
 const COLOR = { weight: "var(--accent)", bodyFat: "var(--fat)", muscle: "var(--muscle)" };
 const STATUS_COLOR = { ok: "var(--ok)", warn: "var(--warn)", bad: "var(--bad)", neutral: "var(--accent)" };
+// Traffic light for a goal's progress, judged against the time gone: green on
+// pace, yellow a bit behind, red behind (or the wrong way). The first fortnight
+// is too early to call anyone behind, so there it stops at yellow.
+const paceColor = (p) => {
+  if (!p) return null;
+  if (p.color !== "neutral") return p.color;
+  return !p.elapsed || p.progress / p.elapsed >= 0.95 ? "ok" : "warn";
+};
 const BUCKET = { "On track": "ok", "Target reached": "done", "Slightly behind": "warn", Behind: "bad", "Wrong direction": "bad", "Date passed": "bad", "Just started": "early" };
 const LABEL = { weight: "mWeight", bodyFat: "mFat", muscle: "mMuscle" };
 const DAY = 86400000;
@@ -99,7 +107,7 @@ export default function Home({ name }) {
             const ch = sinceLast(tr);
             return (
               <div className="ring-col" key={k}>
-                <Ring value={has ? fmtNum(tr.curr, 1) : "—"} unit={unitOf(k)} progress={p?.progress} time={p?.elapsed} color={STATUS_COLOR[p?.color] || "var(--surface3)"} />
+                <Ring value={has ? fmtNum(tr.curr, 1) : "—"} unit={unitOf(k)} progress={p?.progress} color={STATUS_COLOR[paceColor(p)] || "var(--surface3)"} />
                 {ch && (
                   <span className="ring-delta" style={{ color: ch.color }}>
                     <b>{ch.d === 0 ? "=" : ch.d < 0 ? "▼" : "▲"} {fmtNum(Math.abs(ch.d), 1)}{k === "bodyFat" ? "%" : ` ${unitOf(k)}`}</b>
@@ -108,16 +116,12 @@ export default function Home({ name }) {
                 )}
                 <span className="row small strong" style={{ gap: 5, color: "var(--text2)", whiteSpace: "nowrap" }}><span className="dot" style={{ background: COLOR[k] }} />{t(LABEL[k])}</span>
                 {p ? (
-                  <span className="small strong" style={{ color: STATUS_COLOR[p.color] }}>{Math.round(p.progress)}% <span className="muted" style={{ fontWeight: 600 }}>· {t("timeWord")} {Math.round(p.elapsed ?? 0)}%</span></span>
+                  <span className="strong" style={{ color: STATUS_COLOR[paceColor(p)], fontSize: 15 }}>{Math.round(p.progress)}%</span>
                 ) : <span className="small muted">{has ? "—" : t("noReading")}</span>}
                 {tr?.target != null && <span className="muted" style={{ fontSize: 11 }}><span aria-hidden="true">{lang === "ar" ? "←" : "→"}</span> {fmtNum(tr.target, 1)} {unitOf(k)}</span>}
               </div>
             );
           })}
-        </div>
-        <div className="legend">
-          <span><span style={{ width: 14, height: 5, borderRadius: 3, background: "var(--accent)" }} />{t("legendProgress")}</span>
-          <span><span style={{ width: 14, height: 4, borderRadius: 2, background: "var(--sub)" }} />{t("legendTime")}</span>
         </div>
         {(summary || eta) && (
           <div className="box col" style={{ gap: 6 }}>

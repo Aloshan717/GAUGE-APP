@@ -238,6 +238,7 @@ button.mmap-btn { border: 1px solid var(--line); background: var(--surface2); bo
 .dot.s { opacity: 0.4; }
 .muscle-line { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--sub); line-height: 1.45; }
 .card.pick-row { flex-direction: row; align-items: center; gap: 12px; border-radius: 16px; }
+.card.pick-row.same { border-color: var(--accent-line); }
 /* Finished exercise */
 .ex-card { scroll-margin-top: 76px; transition: background-color 0.3s, border-color 0.3s; }
 .card.complete { border-color: var(--accent-line); background: var(--accent-soft); }
@@ -350,6 +351,11 @@ code.key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-siz
 .wk-stats > div { padding: 9px 10px; border-radius: 12px; background: var(--surface2); border: 1px solid var(--line); }
 .wk-stats .num { font-size: 21px; line-height: 1.15; }
 /* Food log */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.cov { display: flex; flex-wrap: wrap; gap: 5px; }
+.cov-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 700; line-height: 1.3; padding: 3px 9px; border-radius: 999px; border: 1px dashed var(--line2); color: var(--muted); }
+.cov-chip.on { border: 1px solid transparent; background: var(--accent-soft); color: var(--accent-text); }
+.sw-sec { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; font-weight: 800; color: var(--text2); margin: 8px 2px 0; }
 .fl-week { display: flex; flex-direction: column; align-items: stretch; gap: 6px; width: 100%; padding: 11px 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface2); color: inherit; text-align: start; }
 .week-bars { position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; align-items: end; }
 .wb-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; height: 100%; }

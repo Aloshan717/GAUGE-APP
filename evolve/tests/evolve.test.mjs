@@ -2,9 +2,9 @@
 import assert from "node:assert/strict";
 import { EXERCISES, BY_ID, GROUPS, usable, swapOptions, matchExercise, logExerciseId } from "../src/lib/exercises.js";
 import { buildSession, recommend, liftHistory, weightStep, exercisesFor, adjustSession, recommendedCounts, makeCustomSlot, customMatch, makeSlot, setAllSets, suggestedSets,
-  pastWorkouts, lastTimeFor, slotsFromItems, sameExercise } from "../src/lib/train.js";
+  pastWorkouts, lastTimeFor, slotsFromItems, sameExercise, coverage } from "../src/lib/train.js";
 import { generatePlan, weeklySets, swapInPlan, toggleKept, setSlotSets, reviewCount, planDayFor, nextPlanDay, DEFAULT_DAYS } from "../src/lib/plan.js";
-import { musclesOf, slotMuscles, regionLevels, REGIONS, MUSCLE_LABELS, PARTS, mainView, focusBox, searchExercises, customMuscles } from "../src/lib/muscles.js";
+import { musclesOf, slotMuscles, regionLevels, REGIONS, MUSCLE_LABELS, PARTS, mainView, focusBox, searchExercises, customMuscles, sameAngle } from "../src/lib/muscles.js";
 import { FRONT, BACK } from "../src/lib/bodymap.js";
 import { e1rm, bestOf, recordKind, recordIndex, volumeOf, restSeconds } from "../src/lib/train.js";
 import { reportWeek, weekWeight, calorieCheckin, weeklyReport, goalKey, MAX_STEP } from "../src/lib/weekly.js";
@@ -62,10 +62,12 @@ test("Gauge lift names match the library", () => {
 });
 
 // ── Session ──
-test("a chest + triceps session starts with a press and has two triceps exercises", () => {
+test("a chest + triceps session starts with a press and works every triceps head", () => {
   const s = buildSession({ muscles: ["Chest", "Triceps"], minutes: 60 });
   assert.equal(s[0].group, "hpress");
-  assert.equal(s.filter((x) => x.group === "triceps").length, 2);
+  const tri = s.filter((x) => x.group === "triceps");
+  assert.equal(tri.length, 3);
+  assert.deepEqual(tri.map((x) => musclesOf(x.ex).primary[0]).sort(), ["tricepsLateral", "tricepsLong", "tricepsMedial"]);
   assert.equal(new Set(s.map((x) => x.ex)).size, s.length);
 });
 test("session size follows the time you have", () => {
@@ -290,11 +292,46 @@ test("a send with no active energy (iPhone locked) changes nothing", async () =>
 // ── Your own counts and exercises ──
 test("you choose how many exercises per muscle — more than suggested", () => {
   const rec = recommendedCounts({ muscles: ["Triceps"], minutes: 60 });
-  assert.equal(rec.Triceps, 2);
+  assert.equal(rec.Triceps, 3);
   const s = adjustSession([], { muscles: ["Triceps"], counts: { Triceps: 4 } });
   assert.equal(s.length, 4);
   assert.equal(new Set(s.map((x) => x.ex)).size, 4);
   assert.ok(s.every((x) => BY_ID[x.ex].group === "triceps"));
+});
+test("whole muscle: each exercise aims at a different part, then round again", () => {
+  const lead = (s) => s.map((x) => musclesOf(x.ex).primary[0]);
+  assert.deepEqual(lead(adjustSession([], { muscles: ["Biceps"], counts: { Biceps: 3 } })), ["bicepsLong", "bicepsShort", "brachialis"]);
+  assert.deepEqual(lead(adjustSession([], { muscles: ["Triceps"], counts: { Triceps: 3 } })), ["tricepsLong", "tricepsLateral", "tricepsMedial"]);
+  assert.deepEqual(lead(adjustSession([], { muscles: ["Shoulders"], counts: { Shoulders: 3 } })), ["frontDelts", "sideDelts", "rearDelts"]);
+  const back = adjustSession([], { muscles: ["Back"], counts: { Back: 3 } });
+  assert.deepEqual(back.map((x) => BY_ID[x.ex].group).sort(), ["row", "row", "vpull"]);
+  assert.ok(coverage("Back", back).slice(0, 3).every((c) => c.done));
+  const legs = adjustSession([], { muscles: ["Legs"], counts: { Legs: 6 } });
+  assert.deepEqual(legs.map((x) => BY_ID[x.ex].group).sort(), ["calf", "glutes", "hinge", "legcurl", "legext", "squat"]);
+  // Two biceps → both heads; the third part (brachialis) shows as still open.
+  const two = coverage("Biceps", adjustSession([], { muscles: ["Biceps"], counts: { Biceps: 2 } }));
+  assert.deepEqual(two.map((c) => c.done), [true, true, false]);
+  // A whole-muscle curl you already have counts for every head.
+  assert.ok(coverage("Biceps", [{ ex: "db_curl" }]).every((c) => c.done));
+  // More than the parts: it goes round again with different exercises.
+  const five = adjustSession([], { muscles: ["Biceps"], counts: { Biceps: 5 } });
+  assert.equal(new Set(five.map((x) => x.ex)).size, 5);
+});
+test("same angle: exercises that lead with the same part of the muscle", () => {
+  assert.ok(sameAngle("incline_db_curl", "drag_curl"));
+  assert.ok(sameAngle("preacher_curl", "concentration_curl"));
+  assert.ok(sameAngle("hammer_curl", "cross_body_hammer"));
+  assert.ok(sameAngle("db_curl", "barbell_curl"));
+  assert.ok(!sameAngle("db_curl", "preacher_curl"));
+  assert.ok(!sameAngle("incline_db_curl", "preacher_curl"));
+  assert.ok(sameAngle("overhead_cable_ext", "skull_crusher"));
+  assert.ok(!sameAngle("overhead_cable_ext", "rope_pushdown"));
+  assert.ok(sameAngle("lat_pulldown", "pull_up"));
+  assert.ok(!sameAngle("lat_pulldown", "close_grip_pulldown"));
+  assert.ok(sameAngle("back_squat", "hack_squat"));
+  assert.ok(!sameAngle("back_squat", "leg_extension"));
+  assert.ok(sameAngle("bench_press", "db_bench_press"));
+  assert.ok(!sameAngle("bench_press", "incline_db_press"));
 });
 test("changing counts keeps exercises already there (and their swaps)", () => {
   let s = adjustSession([], { muscles: ["Chest"], counts: { Chest: 2 } });
@@ -368,15 +405,39 @@ test("plenty of swaps: biceps alone has 20+ in a full gym", () => {
     assert.ok(EXERCISES.filter((e) => e.group === g).length >= 5, g);
   }
 });
-test("muscle map: hammer curls add forearms, deadlifts light the whole back chain", () => {
-  assert.deepEqual(musclesOf("hammer_curl").primary, ["biceps", "forearms"]);
+test("muscle map: hammer curls hit brachialis and forearm, deadlifts light the whole back chain", () => {
+  assert.deepEqual(musclesOf("hammer_curl").primary, ["brachialis", "brachioradialis"]);
   assert.deepEqual(musclesOf("db_curl").primary, ["biceps"]);
   const back = regionLevels(musclesOf("deadlift"), "back");
-  assert.equal(back.hamstring, "primary"); assert.equal(back["lower-back"], "primary"); assert.equal(back["traps-upper"], "secondary");
+  assert.equal(back["ham-upper"], "primary"); assert.equal(back["ham-lower"], "primary");
+  assert.equal(back["lower-back"], "primary"); assert.equal(back["traps-upper"], "secondary");
   const front = regionLevels(musclesOf("bench_press"), "front");
-  assert.equal(front["chest-mid"], "primary"); assert.equal(front.triceps, "secondary"); assert.equal(front.quadriceps, undefined);
-  assert.deepEqual(musclesOf("close_grip_bench").primary, ["triceps"]);
+  assert.equal(front["chest-mid"], "primary"); assert.equal(front["tri-long"], "secondary"); assert.equal(front["quad-rf"], undefined);
+  assert.deepEqual(musclesOf("close_grip_bench").primary, ["tricepsLateral", "tricepsMedial"]);
   assert.deepEqual(slotMuscles({ custom: true, muscle: "Biceps" }).primary, ["biceps"]);
+});
+test("muscle parts: biceps and triceps heads, upper/lower lats, quads and hamstrings", () => {
+  const f = (id) => regionLevels(musclesOf(id), "front"), b = (id) => regionLevels(musclesOf(id), "back");
+  assert.equal(f("incline_db_curl")["biceps-long"], "primary"); assert.equal(f("incline_db_curl")["biceps-short"], "secondary");
+  assert.equal(f("preacher_curl")["biceps-short"], "primary"); assert.equal(f("spider_curl")["biceps-long"], "secondary");
+  assert.equal(f("hammer_curl").brachialis, "primary"); assert.equal(f("hammer_curl").brachiorad, "primary");
+  assert.equal(f("db_curl")["biceps-long"], "primary"); assert.equal(f("db_curl")["biceps-short"], "primary");
+  assert.equal(b("overhead_cable_ext")["tri-long"], "primary"); assert.equal(b("overhead_cable_ext")["tri-lateral"], "secondary");
+  assert.equal(b("rope_pushdown")["tri-lateral"], "primary"); assert.equal(b("reverse_pushdown")["tri-medial"], "primary");
+  assert.equal(b("lat_pulldown")["lats-upper"], "primary"); assert.equal(b("lat_pulldown")["lats-lower"], "secondary");
+  assert.equal(b("close_grip_pulldown")["lats-lower"], "primary"); assert.equal(b("one_arm_db_row")["lats-lower"], "primary");
+  assert.equal(f("leg_extension")["quad-rf"], "primary"); assert.equal(f("leg_extension")["quad-vl"], "secondary");
+  assert.equal(f("back_squat")["quad-vl"], "primary"); assert.equal(f("back_squat")["quad-vm"], "primary"); assert.equal(f("back_squat")["quad-rf"], "secondary");
+  assert.equal(b("romanian_deadlift")["ham-upper"], "primary"); assert.equal(b("romanian_deadlift")["ham-lower"], "secondary");
+  assert.equal(b("lying_leg_curl")["ham-lower"], "primary"); assert.equal(b("seated_leg_curl")["ham-upper"], "primary");
+  // Not one picture for every exercise of a muscle any more.
+  const pictures = (g) => new Set(EXERCISES.filter((e) => e.group === g).map((e) => JSON.stringify(musclesOf(e).primary))).size;
+  assert.ok(pictures("curl") >= 5, `curl ${pictures("curl")}`);
+  assert.ok(pictures("triceps") >= 4, `triceps ${pictures("triceps")}`);
+  assert.ok(pictures("vpull") >= 4 && pictures("row") >= 4);
+  // Every part drawn on the map belongs to some muscle.
+  const used = new Set(Object.values(REGIONS).flatMap((r) => [...(r.front || []), ...(r.back || [])]));
+  for (const [r] of [...FRONT, ...BACK]) if (!["head", "knees"].includes(r)) assert.ok(used.has(r), r);
 });
 test("muscle parts: which part of the chest, shoulder, abs and calves", () => {
   const lv = (id) => regionLevels(musclesOf(id), "front");
@@ -407,6 +468,12 @@ test("small maps zoom on the target and pick the right side", () => {
   assert.ok(box[3] < 80 && box[1] > 10 && box[1] + box[3] < 90, JSON.stringify(box));   // torso, not the whole body
   const legs = focusBox(musclesOf("leg_extension"), "front");
   assert.ok(legs[1] > 70, JSON.stringify(legs));
+  // Arms: one arm with its shoulder, big enough to see the heads.
+  const arm = focusBox(musclesOf("incline_db_curl"), "front");
+  assert.ok(arm[0] >= 50 && arm[2] < 45 && arm[1] < 40, JSON.stringify(arm));
+  assert.equal(mainView(musclesOf("rope_pushdown"), "triceps"), "back");
+  assert.equal(mainView(musclesOf("back_squat"), "squat"), "front");
+  assert.equal(mainView(musclesOf("deficit_reverse_lunge"), "lunge"), "back");
   for (const e of EXERCISES) {
     const m = musclesOf(e), v = mainView(m, e.group), b = focusBox(m, v);
     assert.ok(b && b[0] >= 0 && b[1] >= 0 && b[0] + b[2] <= 100.01 && b[1] + b[3] <= 220.01, `${e.id} ${JSON.stringify(b)}`);

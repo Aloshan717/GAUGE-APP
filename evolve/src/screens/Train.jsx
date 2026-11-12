@@ -8,7 +8,7 @@ import { sb, store } from "../lib/api.js";
 import { fmtNum, fmtDate } from "../lib/i18n.js";
 import { BY_ID, GROUPS, MUSCLES, MUSCLE_NAMES } from "../lib/exercises.js";
 import { liftHistory, recommend, setsText, recommendedCounts, adjustSession, slotMuscle, customMatch, setAllSets, suggestedSets,
-  pastWorkouts, lastTimeFor, slotsFromItems, sameExercise, bestOf, recordKind, recordIndex, volumeOf, restSeconds, MAX_PER_MUSCLE, MAX_SETS } from "../lib/train.js";
+  pastWorkouts, lastTimeFor, slotsFromItems, sameExercise, bestOf, recordKind, recordIndex, volumeOf, restSeconds, MAX_PER_MUSCLE, MAX_SETS, coverage } from "../lib/train.js";
 import { enqueue, patchQueued, dropQueued, tempId, isTemp } from "../lib/queue.js";
 import { primeSound, scheduleBeep, cancelBeep, buzz } from "../lib/sound.js";
 import { slotMuscles, muscleNames } from "../lib/muscles.js";
@@ -548,15 +548,26 @@ export default function Train() {
           ) : mode === "auto" ? (
             <>
               <div className="label">{t("perMuscle")}</div>
-              {muscles.map((m) => (
-                <div key={m} className="row between">
-                  <div>
-                    <div className="strong">{mname(m)}</div>
-                    <div className="small muted">{t("recN", { n: rec[m] ?? 0 })}</div>
+              {muscles.map((m) => {
+                const cov = coverage(m, slots.filter((x) => slotMuscle(x) === m));
+                return (
+                  <div key={m} className="col" style={{ gap: 7 }}>
+                    <div className="row between">
+                      <div>
+                        <div className="strong">{mname(m)}</div>
+                        <div className="small muted">{t("recN", { n: rec[m] ?? 0 })}</div>
+                      </div>
+                      <Stepper value={counts[m] ?? slots.filter((x) => !x.manual && slotMuscle(x) === m).length} max={MAX_PER_MUSCLE} onChange={(n) => setCount(m, n)} label={mname(m)} />
+                    </div>
+                    {cov.length > 1 && (
+                      <div className="cov" role="list" aria-label={t("covA11y", { m: mname(m) })}>
+                        {cov.map((c) => <span key={c.label[0]} role="listitem" className={`cov-chip${c.done ? " on" : ""}`}><span aria-hidden="true">{c.done ? "✓" : "○"}</span> {c.label[L(lang)]}<span className="sr-only">{c.done ? ` — ${t("covDone")}` : ` — ${t("covOpen")}`}</span></span>)}
+                      </div>
+                    )}
                   </div>
-                  <Stepper value={counts[m] ?? slots.filter((x) => !x.manual && slotMuscle(x) === m).length} max={MAX_PER_MUSCLE} onChange={(n) => setCount(m, n)} label={mname(m)} />
-                </div>
-              ))}
+                );
+              })}
+              <div className="small sub">{t("covHint")}</div>
               <div className="divider" />
               <div className="row between">
                 <div>

@@ -1,20 +1,37 @@
 // EVOLVE — training logic: today's session, lift history, next-set advice.
 import { GROUPS, BY_ID, groupItems, usable, logExerciseId, canonicalId } from "./exercises.js";
+import { musclesOf, customMuscles, partsOf } from "./muscles.js";
 import { coerceNumber, normalizeDate } from "./core.js";
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
-// Which movement groups train each muscle, most important first.
-// Biceps and triceps list their group twice: two different exercises.
-export const MUSCLE_ORDER = {
-  Chest: ["hpress", "incline", "fly"],
-  Back: ["vpull", "row", "rear"],
-  Shoulders: ["ohp", "lateral", "rear"],
-  Biceps: ["curl", "curl"],
-  Triceps: ["triceps", "triceps"],
-  Legs: ["squat", "hinge", "legpress", "legcurl", "calf", "legext"],
-  Core: ["core"],
+// The whole muscle, part by part: each exercise of a session aims at the next
+// part not covered yet — [movement group, the parts it should lead with, name].
+// Two biceps exercises → long head + short head; three → + brachialis.
+export const ANGLES = {
+  Chest: [["hpress", ["midChest"], ["Mid chest", "منتصف الصدر"]], ["incline", ["upperChest"], ["Upper chest", "أعلى الصدر"]], ["fly", ["lowerChest"], ["Lower chest", "أسفل الصدر"]]],
+  Back: [["vpull", ["upperLats"], ["Width (upper lats)", "العرض (أعلى المجنص)"]], ["row", ["midBack"], ["Thickness (mid back)", "السماكة (منتصف الظهر)"]],
+    ["row", ["lowerLats"], ["Lower lats", "أسفل المجنص"]], ["rear", ["rearDelts"], ["Rear shoulders", "الكتف الخلفي"]]],
+  Shoulders: [["ohp", ["frontDelts"], ["Front", "الأمامي"]], ["lateral", ["sideDelts"], ["Side", "الجانبي"]], ["rear", ["rearDelts"], ["Rear", "الخلفي"]]],
+  Biceps: [["curl", ["bicepsLong"], ["Long head", "الرأس الطويل"]], ["curl", ["bicepsShort"], ["Short head", "الرأس القصير"]], ["curl", ["brachialis"], ["Brachialis", "العضدية"]]],
+  Triceps: [["triceps", ["tricepsLong"], ["Long head", "الرأس الطويل"]], ["triceps", ["tricepsLateral"], ["Outer head", "الرأس الجانبي"]], ["triceps", ["tricepsMedial"], ["Medial head", "الرأس الإنسي"]]],
+  Legs: [["squat", ["quadsOuter", "quadsInner", "quads"], ["Quads", "الفخذ الأمامي"]], ["hinge", ["hamsUpper"], ["Upper hamstrings", "أعلى الفخذ الخلفي"]],
+    ["legcurl", ["hamsLower"], ["Lower hamstrings", "أسفل الفخذ الخلفي"]], ["legext", ["rectusFemoris"], ["Middle quads", "منتصف الفخذ الأمامي"]],
+    ["calf", ["calves"], ["Calves", "السمانة"]], ["glutes", ["glutes"], ["Glutes", "المؤخرة"]]],
+  Core: [["core", ["upperAbs"], ["Upper abs", "أعلى البطن"]], ["core", ["lowerAbs"], ["Lower abs", "أسفل البطن"]], ["core", ["obliques"], ["Obliques", "الخواصر"]]],
 };
+// Which movement groups train each muscle, most important first.
+export const MUSCLE_ORDER = Object.fromEntries(Object.entries(ANGLES).map(([m, list]) => [m, list.map(([g]) => g)]));
+
+// An exercise leads with one of these parts (its first main muscle).
+const aims = (parts) => (e) => parts.includes(musclesOf(e).primary[0]);
+const slotMain = (s) => (s?.custom ? customMuscles(s.muscle, s.parts) : musclesOf(s?.ex)).primary;
+const leads = (slot, parts) => parts.includes(slotMain(slot)[0]);
+const slotParts = (s) => partsOf(slotMain(s));
+// A slot covers a part when it works it as a main muscle (a whole-muscle curl covers every head).
+export const covers = (slot, parts) => slotParts(slot).some((k) => parts.includes(k));
+// Which parts of a muscle today's exercises cover: [{ label: [en, ar], done }].
+export const coverage = (muscle, slots = []) => (ANGLES[muscle] || []).map(([, parts, label]) => ({ label, done: slots.some((s) => covers(s, parts)) }));
 
 // About 3 sets × (set + rest) ≈ 8–9 minutes per exercise.
 export const exercisesFor = (minutes) => clamp(Math.round((minutes || 60) / 8.5), 3, 9);
@@ -69,8 +86,11 @@ function lastDate(logs, exerciseId) {
 
 // Pick an exercise for a group: the one you used last (so your numbers carry
 // on), else the first that fits your equipment and joints.
-export function pickExercise(group, logs, opts = {}, exclude = new Set(), variant = 0) {
-  const options = groupItems(group).filter((e) => usable(e, opts) && !exclude.has(e.id));
+// `match` narrows it to exercises for one part of the muscle (when any fit).
+export function pickExercise(group, logs, opts = {}, exclude = new Set(), variant = 0, match = null) {
+  const all = groupItems(group).filter((e) => usable(e, opts) && !exclude.has(e.id));
+  const aimed = match ? all.filter(match) : [];
+  const options = aimed.length ? aimed : all;
   if (!options.length) return null;
   if (variant === 0) {
     const used = options.map((e) => ({ e, d: lastDate(logs, e.id) })).filter((x) => x.d).sort((a, b) => (a.d < b.d ? 1 : -1));
@@ -89,7 +109,7 @@ export function buildSession({ muscles = [], logs = [], profile = {}, minutes } 
   const experience = profile.experience || "mid";
   const focus = profile.focus || "muscle";
   const n = exercisesFor(minutes ?? profile.session_min ?? 60);
-  const queues = muscles.filter((m) => MUSCLE_ORDER[m]).map((m) => ({ m, list: [...MUSCLE_ORDER[m]], own: new Map() }));
+  const queues = muscles.filter((m) => ANGLES[m]).map((m) => ({ m, list: [...ANGLES[m]], own: new Map() }));
   const used = new Map();
   const usedEx = new Set();
   const slots = [];
@@ -99,10 +119,10 @@ export function buildSession({ muscles = [], logs = [], profile = {}, minutes } 
     for (const q of queues) {
       if (slots.length >= n) break;
       while (q.list.length) {
-        const g = q.list.shift();
+        const [g, parts] = q.list.shift();
         // A group already used by another muscle (rear delts for Back + Shoulders) is skipped.
         if ((used.get(g) || 0) > (q.own.get(g) || 0)) continue;
-        const ex = pickExercise(g, logs, opts, usedEx);
+        const ex = pickExercise(g, logs, opts, usedEx, 0, aims(parts));
         if (!ex) continue;
         usedEx.add(ex);
         used.set(g, (used.get(g) || 0) + 1);
@@ -244,13 +264,19 @@ export function adjustSession(slots = [], { muscles = [], counts = {}, sets = nu
   const out = [...kept];
   for (const m of muscles) {
     const want = Math.max(0, Math.min(MAX_PER_MUSCLE, counts[m] ?? 0));
-    const groups = groupsFor(m);
-    let have = out.filter((s) => slotMuscle(s) === m).length, i = have, tries = 0;
+    // Each new exercise aims at the part of the muscle that the exercises so
+    // far lead with least (an untouched one first); then round again.
+    const plan = ANGLES[m] || groupsFor(m).map((g) => [g, null]);
+    const skip = new Set();
+    let have = out.filter((s) => slotMuscle(s) === m).length, tries = 0;
     while (have < want && tries++ < 40) {
-      const g = groups[i % groups.length];
-      i++;
-      const ex = pickExercise(g, logs, opts, used);
-      if (!ex) continue;
+      const mine = out.filter((s) => slotMuscle(s) === m);
+      const load = plan.map(([g, parts], i) => (skip.has(i) ? Infinity : mine.filter((s) => (parts ? leads(s, parts) : s.group === g)).length));
+      const i = load.indexOf(Math.min(...load));
+      if (!Number.isFinite(load[i])) break;
+      const [g, parts] = plan[i];
+      const ex = pickExercise(g, logs, opts, used, 0, parts ? aims(parts) : null);
+      if (!ex) { skip.add(i); continue; }
       used.add(ex);
       out.push(makeSlot({ group: g, ex, muscle: m, profile, sets: sets || undefined }));
       have++;

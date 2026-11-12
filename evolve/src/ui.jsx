@@ -62,12 +62,13 @@ export const Logo = ({ big }) => (
 );
 
 // Outer ring = progress to target (status colour). Inner ring = time used.
+// Progress ring; `time` (optional) adds a thin inner ring for the time gone.
 export function Ring({ value, unit, progress, time, color }) {
   const p = Math.max(0, Math.min(100, progress ?? 0));
-  const t = Math.max(0, Math.min(100, time ?? 0));
+  const t = time == null ? null : Math.max(0, Math.min(100, time));
   return (
     <div className="ring" style={{ background: `conic-gradient(${color} 0 ${p}%, var(--surface3) ${p}% 100%)` }}>
-      <div><div style={{ background: `conic-gradient(var(--sub) 0 ${t}%, var(--surface3) ${t}% 100%)` }}><div>
+      <div><div style={t == null ? undefined : { background: `conic-gradient(var(--sub) 0 ${t}%, var(--surface3) ${t}% 100%)` }}><div>
         <span className="num v">{value}</span>
         <span className="u">{unit}</span>
       </div></div></div>

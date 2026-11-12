@@ -1,9 +1,11 @@
-// Swap one exercise for another that does the same job (same group).
+// Swap one exercise for another that does the same job (same group): first the
+// ones that work the same part of the muscle ("same angle"), then the others,
+// grouped by the part they work.
 import React from "react";
 import { useApp } from "../ctx.js";
 import { Photo, Note, MuscleMap } from "../ui.jsx";
 import { BY_ID, GROUPS, swapOptions } from "../lib/exercises.js";
-import { musclesOf, muscleNames } from "../lib/muscles.js";
+import { musclesOf, muscleNames, sameAngle } from "../lib/muscles.js";
 import { swapInPlan } from "../lib/plan.js";
 
 export default function SwapSheet({ ctx }) {
@@ -37,6 +39,36 @@ export default function SwapSheet({ ctx }) {
   const options = swapOptions(slot.ex, { equipment, pain, exclude: siblings });
   const info = (id) => openSheet("exInfo", { ex: id, backTo: { name: "swap", opts: { src: ctx.src, slotId: ctx.slotId } } });
   const curM = musclesOf(cur);
+  const same = options.filter((e) => sameAngle(cur, e));
+  const clusters = [];
+  for (const e of options.filter((x) => !sameAngle(cur, x))) {
+    const k = musclesOf(e).primary[0] || "";
+    let c = clusters.find((x) => x.k === k);
+    if (!c) clusters.push((c = { k, list: [] }));
+    c.list.push(e);
+  }
+  const row = (e, isSame) => {
+    const isOrig = original && e.id === original;
+    const em = musclesOf(e);
+    return (
+      <div key={e.id} className={`card tight pick-row${isSame ? " same" : ""}`}>
+        <button type="button" className="ex-media" onClick={() => info(e.id)} aria-label={t("exInfoA11y", { name: e.name[L] })}><Photo ex={e} small /></button>
+        <button type="button" className="pick-main" onClick={() => { apply(e.id); closeSheet(); }} aria-label={`${t("use")} ${e.name[L]}${isSame ? ` · ${t("tagSameAngle")}` : ""}`}>
+          <span className="grow col" style={{ gap: 3 }}>
+            <span className="row wrap" style={{ gap: 8 }}>
+              <span className="strong" style={{ fontSize: 14.5 }}>{e.name[L]}</span>
+              {(isOrig || isSame) && <span className={`tag ${isOrig ? "" : "ok"}`} style={{ fontSize: 10.5, padding: "1px 6px" }}>{isOrig ? t("tagOrig") : `✓ ${t("tagSameAngle")}`}</span>}
+            </span>
+            <span className="small sub">{e.gear[L]}</span>
+            <span className="small muted">{e.why[L]}</span>
+            <span className="small" style={{ color: "var(--accent-text)", fontWeight: 700 }}>{muscleNames(em.primary, lang).join(" · ")}</span>
+          </span>
+          <MuscleMap muscles={em} height={52} views="main" zoom group={e.group} />
+          <span className="small strong" style={{ color: "var(--accent-text)", flex: "none" }}>{t("use")}</span>
+        </button>
+      </div>
+    );
+  };
 
   return (
     <>
@@ -50,32 +82,23 @@ export default function SwapSheet({ ctx }) {
         <div className="row wrap" style={{ gap: 6 }}>
           <span className="tag ok">{g.job[L]}</span>
           {muscleNames(curM.primary, lang).map((m) => <span key={m} className="tag muscle">{m}</span>)}
-          {curM.secondary.length > 0 && <span className="tag">+ {muscleNames(curM.secondary, lang).join(" · ")}</span>}
+          {curM.secondary.length > 0 && <span className="tag" style={{ whiteSpace: "normal", maxWidth: "100%" }}>+ {muscleNames(curM.secondary, lang).join(" · ")}</span>}
         </div>
       </div>
       <div className="small sub">{t("swExplain")}</div>
-      {options.length ? options.map((e) => {
-        const isOrig = original && e.id === original;
-        const em = musclesOf(e);
-        return (
-          <div key={e.id} className="card tight pick-row">
-            <button type="button" className="ex-media" onClick={() => info(e.id)} aria-label={t("exInfoA11y", { name: e.name[L] })}><Photo ex={e} small /></button>
-            <button type="button" className="pick-main" onClick={() => { apply(e.id); closeSheet(); }} aria-label={`${t("use")} ${e.name[L]}`}>
-              <span className="grow col" style={{ gap: 3 }}>
-                <span className="row wrap" style={{ gap: 8 }}>
-                  <span className="strong" style={{ fontSize: 14.5 }}>{e.name[L]}</span>
-                  <span className={`tag ${isOrig ? "" : e.tag === "same" ? "ok" : "muscle"}`} style={{ fontSize: 10.5, padding: "1px 6px" }}>{isOrig ? t("tagOrig") : e.tag === "same" ? t("tagSame") : t("tagAngle")}</span>
-                </span>
-                <span className="small sub">{e.gear[L]}</span>
-                <span className="small muted">{e.why[L]}</span>
-                <span className="small" style={{ color: "var(--accent-text)", fontWeight: 700 }}>{muscleNames(em.primary, lang).join(" · ")}</span>
-              </span>
-              <MuscleMap muscles={em} height={52} views="main" zoom group={e.group} />
-              <span className="small strong" style={{ color: "var(--accent-text)", flex: "none" }}>{t("use")}</span>
-            </button>
-          </div>
-        );
-      }) : <Note kind="plain" icon="info">{t("swNone")}</Note>}
+      {options.length ? (
+        <>
+          <div className="sw-sec"><span className="tag ok">✓ {t("tagSameAngle")}</span><span>{muscleNames(curM.primary, lang).join(" · ")}</span></div>
+          {same.length ? same.map((e) => row(e, true)) : <Note kind="plain" icon="info">{t("swNoSame")}</Note>}
+          {clusters.length > 0 && <div className="sw-sec">{t("swOther")}</div>}
+          {clusters.map((c) => (
+            <React.Fragment key={c.k}>
+              <div className="label" style={{ margin: "2px 2px 0" }}>{muscleNames([c.k], lang)[0]}</div>
+              {c.list.map((e) => row(e, false))}
+            </React.Fragment>
+          ))}
+        </>
+      ) : <Note kind="plain" icon="info">{t("swNone")}</Note>}
       <div className="small muted">{t("swFiltered")}</div>
     </>
   );
