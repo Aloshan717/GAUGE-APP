@@ -7,7 +7,7 @@ import { Icon, Note } from "../ui.jsx";
 import { store } from "../lib/api.js";
 import { fmtDate, fmtNum, signed, signedIso } from "../lib/i18n.js";
 import { localISO, addDays, liveAdjust, kcalFloor } from "../lib/body.js";
-import { reportWeek, weekBefore, weeklyReport, MIN_LOGGED } from "../lib/weekly.js";
+import { reportWeek, weekBefore, weeklyReport, hasContent, MIN_LOGGED } from "../lib/weekly.js";
 import { reportDoc, docText, cellText } from "../lib/reportdoc.js";
 import { docToPdf, shareOrSave } from "../lib/pdf.js";
 import { lastPhotoDate } from "../lib/photos.js";
@@ -22,6 +22,40 @@ export function useWeekly(week) {
   return useMemo(() => weeklyReport({ week, data, profile: data.profile || {}, body: derived.body, current: derived.targets?.kcal, protein: derived.targets?.protein, resting,
     targetFor: derived.targetFor, adjust: derived.targets ? liveAdjust(derived.targets) : null }),
     [week.key, data, derived, resting]);   // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+// The latest report, until you open it (and only if the week has something in it).
+export function useNewReport() {
+  const { user } = useApp();
+  const week = reportWeek(localISO());
+  const r = useWeekly(week);
+  return user?.id && store.get(seenKey(user.id)) !== week.key && hasContent(r) ? { week, r } : null;
+}
+
+// On the Goal tab's icon in the bottom bar: a new report is waiting.
+export function NewReportDot() {
+  const { t } = useApp();
+  return useNewReport() ? <><span className="new-dot" aria-hidden="true" /><span className="sr-only">{t("wkNewSr")}</span></> : null;
+}
+
+// At the top of the Goal tab until you open it.
+export function NewReportCard() {
+  const { t, lang, openSheet } = useApp();
+  const nr = useNewReport();
+  if (!nr) return null;
+  const { week, r: wr } = nr;
+  return (
+    <div className="card accent">
+      <div className="row between"><span className="card-title">{t("wkTitle")}</span><span className="small muted">{weekRange(wr, lang)}</span></div>
+      <div className="wk-stats">
+        <div><div className="num ltr">{wr.weight.delta != null ? signed(wr.weight.delta) : "—"}</div><div className="small muted strong">{t("wkKgShort")}</div></div>
+        <div><div className="num">{wr.food.days ? fmtNum(wr.food.kcal) : "—"}</div><div className="small muted strong">{t("wkAvgShort")}</div></div>
+        <div><div className="num">{wr.training.workouts}</div><div className="small muted strong">{t("wkWorkoutsShort")}</div></div>
+      </div>
+      {wr.checkin.status === "adjust" && <div className="small strong" style={{ color: "var(--accent-text)" }}>{wr.checkin.live ? t("wkCiHintLive", { d: signedIso(wr.checkin.change) }) : t("wkCiHint", { k: fmtNum(wr.checkin.suggested) })}</div>}
+      <button className="btn primary" onClick={() => openSheet("weekly", { week })}>{t("wkOpen")}</button>
+    </div>
+  );
 }
 
 const TONE = { ok: "var(--ok)", warn: "var(--warn)", bad: "var(--bad)" };
@@ -115,6 +149,7 @@ export default function Weekly({ ctx }) {
   useEffect(() => { lastPhotoDate(user.id).then(setPhotoDate); }, [user.id]);
   const photosDue = isLatest && photoDate !== undefined && (!photoDate || photoDate < addDays(localISO(), -14));
   const seen = () => { if (isLatest) store.set(seenKey(user.id), week.key); };
+  useEffect(() => { if (isLatest && user?.id) store.set(seenKey(user.id), week.key); }, [isLatest, week.key, user?.id]);   // opened = seen (the dot and the Goal card go)
   const ci = r.checkin;
   const [pdf, setPdf] = useState(null);   // null | "making" | { blob }   (a ready file waiting for a tap to share)
   useEffect(() => { setPdf(null); }, [week.key, lang]);

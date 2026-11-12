@@ -8,6 +8,7 @@ import { coerceNumber, goalMuscleKg, musclePercent } from "../lib/core.js";
 import { feasibility, consistency, goalDirection, localISO } from "../lib/body.js";
 import { weeklySets } from "../lib/plan.js";
 import { reportWeek } from "../lib/weekly.js";
+import { NewReportCard } from "../sheets/Weekly.jsx";
 
 const TAG = { ok: "tagOk", warn: "tagWarn", bad: "tagBad", done: "tagDone" };
 const num = (s) => { const n = coerceNumber(s); return n == null ? null : n; };
@@ -92,6 +93,7 @@ export default function Goal() {
   return (
     <>
       <div className="screen-head"><div className="sub">{t("goalSub")}</div><h1>{t("goalTitle")}</h1></div>
+      <NewReportCard />
       <Seg options={[["date", t("modeDate")], ["auto", t("modeAuto")]]} value={mode} onChange={setMode} label={t("goalTitle")} />
 
       <div className="card">

@@ -64,7 +64,7 @@ export const STR = {
     photosNoStore: "This browser can't keep photos. Open Evolve from the Home Screen icon.",
 
     // Weekly report and calorie check-in
-    wkTitle: "Weekly report", wkOpen: "Open the report", wkOpenGoal: "Weekly report & check-in", wkKgShort: "kg this week", wkAvgShort: "kcal a day", wkWorkoutsShort: "workouts",
+    wkTitle: "Weekly report", wkOpen: "Open the report", wkOpenGoal: "Weekly report & check-in", wkKgShort: "kg this week", wkAvgShort: "kcal a day", wkWorkoutsShort: "workouts", wkNewSr: "new weekly report",
     wkCiHint: "Calorie check-in: suggests {k} kcal", wkWeight: "Weight", wkBetween: "{a} → {b}",
     wkOneWeigh: "One weigh-in: {v} kg on {date}. Weigh in once a week to see the change.", wkNoWeigh: "No weigh-in this week.",
     wkFood: "Food", wkLogged: "Logged {n} of 7 days", wkAvgKcal: "Average {k} kcal a day (target {tk})", wkAvgPro: "Protein {p} g a day (target {tp})",
@@ -386,7 +386,7 @@ export const STR = {
     photosPrivate: "صورك تبقى في هالجوال بس — ما تنرفع أبداً. إذا حذفت التطبيق من الشاشة الرئيسية تنحذف.",
     photosNoStore: "هالمتصفح ما يقدر يحفظ الصور. افتح Evolve من أيقونته في الشاشة الرئيسية.",
 
-    wkTitle: "التقرير الأسبوعي", wkOpen: "افتح التقرير", wkOpenGoal: "التقرير الأسبوعي ومراجعة السعرات", wkKgShort: "كجم هالأسبوع", wkAvgShort: "سعرة باليوم", wkWorkoutsShort: "تمارين",
+    wkTitle: "التقرير الأسبوعي", wkOpen: "افتح التقرير", wkOpenGoal: "التقرير الأسبوعي ومراجعة السعرات", wkKgShort: "كجم هالأسبوع", wkAvgShort: "سعرة باليوم", wkWorkoutsShort: "تمارين", wkNewSr: "تقرير أسبوعي جديد",
     wkCiHint: "مراجعة السعرات: تقترح {k} سعرة", wkWeight: "الوزن", wkBetween: "{a} ← {b}",
     wkOneWeigh: "وزن واحد: {v} كجم في {date}. توزّن مرة بالأسبوع عشان يبين التغيّر.", wkNoWeigh: "ما فيه وزن هالأسبوع.",
     wkFood: "الأكل", wkLogged: "سجّلت {n} من 7 أيام", wkAvgKcal: "المتوسط {k} سعرة باليوم (الهدف {tk})", wkAvgPro: "البروتين {p} غ باليوم (الهدف {tp})",

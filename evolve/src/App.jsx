@@ -15,8 +15,9 @@ import Body from "./screens/Body.jsx";
 import Goal from "./screens/Goal.jsx";
 import Planner from "./screens/Planner.jsx";
 import Sheets from "./sheets/Sheets.jsx";
+import { NewReportDot } from "./sheets/Weekly.jsx";
 
-export const VERSION = "1.10.1";
+export const VERSION = "1.11.0";
 const REFRESH_MS = 5 * 60 * 1000;   // reload data this often while the app is open
 
 const EMPTY = { weights: [], inbody: [], measurements: [], logs: [], sessions: [], goal: null, days: [], profile: null, plan: null, planRow: null };
@@ -315,7 +316,7 @@ export default function App() {
           <div className="nav-inner">
             {NAV.map((n, i) => n ? (
               <button key={n[0]} className="nav-btn" aria-current={tab === n[0] ? "page" : undefined} onClick={() => { setTab(n[0]); window.scrollTo(0, 0); }}>
-                <Icon name={n[1]} size={22} />{n[2]}
+                <span className="nav-ico"><Icon name={n[1]} size={22} />{n[0] === "goal" && <NewReportDot />}</span>{n[2]}
               </button>
             ) : (
               <div className="nav-fab-wrap" key={`fab${i}`}>
