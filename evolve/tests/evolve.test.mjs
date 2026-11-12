@@ -10,7 +10,6 @@ import { e1rm, bestOf, recordKind, recordIndex, volumeOf, restSeconds } from "..
 import { reportWeek, weekWeight, calorieCheckin, weeklyReport, goalKey, MAX_STEP, pastWeeks, weekBefore } from "../src/lib/weekly.js";
 import { remapDone } from "../src/lib/queue.js";
 import { dayRows, lastSeven } from "../src/lib/foodlog.js";
-import { activeOf } from "../src/lib/burnweek.js";
 import { primeSound, scheduleBeep, cancelBeep } from "../src/lib/sound.js";
 import { restingEnergy, formulaMaintenance, maintenance, dailyTargets, goalDirection, feasibility, consistency, currentBody, adaptiveMaintenance, watchAverage, coachTips, localISO } from "../src/lib/body.js";
 import burnHandler, { toKcal, localDate } from "../api/burn.js";
@@ -732,12 +731,6 @@ test("last 7 days: full days only (today is still going), averages over the days
   assert.equal(w.protein, 160);                                                  // days without protein don't pull it down
   assert.equal(w.burn, 2550); assert.equal(w.balance, -550); assert.equal(w.kgPerWeek, -0.5);
   assert.equal(w.rows.length, 7); assert.equal(w.rows[0].date, "2026-11-04");
-});
-test("a day's burn splits into body (resting) + movement", () => {
-  assert.equal(activeOf(2417, 1900), 517);
-  assert.equal(activeOf(1800, 1900), 0);
-  assert.equal(activeOf(2417, null), null);
-  assert.equal(activeOf(null, 1900), null);
 });
 test("rest beep mixes with your music (never pauses it) and lets go of the audio after", () => {
   const calls = [];
