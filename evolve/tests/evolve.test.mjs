@@ -11,9 +11,10 @@ import { reportWeek, weekWeight, calorieCheckin, weeklyReport, goalKey, MAX_STEP
 import { remapDone } from "../src/lib/queue.js";
 import { dayRows, lastSeven } from "../src/lib/foodlog.js";
 import { primeSound, scheduleBeep, cancelBeep } from "../src/lib/sound.js";
-import { restingEnergy, formulaMaintenance, maintenance, dailyTargets, goalDirection, feasibility, consistency, currentBody, adaptiveMaintenance, watchAverage, coachTips, localISO } from "../src/lib/body.js";
+import { restingEnergy, formulaMaintenance, maintenance, dailyTargets, goalDirection, feasibility, consistency, currentBody, adaptiveMaintenance, watchAverage, coachTips, localISO,
+  dayTarget, liveAdjust, kcalFloor } from "../src/lib/body.js";
 import burnHandler, { toKcal, localDate } from "../api/burn.js";
-import { STR, makeT } from "../src/lib/i18n.js";
+import { STR, makeT, burnLine } from "../src/lib/i18n.js";
 import { reportDoc, docText } from "../src/lib/reportdoc.js";
 import { pdfBytes } from "../src/lib/pdf.js";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -731,6 +732,67 @@ test("last 7 days: full days only (today is still going), averages over the days
   assert.equal(w.protein, 160);                                                  // days without protein don't pull it down
   assert.equal(w.burn, 2550); assert.equal(w.balance, -550); assert.equal(w.kgPerWeek, -0.5);
   assert.equal(w.rows.length, 7); assert.equal(w.rows[0].date, "2026-11-04");
+});
+
+// ── The day's calorie target follows the day's burn ──
+test("today's target = today's burn (body + movement so far) − your goal's deficit, never below the safe minimum", () => {
+  const targets = { kcal: 2150, maintenance: 2387, goalAdjust: -240 };
+  assert.deepEqual(dayTarget({ targets, burn: null, bmr: 1822, sex: "m" }), { kcal: 2150, live: false });    // nothing from the watch yet: the plan
+  const d = dayTarget({ targets, burn: 2510, bmr: 1822, sex: "m" });                                          // 1,822 + 688 so far
+  assert.deepEqual([d.kcal, d.live, d.burn, d.adjust, d.floor], [2270, true, 2510, -240, null]);
+  const morning = dayTarget({ targets, burn: 1872, bmr: 1822, sex: "m" });
+  assert.deepEqual([morning.kcal, morning.floor], [2000, 2000]);                                               // 1,822 × 1.1
+  assert.equal(kcalFloor(1822, "m"), 2000); assert.equal(kcalFloor(1000, "f"), 1200);
+  // A check-in you applied takes 150 more off; "use it now" (shift 0) starts again from the goal.
+  const locked = { ...targets, kcal: 2000, lock: { kcal: 2000, shift: -150 } };
+  assert.equal(liveAdjust(locked), -390); assert.equal(dayTarget({ targets: locked, burn: 2510, bmr: 1822, sex: "m" }).kcal, 2120);
+  assert.equal(liveAdjust({ ...locked, lock: { kcal: 2150, shift: 0 } }), -240);
+  // Gaining: the surplus goes on top. No plan yet (no profile): no target.
+  assert.equal(dayTarget({ targets: { kcal: 2700, maintenance: 2400, goalAdjust: 300 }, burn: 2500, bmr: 1700, sex: "m" }).kcal, 2800);
+  assert.equal(dayTarget({ targets: null, burn: 2500 }).kcal, null);
+  // The plan carries the goal's own deficit, before the safe minimum.
+  const tg = dailyTargets({ goal: { target_weight: 80, target_date: "2027-03-01" }, body: { weight: 86 }, maint: { kcal: 2400, bmr: { kcal: 1800 } }, profile: { sex: "m" }, now: Date.UTC(2026, 10, 12) });
+  assert.ok(tg.goalAdjust < 0 && tg.kcal === Math.max(Math.round((2400 + tg.goalAdjust) / 10) * 10, 1980), JSON.stringify(tg));
+});
+test("the line under today's calories shows the sum, in both languages", () => {
+  const en = makeT("en"), ar = makeT("ar");
+  const plain = (s) => s.replace(/[⁦-⁩]/g, "");
+  assert.equal(plain(burnLine({ live: true, kcal: 2270, burn: 2510, adjust: -240, floor: null }, en)), "burned 2,510 − 240 for your goal");
+  assert.equal(plain(burnLine({ live: true, kcal: 2000, burn: 1872, adjust: -240, floor: 2000 }, en)), "burned 1,872 − 240 for your goal · never below 2,000");
+  assert.equal(plain(burnLine({ live: true, kcal: 2800, burn: 2500, adjust: 300, floor: null }, en)), "burned 2,500 + 300 for your goal");
+  assert.equal(plain(burnLine({ live: true, kcal: 2510, burn: 2510, adjust: 0, floor: null }, en)), "your burn so far: 2,510");
+  assert.equal(burnLine({ live: false, kcal: 2150 }, en), "");
+  const a = burnLine({ live: true, kcal: 2270, burn: 2510, adjust: -240, floor: null }, ar);
+  assert.ok(a.includes("⁦2,510 − 240⁩"), a);                    // the sum stays in one left-to-right piece
+  assert.equal(plain(a), "حرقت 2,510 − 240 عشان هدفك");
+});
+test("food log: each day against its own target (its burn − the deficit, or the plan)", () => {
+  const targetFor = (burn) => (burn ? { kcal: burn - 240, live: true } : { kcal: 2150, live: false });
+  const days = [{ date: "2026-11-10", kcal_in: 2300, burn_kcal: 2600 }, { date: "2026-11-09", kcal_in: 2200 }];
+  const rows = dayRows({ days, sessions: [], today: "2026-11-11", n: 3, target: 2150, targetFor });
+  assert.deepEqual(rows.map((r) => [r.date, r.target, r.diff, r.live]), [["2026-11-11", 2150, null, false], ["2026-11-10", 2360, -60, true], ["2026-11-09", 2150, 50, false]]);
+  const w = lastSeven({ days, sessions: [], today: "2026-11-11", target: 2150, targetFor });
+  assert.equal(w.vsTarget, -5); assert.equal(w.target, 2255);           // (−60 + 50) / 2 · (2,360 + 2,150) / 2
+});
+test("weekly report: food against each day's target; the check-in against what you were asked to eat", () => {
+  const days = [];
+  for (let i = 0; i < 28; i++) {
+    const burn = 2500 + (i % 3) * 100;
+    days.push({ date: new Date(Date.UTC(2026, 10, 14) - i * 864e5).toISOString().slice(0, 10), kcal_in: burn - 240, protein_g: 160, burn_kcal: burn, burn_source: "watch" });
+  }
+  const weights = [{ date: "2026-10-18", weight: 86 }, { date: "2026-10-25", weight: 85.95 }, { date: "2026-11-01", weight: 85.9 }, { date: "2026-11-08", weight: 85.85 }, { date: "2026-11-14", weight: 85.8 }];
+  const data = { days, weights, inbody: [], sessions: [], logs: [], goal: ciGoal };
+  const targetFor = (burn) => (burn ? { kcal: burn - 240, live: true, adjust: -240 } : { kcal: 2150, live: false });
+  const args = { week: reportWeek("2026-11-15"), data, profile: ciProfile, body: { weight: 85.8 }, current: 2150, protein: 170 };
+  const r = weeklyReport({ ...args, targetFor, adjust: -240 });
+  assert.equal(r.food.liveDays, 7);
+  assert.equal(r.food.target, r.food.kcal);                              // you ate each day's target
+  assert.ok(!r.recs.some((x) => x.k === "recEatOver" || x.k === "recEatUnder"), r.recs.map((x) => x.k).join());
+  assert.deepEqual([r.checkin.live, r.checkin.adjust, r.checkin.current], [true, -240, r.food.target]);   // not the 2,150 plan
+  const text = docText(reportDoc(r, { t: makeT("en"), lang: "en", name: "" }));
+  assert.ok(/your target (becomes your burn|\(your burn) −/.test(text), text.slice(text.indexOf("## Calorie")));
+  const plan = weeklyReport(args);                                       // no watch: the plan, as before
+  assert.deepEqual([plan.food.target, plan.checkin.live, plan.checkin.current ?? 2150], [2150, false, 2150]);
 });
 test("rest beep mixes with your music (never pauses it) and lets go of the audio after", () => {
   const calls = [];

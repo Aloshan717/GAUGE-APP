@@ -175,8 +175,8 @@ export function dailyTargets({ goal, body, maint, profile = {}, now = Date.now()
   let kcal = m ? round(m + adjust, 10) : null;
   let floorHit = false;
   if (kcal != null) {
-    const floor = Math.max(Math.round((maint?.bmr?.kcal || 0) * 1.1), profile.sex === "f" ? 1200 : 1500);
-    if (kcal < floor) { kcal = round(floor, 10); floorHit = true; }
+    const floor = kcalFloor(maint?.bmr?.kcal, profile.sex);
+    if (kcal < floor) { kcal = floor; floorHit = true; }
   }
 
   const ffm = body?.ffm;
@@ -188,7 +188,27 @@ export function dailyTargets({ goal, body, maint, profile = {}, now = Date.now()
   } else {
     protein = round(w * 1.8, 5); range = [Math.round(w * 1.6), Math.round(w * 2.2)]; basis = "bw";
   }
-  return { direction: dir, kcal, maintenance: m, adjust: kcal != null && m ? kcal - m : adjust, ratePct, protein, proteinRange: range, proteinBasis: basis, floorHit };
+  return { direction: dir, kcal, maintenance: m, adjust: kcal != null && m ? kcal - m : adjust, goalAdjust: adjust, ratePct, protein, proteinRange: range, proteinBasis: basis, floorHit };
+}
+
+// The least to eat in a day: a little above your resting energy.
+export const kcalFloor = (bmr, sex) => round(Math.max(Math.round((bmr || 0) * 1.1), sex === "f" ? 1200 : 1500), 10);
+
+// What your goal takes off a day's burn (a deficit, −) or adds to it (a
+// surplus, +): what the goal needs, moved by the check-ins you applied.
+export const liveAdjust = (targets) => (targets?.goalAdjust ?? 0) + (targets?.lock?.shift || 0);
+
+// What to eat on a day. On a day with a burn (your body at rest + your movement,
+// from the watch or typed in) it's that burn with your goal's adjustment, so it
+// grows as you move — never below the safe minimum. On a day without a burn
+// it's your planned target.
+export function dayTarget({ targets, burn, bmr, sex }) {
+  const plan = targets?.kcal || null;
+  if (!plan || !(burn > 0)) return { kcal: plan, live: false };
+  const adjust = liveAdjust(targets);
+  const floor = kcalFloor(bmr, sex);
+  const want = Math.round(burn + adjust);
+  return { kcal: Math.max(want, floor), live: true, burn: Math.round(burn), adjust, floor: want < floor ? floor : null };
 }
 
 // ─── Is the goal realistic? ──────────────────────────────────────────────────

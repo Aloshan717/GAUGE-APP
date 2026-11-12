@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useApp } from "../ctx.js";
 import { Icon, Seg, Field, Note } from "../ui.jsx";
-import { fmtDate, fmtNum } from "../lib/i18n.js";
+import { fmtDate, fmtNum, burnLine } from "../lib/i18n.js";
 import { sb, store } from "../lib/api.js";
 import { coerceNumber, goalMuscleKg, musclePercent } from "../lib/core.js";
 import { feasibility, consistency, goalDirection, localISO } from "../lib/body.js";
@@ -15,6 +15,7 @@ const num = (s) => { const n = coerceNumber(s); return n == null ? null : n; };
 export default function Goal() {
   const { t, lang, data, derived, user, refresh, toast, setTab, openSheet, setKcalLock } = useApp();
   const { body, targets, maint, tips } = derived;
+  const today = derived.targetOn(localISO());   // today's target: your burn so far with your goal's deficit
   const goal = data.goal;
   const profile = data.profile || {};
 
@@ -204,11 +205,12 @@ export default function Goal() {
                   <div className="small sub">{t(targets.proteinBasis === "ffm" ? "basisFfm" : "basisBw")}</div>
                 </div>
               </div>
+              {today.live && <div className="small sub">{t("todayIs", { k: fmtNum(today.kcal), why: burnLine(today, t) })}</div>}
               {targets.floorHit && <Note kind="warn" icon="info">{t("floorNote")}</Note>}
               {targets.lock && targets.autoKcal && Math.abs(targets.autoKcal - targets.kcal) >= 50 && (
                 <div className="row between small">
                   <span className="muted">{t("lockAuto", { k: fmtNum(targets.autoKcal) })}</span>
-                  <button className="link" style={{ minHeight: 0, padding: 0 }} onClick={() => setKcalLock({ ...targets.lock, kcal: targets.autoKcal, since: localISO() })}>{t("lockUse")}</button>
+                  <button className="link" style={{ minHeight: 0, padding: 0 }} onClick={() => setKcalLock({ ...targets.lock, kcal: targets.autoKcal, shift: 0, since: localISO() })}>{t("lockUse")}</button>
                 </div>
               )}
               <button className="btn soft sm" onClick={() => openSheet("weekly", { week: reportWeek(localISO()) })}>{t("wkOpenGoal")}</button>

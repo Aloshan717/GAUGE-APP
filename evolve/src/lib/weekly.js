@@ -88,14 +88,20 @@ function trainingIn(data, week) {
   };
 }
 
-// Food in one week: averages over the days you logged.
-function foodIn(data, week, { target, proteinTarget }) {
+// Food in one week: averages over the days you logged, and the average of
+// those days' targets (each day's burn with your goal's deficit — targetFor —
+// or the plan on a day with no burn).
+function foodIn(data, week, { target, proteinTarget, targetFor }) {
   const inWeek = inRange(week);
   const rows = (data.days || []).filter((r) => inWeek(r.date) && coerceNumber(r.kcal_in) >= 300);
   const kcal = avg(rows.map((r) => coerceNumber(r.kcal_in)));
   const protein = avg(rows.map((r) => coerceNumber(r.protein_g) || 0));
+  const burns = targetFor ? burnByDate(data.days, data.sessions) : null;
+  const dayT = rows.map((r) => (targetFor ? targetFor(burns.get(normalizeDate(r.date))) : null));
+  const targets = dayT.map((d) => d?.kcal ?? target).filter((v) => v > 0);
   return {
-    days: rows.length, kcal: r0(kcal), protein: r0(protein), target: target || null, proteinTarget: proteinTarget || null,
+    days: rows.length, kcal: r0(kcal), protein: r0(protein), target: targets.length ? r0(avg(targets)) : target || null, proteinTarget: proteinTarget || null,
+    liveDays: dayT.filter((d) => d?.live).length,
     proteinHit: proteinTarget ? rows.filter((r) => (coerceNumber(r.protein_g) || 0) >= proteinTarget * 0.9).length : null,
   };
 }
@@ -153,9 +159,11 @@ function summaryOf(data, week, ctx) {
   return { workouts: tr.workouts, minutes: tr.minutes, sets: tr.sets, volume: tr.volume, kcal: food.kcal, protein: food.protein, burn: burn?.avg ?? null, weight: w.end && w.end.date >= week.from ? w.end.weight : null };
 }
 
-export function weeklyReport({ week, data, profile = {}, body, current, protein, resting }) {
+// targetFor(burn) gives a day's target from its burn; adjust is what your goal
+// takes off the burn now (both optional: without them every day uses `current`).
+export function weeklyReport({ week, data, profile = {}, body, current, protein, resting, targetFor, adjust = null }) {
   const { from, to } = week;
-  const ctx = { target: current, proteinTarget: protein, resting };
+  const ctx = { target: current, proteinTarget: protein, resting, targetFor };
   const train = trainingIn(data, week);
   const exercises = exercisesIn(data, week, train, profile);
   const food = foodIn(data, week, ctx);
@@ -186,7 +194,9 @@ export function weeklyReport({ week, data, profile = {}, body, current, protein,
       exercises, records: exercises.filter((x) => x.record).map((x) => ({ id: x.id || x.key, name: x.name, kg: x.best.kg, reps: x.best.reps })) },
     inbody,
     prev: summaryOf(data, weekBefore(week), ctx),
-    checkin: calorieCheckin({ goal: data.goal, profile, body, days: data.days, sessions: data.sessions, weights: data.weights, scans: data.inbody, current, to }),
+    // Measured against what you were asked to eat that week (on average).
+    checkin: { ...calorieCheckin({ goal: data.goal, profile, body, days: data.days, sessions: data.sessions, weights: data.weights, scans: data.inbody, current: (food.days && food.target) || current, to }),
+      live: food.days > 0 && food.liveDays > food.days / 2, adjust },
   };
   r.recs = weekRecs(r, { profile, data, week });
   return r;

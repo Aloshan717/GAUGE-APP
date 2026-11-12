@@ -31,8 +31,10 @@ export function removeItem(date, id) {
 }
 
 // ── Days ──
-// One row per day, newest first: what you ate, protein, burn, and vs the target.
-export function dayRows({ days, sessions, today, n = 30, target }) {
+// One row per day, newest first: what you ate, protein, burn, that day's target
+// (targetFor(burn) — the burn with your goal's deficit — or the plan) and the
+// difference from it.
+export function dayRows({ days, sessions, today, n = 30, target, targetFor }) {
   const burns = burnByDate(days, sessions);
   const byDate = new Map((days || []).map((r) => [normalizeDate(r?.date), r]));
   const rows = [];
@@ -41,25 +43,30 @@ export function dayRows({ days, sessions, today, n = 30, target }) {
     const r = byDate.get(date);
     const kcal = coerceNumber(r?.kcal_in) || 0, protein = coerceNumber(r?.protein_g) || 0;
     const logged = kcal > 0 || protein > 0;
-    rows.push({ date, kcal, protein, logged, burn: burns.get(date) || null, diff: logged && target ? Math.round(kcal - target) : null, today: i === 0 });
+    const burn = burns.get(date) || null;
+    const dt = targetFor ? targetFor(burn) : null;
+    const tg = dt?.kcal ?? target ?? null;
+    rows.push({ date, kcal, protein, logged, burn, target: tg, live: !!dt?.live, diff: logged && tg ? Math.round(kcal - tg) : null, today: i === 0 });
   }
   return rows;
 }
 
 // The last 7 full days (today is still going, so it's left out): totals and averages.
-export function lastSeven({ days, sessions, today, target, proteinTarget }) {
-  const rows = dayRows({ days, sessions, today: addDays(today, -1), n: 7, target });
+export function lastSeven({ days, sessions, today, target, proteinTarget, targetFor }) {
+  const rows = dayRows({ days, sessions, today: addDays(today, -1), n: 7, target, targetFor });
   const logged = rows.filter((r) => r.logged);
   const sum = (a, f) => a.reduce((s, r) => s + (f(r) || 0), 0);
   const total = sum(logged, (r) => r.kcal);
   const avg = logged.length ? Math.round(total / logged.length) : null;
   const withBurn = logged.filter((r) => r.burn);
   const balance = withBurn.length ? Math.round(sum(withBurn, (r) => r.kcal - r.burn) / withBurn.length) : null;
+  const judged = logged.filter((r) => r.diff != null);
   return {
     from: rows[rows.length - 1].date, to: rows[0].date, rows: [...rows].reverse(),
     logged: logged.length, total, avg,
     protein: logged.some((r) => r.protein > 0) ? Math.round(sum(logged.filter((r) => r.protein > 0), (r) => r.protein) / logged.filter((r) => r.protein > 0).length) : null,
-    vsTarget: avg != null && target ? avg - target : null, target, proteinTarget,
+    vsTarget: judged.length ? Math.round(sum(judged, (r) => r.diff) / judged.length) : null,   // a day, against each day's target
+    target: judged.length ? Math.round(sum(judged, (r) => r.target) / judged.length) : target || null, proteinTarget,
     burn: withBurn.length ? Math.round(sum(withBurn, (r) => r.burn) / withBurn.length) : null,
     balance,                                                     // eaten − burned, per day (days with both)
     kgPerWeek: balance != null ? +((balance * 7) / 7700).toFixed(2) : null,

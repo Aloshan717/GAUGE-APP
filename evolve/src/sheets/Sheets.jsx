@@ -215,7 +215,7 @@ function FuelForm({ ctx }) {
         </>
       )}
       <Field label={t("forDay")}><DayPicker value={date} onChange={setDate} /></Field>
-      <div className="small muted">{t("soFar", { k: fmtNum(curK), p: fmtNum(curP) })}{tg?.kcal ? ` · ${t("targetsLine", { k: fmtNum(tg.kcal), p: fmtNum(tg.protein) })}` : ""}</div>
+      <div className="small muted">{t("soFar", { k: fmtNum(curK), p: fmtNum(curP) })}{tg?.kcal ? ` · ${t("targetsLine", { k: fmtNum(derived.targetOn(date).kcal), p: fmtNum(tg.protein) })}` : ""}</div>
       <button className="btn primary lg" onClick={save} disabled={busy}>{busy ? t("saving") : t("save")}</button>
       {(items.length > 0 || earlier > 0) && (
         <div className="fl-items">

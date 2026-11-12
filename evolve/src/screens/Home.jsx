@@ -2,7 +2,7 @@
 import React from "react";
 import { useApp } from "../ctx.js";
 import { Icon, Ring, Spark, Bar } from "../ui.jsx";
-import { fmtDate, fmtNum, signed, joinList } from "../lib/i18n.js";
+import { fmtDate, fmtNum, signed, signedIso, joinList, burnLine } from "../lib/i18n.js";
 import { localISO, addDays, dayRow, arrival, changeOver } from "../lib/body.js";
 import { coerceNumber } from "../lib/core.js";
 import { MealChips } from "../sheets/Sheets.jsx";
@@ -55,7 +55,7 @@ export default function Home({ name }) {
         <div><div className="num">{wr.food.days ? fmtNum(wr.food.kcal) : "—"}</div><div className="small muted strong">{t("wkAvgShort")}</div></div>
         <div><div className="num">{wr.training.workouts}</div><div className="small muted strong">{t("wkWorkoutsShort")}</div></div>
       </div>
-      {wr.checkin.status === "adjust" && <div className="small strong" style={{ color: "var(--accent-text)" }}>{t("wkCiHint", { k: fmtNum(wr.checkin.suggested) })}</div>}
+      {wr.checkin.status === "adjust" && <div className="small strong" style={{ color: "var(--accent-text)" }}>{wr.checkin.live ? t("wkCiHintLive", { d: signedIso(wr.checkin.change) }) : t("wkCiHint", { k: fmtNum(wr.checkin.suggested) })}</div>}
       <button className="btn primary" onClick={() => openSheet("weekly", { week })}>{t("wkOpen")}</button>
     </div>
   ) : null;
@@ -137,8 +137,10 @@ export default function Home({ name }) {
   const yesterday = addDays(today, -1);
   const lastWatch = (data.days || []).filter((d) => d.burn_source === "watch" && d.burn_kcal).map((d) => d.date).sort().pop();
   const kIn = coerceNumber(row.kcal_in) || 0, pIn = coerceNumber(row.protein_g) || 0;
+  // Today's target follows today's burn from the watch (body + movement so far).
+  const dt = derived.targetOn(today);
   // The big number is what's left (or over); what you ate of the target sits under the bar.
-  const fuelRow = (label, eaten, target, unit, color, isCal) => {
+  const fuelRow = (label, eaten, target, unit, color, isCal, note) => {
     const pct = target ? (eaten / target) * 100 : 0;
     const diff = target ? Math.round(target - eaten) : null;
     const warn = diff != null && diff < 0 && isCal;
@@ -157,7 +159,12 @@ export default function Home({ name }) {
             : diff > 0 ? big("left", diff) : diff === 0 ? <span className="small strong" style={{ color: tone }}>{t("reachedFuel")}</span> : big("over", -diff)}
         </div>
         <Bar pct={pct} color={tone} />
-        {target ? <span className="small muted">{t("eatenOf", { n: fmtNum(eaten), t: fmtNum(target), u: unit })}</span> : null}
+        {target ? (
+          <span className="col" style={{ gap: 2 }}>
+            <span className="small muted">{t("eatenOf", { n: fmtNum(eaten), t: fmtNum(target), u: unit })}</span>
+            {note ? <span className="small muted">{note}</span> : null}
+          </span>
+        ) : null}
       </div>
     );
   };
@@ -173,7 +180,7 @@ export default function Home({ name }) {
               : <><Icon name="check" size={14} stroke={2.4} color="var(--accent)" />{t("synced", { date: fmtDate(lastWatch, lang) })}</>}
         </span>
       </div>
-      {fuelRow(t("calLabel"), kIn, targets?.kcal, t("kcal"), "var(--ok)", true)}
+      {fuelRow(t("calLabel"), kIn, dt.kcal, t("kcal"), "var(--ok)", true, burnLine(dt, t))}
       {fuelRow(t("proLabel"), pIn, targets?.protein, t("g"), "var(--muscle)", false)}
       {!goal && <div className="small muted">{t("noTargets")}</div>}
       {goal && targets && !targets.kcal && (

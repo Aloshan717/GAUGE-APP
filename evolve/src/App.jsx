@@ -5,7 +5,7 @@ import { store, auth, sb, setNotify, setApiLang, readAuthHash, isMissingTable } 
 import { queued, flush, onQueue, remapDone } from "./lib/queue.js";
 import { makeT } from "./lib/i18n.js";
 import { goalTracks } from "./lib/core.js";
-import { currentBody, maintenance, dailyTargets, feasibility, consistency, coachTips, localISO } from "./lib/body.js";
+import { currentBody, maintenance, dailyTargets, dayTarget, burnByDate, feasibility, consistency, coachTips, localISO } from "./lib/body.js";
 import { goalKey } from "./lib/weekly.js";
 import { Icon, Logo } from "./ui.jsx";
 import SignIn, { SetPassword } from "./screens/SignIn.jsx";
@@ -16,7 +16,8 @@ import Goal from "./screens/Goal.jsx";
 import Planner from "./screens/Planner.jsx";
 import Sheets from "./sheets/Sheets.jsx";
 
-export const VERSION = "1.9.1";
+export const VERSION = "1.10.0";
+const REFRESH_MS = 5 * 60 * 1000;   // reload data this often while the app is open
 
 const EMPTY = { weights: [], inbody: [], measurements: [], logs: [], sessions: [], goal: null, days: [], profile: null, plan: null, planRow: null };
 
@@ -199,7 +200,10 @@ export default function App() {
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("online", onOnline);
     const retry = setInterval(() => { if (queued(ownerRef.current).length) flushQueue(); }, 20000);
-    return () => { document.removeEventListener("visibilitychange", onVis); window.removeEventListener("online", onOnline); clearInterval(retry); };
+    // Open for a while (say at the gym): fetch again so the watch's newest burn — and
+    // the calorie target that follows it — shows up without closing the app.
+    const fresh = setInterval(() => { if (document.visibilityState === "visible" && ownerRef.current && navigator.onLine !== false) refresh(); }, REFRESH_MS);
+    return () => { document.removeEventListener("visibilitychange", onVis); window.removeEventListener("online", onOnline); clearInterval(retry); clearInterval(fresh); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
@@ -235,7 +239,11 @@ export default function App() {
     const feas = feasibility({ goal: data.goal, body, profile: data.profile || {}, now });
     const fit = consistency({ goal: data.goal, body });
     const tips = coachTips({ goal: data.goal, body, targets, tracks, days: data.days, weights: data.weights, scans: data.inbody, now });
-    return { body, tracks, maint, targets, feas, fit, tips, goalKey: gk };
+    // A day's calorie target from that day's burn (see dayTarget).
+    const burns = burnByDate(data.days, data.sessions);
+    const targetFor = (burn) => dayTarget({ targets, burn, bmr: maint?.bmr?.kcal, sex: data.profile?.sex });
+    const targetOn = (date) => targetFor(burns.get(date));
+    return { body, tracks, maint, targets, feas, fit, tips, goalKey: gk, targetFor, targetOn };
   }, [data, kcalLock]);
 
   // First time (or a new goal): lock today's target so it doesn't drift day to day.

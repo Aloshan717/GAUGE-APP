@@ -5,8 +5,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useApp } from "../ctx.js";
 import { Icon, Note } from "../ui.jsx";
 import { store } from "../lib/api.js";
-import { fmtDate, fmtNum, signed } from "../lib/i18n.js";
-import { localISO, addDays } from "../lib/body.js";
+import { fmtDate, fmtNum, signed, signedIso } from "../lib/i18n.js";
+import { localISO, addDays, liveAdjust, kcalFloor } from "../lib/body.js";
 import { reportWeek, weekBefore, weeklyReport, MIN_LOGGED } from "../lib/weekly.js";
 import { reportDoc, docText, cellText } from "../lib/reportdoc.js";
 import { docToPdf, shareOrSave } from "../lib/pdf.js";
@@ -19,7 +19,8 @@ export const weekRange = (r, lang) => `${fmtDate(r.from, lang)} – ${fmtDate(r.
 export function useWeekly(week) {
   const { data, derived } = useApp();
   const resting = useResting();
-  return useMemo(() => weeklyReport({ week, data, profile: data.profile || {}, body: derived.body, current: derived.targets?.kcal, protein: derived.targets?.protein, resting }),
+  return useMemo(() => weeklyReport({ week, data, profile: data.profile || {}, body: derived.body, current: derived.targets?.kcal, protein: derived.targets?.protein, resting,
+    targetFor: derived.targetFor, adjust: derived.targets ? liveAdjust(derived.targets) : null }),
     [week.key, data, derived, resting]);   // eslint-disable-line react-hooks/exhaustive-deps
 }
 
@@ -135,9 +136,14 @@ export default function Weekly({ ctx }) {
     try { await navigator.clipboard.writeText(docText(blocks)); toast(t("rpCopied")); } catch { toast(t("rpCopyFail")); }
   };
 
+  // Applying moves your plan and what's taken off your burn by the same step.
+  const sameGoal = !!kcalLock && kcalLock.goalKey === derived.goalKey;
+  const applied = isLatest && sameGoal && kcalLock.week === week.key;
+  const adj = derived.targets ? liveAdjust(derived.targets) : 0;
   const apply = () => {
-    setKcalLock({ ...(kcalLock || {}), kcal: ci.suggested, goalKey: derived.goalKey, since: localISO(), week: week.key });
-    seen(); toast(t("ciApplied", { k: fmtNum(ci.suggested) })); closeSheet();
+    const plan = Math.max((derived.targets?.kcal || ci.current) + ci.change, kcalFloor(derived.maint?.bmr?.kcal, data.profile?.sex));
+    setKcalLock({ ...(sameGoal ? kcalLock : {}), kcal: plan, shift: ((sameGoal && kcalLock.shift) || 0) + ci.change, goalKey: derived.goalKey, since: localISO(), week: week.key });
+    seen(); toast(ci.live ? t("ciAppliedBy", { a: signedIso(adj + ci.change) }) : t("ciApplied", { k: fmtNum(plan) })); closeSheet();
   };
   const keep = () => { seen(); closeSheet(); };
   const goPhotos = () => { seen(); store.set("evolve_body_seg", "photos"); closeSheet(); setTab("body"); window.scrollTo(0, 0); };
@@ -145,24 +151,33 @@ export default function Weekly({ ctx }) {
   const checkinCard = isLatest ? (
     <div className="card tight checkin">
       <div className="row" style={{ gap: 8 }}><Icon name="goal" size={18} color="var(--accent)" /><span className="card-title">{t("ciTitle")}</span></div>
-      {ci.status === "adjust" || ci.status === "ok" ? (
+      {applied ? (
+        <>
+          <Note>{t("ciDone")}</Note>
+          <button className="btn primary" onClick={keep}>{t("done")}</button>
+        </>
+      ) : ci.status === "adjust" || ci.status === "ok" ? (
         <>
           <div className="body">{t("ciBurn", { b: fmtNum(ci.burn), i: fmtNum(ci.avgIn), w: signed(ci.kgPerWeek, 2) })}</div>
           {r.food.days > 0 && r.food.kcal - ci.current > 150 && <Note kind="warn" icon="info">{t("ciOver", { d: fmtNum(Math.round(r.food.kcal - ci.current)) })}</Note>}
           {r.food.days > 0 && ci.current - r.food.kcal > 300 && <Note kind="warn" icon="info">{t("ciUnder", { d: fmtNum(Math.round(ci.current - r.food.kcal)) })}</Note>}
           {ci.status === "adjust" ? (
             <>
-              <div className="ci-change">
-                <span className="num ltr">{fmtNum(ci.current)}</span><span className="muted"> → </span><span className="num ltr" style={{ color: "var(--accent-text)" }}>{fmtNum(ci.suggested)}</span>
-                <span className="small muted"> {t("kcal")} ({ci.change > 0 ? "+" : "−"}{fmtNum(Math.abs(ci.change))})</span>
-              </div>
+              {ci.live ? (
+                <div className="ci-change strong">{t("ciLiveLine", { a: signedIso(adj), b: signedIso(adj + ci.change) })}</div>
+              ) : (
+                <div className="ci-change">
+                  <span className="num ltr">{fmtNum(ci.current)}</span><span className="muted"> → </span><span className="num ltr" style={{ color: "var(--accent-text)" }}>{fmtNum(ci.suggested)}</span>
+                  <span className="small muted"> {t("kcal")} ({ci.change > 0 ? "+" : "−"}{fmtNum(Math.abs(ci.change))})</span>
+                </div>
+              )}
               <div className="small sub">{t(ci.change < 0 ? "ciWhyDown" : "ciWhyUp", { g: ci.goalPerWeek != null ? signed(ci.goalPerWeek, 2) : "—" })}</div>
-              <button className="btn primary" onClick={apply}>{t("ciApply", { k: fmtNum(ci.suggested) })}</button>
-              <button className="btn ghost" onClick={keep}>{t("ciKeep", { k: fmtNum(ci.current) })}</button>
+              <button className="btn primary" onClick={apply}>{ci.live ? t("ciApplyBy", { d: signedIso(ci.change) }) : t("ciApply", { k: fmtNum(ci.suggested) })}</button>
+              <button className="btn ghost" onClick={keep}>{ci.live ? t("ciKeepAsIs") : t("ciKeep", { k: fmtNum(ci.current) })}</button>
             </>
           ) : (
             <>
-              <Note>{t("ciOk", { k: fmtNum(ci.current) })}</Note>
+              <Note>{ci.live ? t("ciOkLive", { a: signedIso(adj) }) : t("ciOk", { k: fmtNum(ci.current) })}</Note>
               <button className="btn primary" onClick={keep}>{t("done")}</button>
             </>
           )}
@@ -178,7 +193,7 @@ export default function Weekly({ ctx }) {
           <button className="btn primary" onClick={keep}>{t("done")}</button>
         </>
       )}
-      <div className="small muted">{t("ciRules")}</div>
+      <div className="small muted">{t(ci.live ? "ciRulesLive" : "ciRules")}</div>
     </div>
   ) : null;
 

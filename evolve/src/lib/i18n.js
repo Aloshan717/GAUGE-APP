@@ -92,6 +92,14 @@ export const STR = {
     flHint: "Tap a day to see its entries or fix it. ± target is against your current target ({k} kcal).",
     flEntries: "Entries · {date}", flAdded: "Added", flSetTo: "Day total set", flEarlier: "Earlier entries: {k} kcal",
     flRemoved: "Entry removed",
+    tgBurnGoal: "burned {sum} for your goal", tgBurnOnly: "your burn so far: {b}", tgFloor: "never below {f}", todayIs: "Today: {k} kcal — {why}",
+    flHintBurn: "Tap a day to see its entries or fix it. ± target is against that day's target: its burn {a} for your goal ({k} kcal on a day with no burn).",
+    ciLiveLine: "Your burn {a} → your burn {b}", ciApplyBy: "Apply {d} kcal a day", ciKeepAsIs: "Keep it as is", ciAppliedBy: "Done — your daily target is now your burn {a}",
+    ciOkLive: "Your target is right — keep eating your burn {a}.", ciDone: "You applied this week's check-in.",
+    ciRulesLive: "What's taken off your burn only changes when you tap Apply — never more than 150 kcal at a time — and your target never goes below a safe minimum.",
+    wkCiHintLive: "Calorie check-in: suggests {d} kcal a day",
+    rpCheckinLive: "Your real burn is {b} kcal a day — suggested: {c} kcal a day, so your target becomes your burn {a}.",
+    rpCheckinOkLive: "Your real burn is {b} kcal a day — your target (your burn {a}) fits your goal.",
     rpTitle: "Weekly report", rpLatest: "Last week", rpEarlier: "Earlier week", rpPrev: "Week before", rpNext: "Week after",
     rpPdf: "Download PDF", rpMaking: "Making the PDF…", rpShareReady: "PDF ready — tap to share", rpSaved: "PDF saved to your downloads",
     rpPdfFail: "Couldn't make the PDF — try again.", rpCopy: "Copy as text", rpCopied: "Report copied — paste it anywhere", rpCopyFail: "Couldn't copy on this device",
@@ -195,7 +203,7 @@ export const STR = {
       ["Add it up", "Search Statistics → tap “Calculate Statistics”.\nTap the blue word and choose “Sum”."],
       ["Send it to Evolve", "Search URL → tap “Get Contents of URL”.\nTap the blue “URL” → paste your link.\nKeep the cursor at the very end of the link, then tap “Statistics” in the bar above the keyboard. Tap Done."],
       ["Try it", "Tap ▶ at the bottom. Allow Health access the first time.\nIf it asks to share or connect, tap “Always Allow” — not “Allow Once”, or the automation can't send by itself.\nThen come back and tap “Check it worked”."],
-      ["Make it automatic", "Shortcuts → “Automation” tab → “+” → “App” → “Choose” → tick WhatsApp (or 2–3 apps you open every day) → Done → keep “Is Opened” → “Run Immediately” → turn off “Notify When Run” → Next → pick the Shortcut you just made.\nWhy an app and not a time? Your iPhone locks Health data while the phone is locked, so a night-time automation usually can't read it. Each time you open that app, today's burn so far is sent — the last one of the day stays.\nAlready have the 11:55 PM automation? Delete it (swipe left)."],
+      ["Make it automatic", "Shortcuts → “Automation” tab → “+” → “App” → “Choose” → tick the apps you open most — WhatsApp, Instagram, Safari, Messages… → Done → keep “Is Opened” → “Run Immediately” → turn off “Notify When Run” → Next → pick the Shortcut you just made.\nEach time you open one of them, today's burn so far is sent — the more apps you tick, the more often your calorie target updates. Already set up? Open the automation, tap the app name and tick more apps.\nWhy not every hour by the clock? Your iPhone locks Health data while the phone is locked, so a timed automation usually can't read it.\nAlready have the 11:55 PM automation? Delete it (swipe left)."],
     ],
     wsIntro: "Once, about 3 minutes. Then every night your iPhone sends the day's burn from Apple Health to Evolve by itself — free, no app to install.",
     wsCopy: "Copy my link", wsCheck: "Check it worked", wsNotYet: "Nothing received yet. Tap ▶ in the Shortcut once (step 5) with the iPhone unlocked, then check again.",
@@ -405,6 +413,14 @@ export const STR = {
     flHint: "اضغط على أي يوم تشوف إدخالاته أو تعدّله. «± الهدف» مقارنة بهدفك الحالي ({k} سعرة).",
     flEntries: "الإدخالات · {date}", flAdded: "إضافة", flSetTo: "تحديد مجموع اليوم", flEarlier: "إدخالات قبل: {k} سعرة",
     flRemoved: "انحذف الإدخال",
+    tgBurnGoal: "حرقت {sum} عشان هدفك", tgBurnOnly: "حرقك لين الحين: {b}", tgFloor: "وما ينزل عن {f}", todayIs: "اليوم: {k} سعرة — {why}",
+    flHintBurn: "اضغط على أي يوم تشوف إدخالاته أو تعدّله. «± الهدف» مقارنة بهدف ذاك اليوم: حرقه {a} عشان هدفك ({k} سعرة لليوم اللي ما فيه حرق).",
+    ciLiveLine: "حرقك {a} ← حرقك {b}", ciApplyBy: "اعتمد {d} سعرة باليوم", ciKeepAsIs: "خلّه زي ما هو", ciAppliedBy: "تم — هدفك اليومي صار حرقك {a}",
+    ciOkLive: "هدفك مضبوط — كمّل على حرقك {a}.", ciDone: "اعتمدت مراجعة هالأسبوع.",
+    ciRulesLive: "اللي ينخصم من حرقك ما يتغيّر إلا لما تضغط «اعتمد» — وبحد أقصى ١٥٠ سعرة كل مرة — وهدفك ما ينزل تحت الحد الآمن.",
+    wkCiHintLive: "مراجعة السعرات: تقترح {d} سعرة باليوم",
+    rpCheckinLive: "حرقك الفعلي {b} سعرة باليوم — المقترح: {c} سعرة باليوم، فيصير هدفك حرقك {a}.",
+    rpCheckinOkLive: "حرقك الفعلي {b} سعرة باليوم — هدفك (حرقك {a}) مناسب لهدفك.",
     rpTitle: "التقرير الأسبوعي", rpLatest: "الأسبوع الماضي", rpEarlier: "أسبوع سابق", rpPrev: "الأسبوع اللي قبله", rpNext: "الأسبوع اللي بعده",
     rpPdf: "تحميل PDF", rpMaking: "جاري تجهيز الـPDF…", rpShareReady: "الـPDF جاهز — اضغط للمشاركة", rpSaved: "انحفظ الـPDF في التنزيلات",
     rpPdfFail: "ما قدرت أسوي الـPDF — جرّب مرة ثانية.", rpCopy: "نسخ كنص", rpCopied: "انسخ التقرير — الصقه وين ما تبي", rpCopyFail: "ما قدرت أنسخ على هالجهاز",
@@ -503,7 +519,7 @@ export const STR = {
       ["اجمعها", "ابحث عن «الإحصائيات» أو Statistics ← اختر «حساب الإحصائيات» (Calculate Statistics).\nاضغط الكلمة الزرقاء واختر «المجموع» (Sum)."],
       ["أرسلها إلى Evolve", "ابحث عن URL ← اختر «الحصول على محتويات URL» (Get Contents of URL).\nاضغط «URL» الأزرق ← الصق رابطك.\nخلّ المؤشر في آخر الرابط بالضبط، وبعدها اضغط «الإحصائيات» (Statistics) في الشريط اللي فوق الكيبورد. اضغط تم."],
       ["جرّبه", "اضغط ▶ تحت. أول مرة يطلب إذن Health — اسمح.\nإذا سألك عن المشاركة أو الاتصال اضغط «السماح دائماً» (Always Allow) — مو «السماح مرة واحدة»، وإلا الأتمتة ما تقدر ترسل لحالها.\nارجع هنا واضغط «تأكد إنه اشتغل»."],
-      ["خلّه تلقائي", "الاختصارات ← تبويب «الأتمتة» (Automation) ← «+» ← «التطبيق» (App) ← «اختيار» (Choose) ← علّم واتساب (أو ٢–٣ تطبيقات تفتحها كل يوم) ← تم ← خلّ «عند الفتح» (Is Opened) ← «تشغيل فوراً» (Run Immediately) ← طفّ «الإشعار عند التشغيل» (Notify When Run) ← التالي ← اختر الاختصار اللي سويته.\nليش تطبيق مو وقت؟ الآيفون يقفل بيانات الصحة وهو مقفول، فالأتمتة الليلية غالباً ما تقدر تقراها. كل ما تفتح التطبيق ينرسل حرق اليوم لين هاللحظة — وآخر إرسال باليوم هو اللي يبقى.\nعندك أتمتة 11:55 م القديمة؟ احذفها (اسحبها لليسار)."],
+      ["خلّه تلقائي", "الاختصارات ← تبويب «الأتمتة» (Automation) ← «+» ← «التطبيق» (App) ← «اختيار» (Choose) ← علّم التطبيقات اللي تفتحها كثير — واتساب، إنستقرام، سفاري، الرسائل… ← تم ← خلّ «عند الفتح» (Is Opened) ← «تشغيل فوراً» (Run Immediately) ← طفّ «الإشعار عند التشغيل» (Notify When Run) ← التالي ← اختر الاختصار اللي سويته.\nكل ما تفتح واحد منها ينرسل حرق اليوم لين هاللحظة — وكل ما زادت التطبيقات اللي تعلّمها، زاد تحديث هدف سعراتك. مسوّيها من قبل؟ افتح الأتمتة، اضغط على اسم التطبيق، وعلّم تطبيقات زيادة.\nليش مو كل ساعة بالوقت؟ الآيفون يقفل بيانات الصحة وهو مقفول، فالأتمتة بالوقت غالباً ما تقدر تقراها.\nعندك أتمتة 11:55 م القديمة؟ احذفها (اسحبها لليسار)."],
     ],
     wsIntro: "مرة وحدة، تقريباً 3 دقائق. بعدها كل ليلة الآيفون يرسل حرق اليوم من Apple Health إلى Evolve بنفسه — مجاناً وبدون تنزيل أي تطبيق.",
     wsCopy: "انسخ رابطي", wsCheck: "تأكد إنه اشتغل", wsNotYet: "ما وصل شي للحين. اضغط ▶ في الاختصار مرة (الخطوة 5) والجوال مفتوح، وبعدين تأكد مرة ثانية.",
@@ -653,6 +669,16 @@ export const fmtNum = (n, digits = 0) =>
 export const signed = (n, digits = 1) => (n == null ? "—" : `${n > 0 ? "+" : n < 0 ? "−" : ""}${fmtNum(Math.abs(n), digits)}`);
 // Same, kept in one piece with the sign on the left inside Arabic text.
 export const signedIso = (n, digits = 0) => (n == null ? "—" : `\u2066${signed(n, digits)}\u2069`);
+// A short sum like "2,510 − 240", kept left to right inside Arabic text.
+export const ltrIso = (s) => `\u2066${s}\u2069`;
+
+// Under the day's calories: how its target came from its burn (see dayTarget).
+export function burnLine(dt, t) {
+  if (!dt?.live) return "";
+  const a = dt.adjust;
+  const head = a ? t("tgBurnGoal", { sum: ltrIso(`${fmtNum(dt.burn)} ${a < 0 ? "−" : "+"} ${fmtNum(Math.abs(a))}`) }) : t("tgBurnOnly", { b: fmtNum(dt.burn) });
+  return dt.floor ? `${head} · ${t("tgFloor", { f: fmtNum(dt.floor) })}` : head;
+}
 
 // Two names → "A and B"; three → "A, B and C".
 export function joinList(items, t) {

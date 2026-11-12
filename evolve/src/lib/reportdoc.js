@@ -132,8 +132,10 @@ export function reportDoc(r, { t, lang, name }) {
 
 function checkinText(ci, t) {
   if (!ci) return "";
-  if (ci.status === "adjust") return t("rpCheckin", { b: fmtNum(ci.burn), k: fmtNum(ci.suggested), c: signedIso(ci.change) });
-  if (ci.status === "ok") return t("rpCheckinOk", { b: fmtNum(ci.burn), k: fmtNum(ci.current) });
+  const live = ci.live && ci.adjust != null;
+  if (ci.status === "adjust") return live ? t("rpCheckinLive", { b: fmtNum(ci.burn), c: signedIso(ci.change), a: signedIso(ci.adjust + ci.change) })
+    : t("rpCheckin", { b: fmtNum(ci.burn), k: fmtNum(ci.suggested), c: signedIso(ci.change) });
+  if (ci.status === "ok") return live ? t("rpCheckinOkLive", { b: fmtNum(ci.burn), a: signedIso(ci.adjust) }) : t("rpCheckinOk", { b: fmtNum(ci.burn), k: fmtNum(ci.current) });
   if (ci.status === "need-food") return t("ciNeedFood", { n: ci.logged, m: 5 });
   if (ci.status === "need-weight") return t("ciNeedWeight");
   if (ci.status === "early") return t("ciEarly");

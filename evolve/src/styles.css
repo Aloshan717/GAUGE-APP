@@ -361,12 +361,12 @@ code.key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-siz
 .sw-sec { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; font-weight: 800; color: var(--text2); margin: 8px 2px 0; }
 .fl-week { display: flex; flex-direction: column; align-items: stretch; gap: 6px; width: 100%; padding: 11px 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface2); color: inherit; text-align: start; }
 .week-bars { position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; align-items: end; }
-.wb-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; height: 100%; }
+.wb-col { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; height: 100%; }
 .wb-bar { width: 100%; max-width: 30px; border-radius: 6px 6px 3px 3px; background: var(--ok); }
 .wb-bar.over { background: var(--warn); }
 .wb-bar.none { background: var(--line2); }
 .wb-day { font-size: 10px; font-weight: 700; color: var(--muted); line-height: 13px; height: 13px; }
-.wb-target { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--muted); pointer-events: none; }
+.wb-tick { position: absolute; left: 50%; width: 100%; max-width: 36px; transform: translateX(-50%); border-top: 2px dashed var(--muted); pointer-events: none; }
 /* Weekly report */
 .rp-nav { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 8px; }
 .rp-nav .icon-btn:disabled { opacity: .35; }

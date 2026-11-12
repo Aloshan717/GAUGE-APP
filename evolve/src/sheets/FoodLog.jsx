@@ -4,21 +4,21 @@ import React, { useMemo } from "react";
 import { useApp } from "../ctx.js";
 import { Icon } from "../ui.jsx";
 import { fmtDate, fmtNum, signedIso } from "../lib/i18n.js";
-import { localISO } from "../lib/body.js";
+import { localISO, liveAdjust } from "../lib/body.js";
 import { dayRows, lastSeven } from "../lib/foodlog.js";
 
 const sign = (n) => signedIso(n);
 
-// Seven bars (one per day) with the target as a dashed line.
+// Seven bars (one per day), each with that day's target as a dashed mark.
 export function WeekBars({ week, height = 54 }) {
   const { lang } = useApp();
-  const max = Math.max(week.target || 0, ...week.rows.map((r) => r.kcal)) * 1.08 || 1;
+  const max = Math.max(0, ...week.rows.map((r) => Math.max(r.kcal, r.target || 0))) * 1.08 || 1;
   return (
     <div className="week-bars ltr" style={{ height: height + 16 }}>
-      {week.target ? <span className="wb-target" style={{ bottom: 16 + (week.target / max) * height }} /> : null}
       {week.rows.map((r) => (
         <div key={r.date} className="wb-col">
-          <span className={`wb-bar${!r.logged ? " none" : week.target && r.kcal > week.target ? " over" : ""}`} style={{ height: r.logged ? Math.max(3, (r.kcal / max) * height) : 3 }} />
+          {r.target ? <span className="wb-tick" style={{ bottom: 16 + (r.target / max) * height }} /> : null}
+          <span className={`wb-bar${!r.logged ? " none" : r.target && r.kcal > r.target ? " over" : ""}`} style={{ height: r.logged ? Math.max(3, (r.kcal / max) * height) : 3 }} />
           <span className="wb-day">{new Intl.DateTimeFormat(lang === "ar" ? "ar" : "en", { weekday: "narrow" }).format(new Date(`${r.date}T12:00:00`))}</span>
         </div>
       ))}
@@ -29,8 +29,8 @@ export function WeekBars({ week, height = 54 }) {
 export function useWeekFood() {
   const { data, derived } = useApp();
   const today = localISO();
-  return useMemo(() => lastSeven({ days: data.days, sessions: data.sessions, today, target: derived.targets?.kcal, proteinTarget: derived.targets?.protein }),
-    [data.days, data.sessions, today, derived.targets]);
+  return useMemo(() => lastSeven({ days: data.days, sessions: data.sessions, today, target: derived.targets?.kcal, proteinTarget: derived.targets?.protein, targetFor: derived.targetFor }),
+    [data.days, data.sessions, today, derived]);
 }
 
 export default function FoodLog() {
@@ -38,7 +38,7 @@ export default function FoodLog() {
   const today = localISO();
   const target = derived.targets?.kcal;
   const w = useWeekFood();
-  const rows = useMemo(() => dayRows({ days: data.days, sessions: data.sessions, today, n: 30, target }), [data.days, data.sessions, today, target]);
+  const rows = useMemo(() => dayRows({ days: data.days, sessions: data.sessions, today, n: 30, target, targetFor: derived.targetFor }), [data.days, data.sessions, today, target, derived]);
   const open = (date) => openSheet("fuel", { date, backTo: { name: "foodlog" } });
   const stat = (v, l, color) => (
     <div className="box" style={{ padding: "9px 10px" }}>
@@ -87,7 +87,9 @@ export default function FoodLog() {
           </button>
         ))}
       </div>
-      <div className="small muted">{t("flHint", { k: target ? fmtNum(target) : "—" })}</div>
+      <div className="small muted">{rows.some((r) => r.live) && liveAdjust(derived.targets)
+        ? t("flHintBurn", { a: signedIso(liveAdjust(derived.targets)), k: target ? fmtNum(target) : "—" })
+        : t("flHint", { k: target ? fmtNum(target) : "—" })}</div>
     </>
   );
 }
