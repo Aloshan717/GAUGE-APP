@@ -2,17 +2,18 @@
 // works (zoomed in, plus the whole body), and every time you did it.
 import React from "react";
 import { useApp } from "../ctx.js";
-import { Photo, MuscleMap, Spark } from "../ui.jsx";
+import { Photo, MuscleMap, Spark, Icon } from "../ui.jsx";
 import { BY_ID, GROUPS, MUSCLE_NAMES } from "../lib/exercises.js";
 import { musclesOf, customMuscles, muscleNames, mainView } from "../lib/muscles.js";
 import { liftHistory, customMatch, setsText } from "../lib/train.js";
 import { findMine } from "../lib/myex.js";
 import { fmtDate, fmtNum } from "../lib/i18n.js";
+import { swapApplier } from "./Swap.jsx";
 
 const LTR = (s) => `⁦${s}⁩`;
 
 export default function ExerciseInfo({ ctx }) {
-  const { t, lang, data } = useApp();
+  const { t, lang, data, setTrainSession, setPlanDraft, closeSheet, toast } = useApp();
   const L = lang === "ar" ? 1 : 0;
   const ex = ctx.ex ? BY_ID[ctx.ex] : null;
   const own = ex ? null : findMine(ctx.name);
@@ -26,12 +27,19 @@ export default function ExerciseInfo({ ctx }) {
   const best = history.length ? Math.max(...history.map((h) => Math.max(...h.sets.map((s) => s.weight_kg)))) : null;
   const points = [...history].reverse().map((h) => ({ t: new Date(`${h.date}T12:00:00`).getTime(), v: Math.max(...h.sets.map((s) => s.weight_kg)), date: h.date }));
 
+  // Opened from the swap list: pick this one right here.
+  const choose = ex && ctx.choose ? () => { swapApplier(ctx.choose, { setTrainSession, setPlanDraft })(ex.id); toast(t("swapped", { name: ex.name[L] })); closeSheet(); } : null;
+
   return (
     <>
       <div className="col" style={{ gap: 3 }}>
-        <div className="strong" style={{ fontSize: 18, lineHeight: 1.3 }}>{ex ? ex.name[L] : ctx.name}</div>
+        <div className="row wrap" style={{ gap: 8 }}>
+          <span className="strong" style={{ fontSize: 18, lineHeight: 1.3 }}>{ex ? ex.name[L] : ctx.name}</span>
+          {ctx.same && <span className="tag ok">✓ {t("tagSameAngle")}</span>}
+        </div>
         <div className="small sub">{ex ? ex.gear[L] : `${t("ownExTag")} · ${(MUSCLE_NAMES[muscle] || [muscle, muscle])[L]}`}</div>
       </div>
+      {choose && <button type="button" className="btn primary lg" onClick={choose}><Icon name="swap" size={18} />{t("useThisEx")}</button>}
       {ex?.img && (
         <div className="grid2">
           <div className="col" style={{ gap: 4 }}><Photo ex={ex} big frame={0} /><span className="small muted center">{t("exStart")}</span></div>

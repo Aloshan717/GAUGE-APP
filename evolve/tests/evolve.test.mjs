@@ -656,6 +656,17 @@ test("week burn: only active calories (resting taken back out), Sunday to now", 
   assert.equal(w.today, 400);
   assert.deepEqual(w.rows.map((r) => r.future), [false, false, false, false, true, true, true]);
   assert.equal(w.rows[3].today, true);
+  // Last week (1–7 Nov): only Saturday came from the watch → its average is that day.
+  assert.equal(w.last.from, "2026-11-01"); assert.equal(w.last.to, "2026-11-07");
+  assert.equal(w.last.days, 1); assert.equal(w.last.avg, 1100); assert.equal(w.last.total, 1100);
+});
+test("week burn: last week's average from its readings; a new Sunday starts at zero", () => {
+  const days = ["2026-11-01", "2026-11-03", "2026-11-05", "2026-11-07"].map((date, i) => ({ date, burn_kcal: 2400 + i * 100, burn_source: "watch" }));
+  const sunday = burnWeek({ days, sessions: [], today: "2026-11-08", resting: 1900 });   // Sunday, nothing yet
+  assert.equal(sunday.total, 0); assert.equal(sunday.days, 0); assert.equal(sunday.avg, null);
+  assert.deepEqual([sunday.last.days, sunday.last.total, sunday.last.avg], [4, 2600, 650]);   // 500 + 600 + 700 + 800
+  const saturday = burnWeek({ days, sessions: [], today: "2026-11-07", resting: 1900 });
+  assert.equal(saturday.total, 2600); assert.equal(saturday.last.days, 0); assert.equal(saturday.last.avg, null);
 });
 test("week burn: missing days stay empty, never below zero, nothing without resting energy", () => {
   const w = burnWeek({ days: [{ date: "2026-11-09", burn_kcal: 1800, burn_source: "manual" }], sessions: [], today: "2026-11-11", resting: 1900 });
@@ -688,6 +699,17 @@ test("rest beep mixes with your music (never pauses it) and lets go of the audio
   } finally {
     delete globalThis.window;
     delete globalThis.navigator.audioSession;
+  }
+});
+test("no text field under 16px (iPhone zooms the whole page into smaller ones)", () => {
+  const css = readFileSync("src/styles.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const bad = [...css.matchAll(/([^{}]*\b(?:input|textarea|select)\b[^{}]*)\{([^}]*)\}/g)]
+    .filter(([, , body]) => { const m = body.match(/font-size:\s*(\d+(?:\.\d+)?)px/); return m && +m[1] < 16; })
+    .map(([, sel]) => sel.trim());
+  assert.deepEqual(bad, []);
+  for (const f of ["src/screens/Train.jsx", "src/sheets/AddExercise.jsx", "src/sheets/Sheets.jsx"]) {
+    const src = readFileSync(f, "utf8");
+    assert.ok(!/<input[^>]*fontSize:\s*1[0-5]\b/.test(src), f);
   }
 });
 

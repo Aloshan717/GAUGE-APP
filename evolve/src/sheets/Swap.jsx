@@ -8,6 +8,17 @@ import { BY_ID, GROUPS, swapOptions } from "../lib/exercises.js";
 import { musclesOf, muscleNames, sameAngle } from "../lib/muscles.js";
 import { swapInPlan } from "../lib/plan.js";
 
+// Put `exId` in the slot being swapped — in today's workout or in the plan draft.
+export function swapApplier({ src, slotId }, { setTrainSession, setPlanDraft }) {
+  if (src === "plan") return (exId) => setPlanDraft((d) => ({ ...d, plan: swapInPlan(d.plan, slotId, exId) }));
+  return (exId) => setTrainSession((s) => {
+    if (!s) return s;
+    const done = { ...(s.done || {}) };
+    delete done[slotId];   // sets already saved stay in your history under the old exercise
+    return { ...s, done, slots: s.slots.map((x) => (x.id === slotId ? { ...x, ex: exId, origEx: x.origEx || x.ex } : x)) };
+  });
+}
+
 export default function SwapSheet({ ctx }) {
   const { t, lang, data, trainSession, setTrainSession, planDraft, setPlanDraft, closeSheet, openSheet } = useApp();
   const L = lang === "ar" ? 1 : 0;
@@ -21,15 +32,11 @@ export default function SwapSheet({ ctx }) {
     siblings = (day?.slots || []).filter((s) => s.id !== ctx.slotId).map((s) => s.ex);
     equipment = planDraft.answers?.equipment || equipment;
     pain = planDraft.answers?.pain || pain;
-    apply = (exId) => setPlanDraft((d) => ({ ...d, plan: swapInPlan(d.plan, ctx.slotId, exId) }));
+    apply = swapApplier(ctx, { setTrainSession, setPlanDraft });
   } else if (ctx.src === "train" && trainSession) {
     slot = trainSession.slots.find((s) => s.id === ctx.slotId) || null;
     siblings = trainSession.slots.filter((s) => s.id !== ctx.slotId).map((s) => s.ex);
-    apply = (exId) => setTrainSession((s) => {
-      const done = { ...(s.done || {}) };
-      delete done[ctx.slotId];   // sets already saved stay in your history under the old exercise
-      return { ...s, done, slots: s.slots.map((x) => (x.id === ctx.slotId ? { ...x, ex: exId, origEx: x.origEx || x.ex } : x)) };
-    });
+    apply = swapApplier(ctx, { setTrainSession, setPlanDraft });
   }
   if (!slot || !BY_ID[slot.ex]) return <div className="small muted">{t("swNone")}</div>;
 
@@ -37,7 +44,9 @@ export default function SwapSheet({ ctx }) {
   const g = GROUPS[cur.group];
   const original = slot.origEx || (ctx.src === "plan" ? null : slot.ex);
   const options = swapOptions(slot.ex, { equipment, pain, exclude: siblings });
-  const info = (id) => openSheet("exInfo", { ex: id, backTo: { name: "swap", opts: { src: ctx.src, slotId: ctx.slotId } } });
+  // An alternative's details carry a "Use this exercise" button (and whether it is the same angle).
+  const info = (id) => openSheet("exInfo", { ex: id, choose: id !== cur.id ? { src: ctx.src, slotId: ctx.slotId } : null,
+    same: id !== cur.id && sameAngle(cur, BY_ID[id]), backTo: { name: "swap", opts: { src: ctx.src, slotId: ctx.slotId } } });
   const curM = musclesOf(cur);
   const same = options.filter((e) => sameAngle(cur, e));
   const clusters = [];

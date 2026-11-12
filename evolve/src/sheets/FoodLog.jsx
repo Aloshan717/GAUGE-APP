@@ -58,7 +58,7 @@ export default function FoodLog() {
             <div className="grid3">
               {stat(fmtNum(w.total), t("flTotal"))}
               {stat(fmtNum(w.avg), t("flAvg"))}
-              {stat(w.vsTarget != null ? sign(w.vsTarget) : "—", t("flVsTarget"), w.vsTarget > 100 ? "var(--warn)" : w.vsTarget != null ? "var(--ok)" : undefined)}
+              {stat(w.vsTarget != null ? fmtNum(Math.abs(w.vsTarget)) : "—", t(w.vsTarget > 0 ? "flOverDay" : "flUnderDay"), w.vsTarget > 100 ? "var(--warn)" : w.vsTarget != null ? "var(--ok)" : undefined)}
             </div>
             <WeekBars week={w} />
             <div className="small sub">{t("flLogged", { n: w.logged })}{w.protein != null ? ` · ${t("flProtein", { p: fmtNum(w.protein), t: w.proteinTarget ? fmtNum(w.proteinTarget) : "—" })}` : ""}</div>

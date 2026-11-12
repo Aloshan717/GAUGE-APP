@@ -2,14 +2,16 @@
 import React from "react";
 import { useApp } from "../ctx.js";
 import { Icon, Ring, Spark, Bar } from "../ui.jsx";
-import { fmtDate, fmtNum, signed, signedIso, joinList } from "../lib/i18n.js";
+import { fmtDate, fmtNum, signed, joinList } from "../lib/i18n.js";
 import { localISO, addDays, dayRow, burnByDate, arrival, changeOver } from "../lib/body.js";
 import { coerceNumber } from "../lib/core.js";
 import { MealChips } from "../sheets/Sheets.jsx";
 import { store } from "../lib/api.js";
 import { reportWeek, hasContent } from "../lib/weekly.js";
 import { useWeekly, seenKey, weekRange } from "../sheets/Weekly.jsx";
-import { WeekBars, useWeekFood } from "../sheets/FoodLog.jsx";
+import { useWeekFood } from "../sheets/FoodLog.jsx";
+import WeekBurn, { useResting } from "./WeekBurn.jsx";
+import { activeOf } from "../lib/burnweek.js";
 
 const COLOR = { weight: "var(--accent)", bodyFat: "var(--fat)", muscle: "var(--muscle)" };
 const STATUS_COLOR = { ok: "var(--ok)", warn: "var(--warn)", bad: "var(--bad)", neutral: "var(--accent)" };
@@ -48,6 +50,7 @@ export default function Home({ name }) {
   const week = reportWeek(localISO());
   const wr = useWeekly(week);
   const food7 = useWeekFood();
+  const resting = useResting();
   const unseen = !!user?.id && store.get(seenKey(user.id)) !== week.key && !sheet;
   const weeklyCard = unseen && hasContent(wr) ? (
     <div className="card accent">
@@ -141,6 +144,9 @@ export default function Home({ name }) {
   const burnToday = burns.get(today), burnYest = burns.get(yesterday);
   const lastWatch = (data.days || []).filter((d) => d.burn_source === "watch" && d.burn_kcal).map((d) => d.date).sort().pop();
   const kIn = coerceNumber(row.kcal_in) || 0, pIn = coerceNumber(row.protein_g) || 0;
+  const extraBurn = activeOf(burnToday || burnYest, resting);
+  const v7 = food7.vsTarget;
+  const vsLine = v7 == null ? "" : Math.abs(v7) < 50 ? t("fl7On") : v7 < 0 ? t("fl7Under", { d: fmtNum(-v7) }) : t("fl7Over", { d: fmtNum(v7) });
   // The big number is what's left (or over); what you ate of the target sits under the bar.
   const fuelRow = (label, eaten, target, unit, color, isCal) => {
     const pct = target ? (eaten / target) * 100 : 0;
@@ -183,18 +189,21 @@ export default function Home({ name }) {
       {goal && targets && !targets.kcal && (
         <div className="note warn"><Icon name="info" size={16} color="var(--warn)" /><span>{t("needProfile")} <button className="link" style={{ padding: 0, minHeight: 0 }} onClick={() => openSheet("profile")}>{t("addProfile")}</button></span></div>
       )}
-      <button className="row between box" style={{ border: "none", width: "100%", color: "inherit", textAlign: "start" }} onClick={() => openSheet("burn")}>
-        <span className="row small sub" style={{ gap: 8 }}><Icon name="flame" size={18} color="var(--fat)" />{burnToday ? t("burnToday") : burnYest ? t("burnYesterday") : t("noBurn")}</span>
-        {(burnToday || burnYest) && <span className="num" style={{ fontSize: 20 }}>{fmtNum(burnToday || burnYest)} <span className="small muted" style={{ fontFamily: "inherit" }}>{t("kcal")}</span></span>}
+      <button className="row between box" style={{ border: "none", width: "100%", color: "inherit", textAlign: "start", gap: 10 }} onClick={() => openSheet("burn")}>
+        <span className="col" style={{ gap: 2 }}>
+          <span className="row small sub" style={{ gap: 8 }}><Icon name="flame" size={18} color="var(--fat)" />{burnToday ? t("burnToday") : burnYest ? t("burnYesterday") : t("noBurn")}</span>
+          {extraBurn != null && <span className="small muted">{t("burnExtra", { k: fmtNum(extraBurn) })}</span>}
+        </span>
+        {(burnToday || burnYest) && <span className="num" style={{ fontSize: 20, flex: "none" }}>{fmtNum(burnToday || burnYest)} <span className="small muted" style={{ fontFamily: "inherit" }}>{t("kcal")}</span></span>}
       </button>
+      <WeekBurn compact />
       {food7.logged > 0 && (
-        <button type="button" className="fl-week" onClick={() => openSheet("foodlog")} aria-label={t("flOpen")}>
-          <span className="row between" style={{ width: "100%" }}>
-            <span className="small strong sub">{t("flWeekShort")}</span>
-            <span className="small strong">{t("flAvgLine", { k: fmtNum(food7.avg), n: food7.logged })}</span>
+        <button type="button" className="row between box" style={{ border: "none", width: "100%", color: "inherit", textAlign: "start", gap: 10 }} onClick={() => openSheet("foodlog")} aria-label={t("flOpen")}>
+          <span className="col" style={{ gap: 2 }}>
+            <span className="row small sub" style={{ gap: 8 }}><Icon name="file" size={17} />{t("fl7Title")}</span>
+            <span className="small muted">{[vsLine, t("fl7Days", { n: food7.logged })].filter(Boolean).join(" · ")}</span>
           </span>
-          <WeekBars week={food7} height={38} />
-          <span className="small muted" style={{ width: "100%" }}>{t("flTotalLine", { k: fmtNum(food7.total) })}{food7.vsTarget != null ? ` · ${t("flVsLine", { d: signedIso(food7.vsTarget) })}` : ""}</span>
+          <span style={{ flex: "none", textAlign: "end" }}><span className="num" style={{ fontSize: 20 }}>{fmtNum(food7.avg)}</span> <span className="small muted">{t("fl7Avg")}</span></span>
         </button>
       )}
       <MealChips date={today} row={row} limit={4} />

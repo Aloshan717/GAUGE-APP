@@ -25,6 +25,9 @@
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; }
+/* No double-tap zoom while tapping ✓ and steppers fast; the page never pans sideways. */
+html { touch-action: manipulation; }
+body { overflow-x: clip; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -150,7 +153,7 @@ h1, h2, h3 { margin: 0; }
 }
 .input:focus { border-color: var(--accent); outline: none; }
 select.input { appearance: none; }
-.input.sm { min-height: 40px; font-size: 15px; padding: 0 8px; text-align: center; }
+.input.sm { min-height: 40px; font-size: 16px; padding: 0 8px; text-align: center; }   /* 16px+: iPhone zooms the page into smaller fields */
 .err { color: var(--bad); font-size: 13px; line-height: 1.45; }
 .okmsg { color: var(--accent-text); font-size: 13px; line-height: 1.45; }
 
@@ -258,7 +261,7 @@ button.ex-media { position: relative; }
 /* Search */
 .search { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 6px 0 12px; border-radius: 14px; border: 1px solid var(--line2); background: var(--surface2); color: var(--muted); }
 :root[dir="rtl"] .search { padding: 0 12px 0 6px; }
-.search input { border: none; background: none; outline: none; min-height: 44px; color: var(--text); font-size: 15px; }
+.search input { border: none; background: none; outline: none; min-height: 44px; color: var(--text); font-size: 16px; }
 button.pick-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; border: none; background: none; padding: 0; color: inherit; text-align: start; }
 .rec { display: flex; align-items: flex-start; gap: 8px; border-radius: 12px; padding: 9px 11px; background: var(--surface2); border: 1px solid var(--line2); font-size: 12.5px; line-height: 1.45; }
 .rec b { white-space: nowrap; }
