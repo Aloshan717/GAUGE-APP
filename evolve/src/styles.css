@@ -188,10 +188,8 @@ select.input { appearance: none; }
 .ring > div > div { width: 74px; height: 74px; border-radius: 50%; display: grid; place-items: center; }
 .ring > div > div > div { width: 66px; height: 66px; border-radius: 50%; background: var(--surface); display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .ring .v { font-size: 24px; line-height: 1; }
-.ring .u { font-size: 10px; font-weight: 700; color: var(--muted); }
-.ring-delta { display: flex; flex-direction: column; align-items: center; gap: 1px; font-size: 12.5px; line-height: 1.2; white-space: nowrap; }
-.ring-delta b { font-weight: 800; }
-.ring-delta .muted { font-size: 10.5px; font-weight: 600; }
+.ring .u { font-size: 11px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.ring-ch { font-size: 14px; font-weight: 800; white-space: nowrap; }
 .legend { display: flex; justify-content: center; gap: 16px; font-size: 11px; color: var(--muted); flex-wrap: wrap; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 

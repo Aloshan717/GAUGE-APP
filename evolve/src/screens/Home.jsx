@@ -91,6 +91,10 @@ export default function Home({ name }) {
       } else if (!dates.length) eta = "";
     }
 
+    // One date under the rings for the ▼▲ changes ("your previous reading" when they differ).
+    const chDates = [...new Set(keys.map((k) => sinceLast(tracks[k])?.date).filter(Boolean))];
+    const chCaption = chDates.length ? `▼▲ ${chDates.length === 1 ? t("vsLast", { date: fmtDate(chDates[0], lang) }) : t("vsPrevReading")}` : "";
+
     goalCard = (
       <div className="card">
         <div className="row between">
@@ -103,24 +107,22 @@ export default function Home({ name }) {
             const p = tr?.pace;
             const has = tr?.curr != null;
             const ch = sinceLast(tr);
+            // Inside the ring: where you are, and under it where you're heading.
+            // The ring's fill and colour show how far along you are.
+            const toward = tr?.target != null ? <><span aria-hidden="true">{lang === "ar" ? "←" : "→"}</span> {fmtNum(tr.target, 1)} {unitOf(k)}</> : unitOf(k);
             return (
               <div className="ring-col" key={k}>
-                <Ring value={has ? fmtNum(tr.curr, 1) : "—"} unit={unitOf(k)} progress={p?.progress} color={STATUS_COLOR[paceColor(p)] || "var(--surface3)"} />
-                {ch && (
-                  <span className="ring-delta" style={{ color: ch.color }}>
-                    <b>{ch.d === 0 ? "=" : ch.d < 0 ? "▼" : "▲"} {fmtNum(Math.abs(ch.d), 1)}{k === "bodyFat" ? "%" : ` ${unitOf(k)}`}</b>
-                    <span className="muted">{t("vsLast", { date: fmtDate(ch.date, lang) })}</span>
-                  </span>
-                )}
+                <Ring value={has ? fmtNum(tr.curr, 1) : "—"} unit={toward} progress={p?.progress} color={STATUS_COLOR[paceColor(p)] || "var(--surface3)"} />
                 <span className="row small strong" style={{ gap: 5, color: "var(--text2)", whiteSpace: "nowrap" }}><span className="dot" style={{ background: COLOR[k] }} />{t(LABEL[k])}</span>
-                {p ? (
-                  <span className="strong" style={{ color: STATUS_COLOR[paceColor(p)], fontSize: 15 }}>{Math.round(p.progress)}%</span>
-                ) : <span className="small muted">{has ? "—" : t("noReading")}</span>}
-                {tr?.target != null && <span className="muted" style={{ fontSize: 11 }}><span aria-hidden="true">{lang === "ar" ? "←" : "→"}</span> {fmtNum(tr.target, 1)} {unitOf(k)}</span>}
+                {ch ? (
+                  <b className="ring-ch" style={{ color: ch.color }}>{ch.d === 0 ? "=" : ch.d < 0 ? "▼" : "▲"} {fmtNum(Math.abs(ch.d), 1)}{k === "bodyFat" ? "%" : ` ${unitOf(k)}`}</b>
+                ) : !has ? <span className="small muted">{t("noReading")}</span> : null}
+                {p && <span className="sr-only">{t("ringSr", { p: Math.round(p.progress) })}</span>}
               </div>
             );
           })}
         </div>
+        {chCaption && <div className="small muted center">{chCaption}</div>}
         {(summary || eta) && (
           <div className="box col" style={{ gap: 6 }}>
             {summary && <div className="body">{summary}</div>}

@@ -16,7 +16,7 @@ import Goal from "./screens/Goal.jsx";
 import Planner from "./screens/Planner.jsx";
 import Sheets from "./sheets/Sheets.jsx";
 
-export const VERSION = "1.10.0";
+export const VERSION = "1.10.1";
 const REFRESH_MS = 5 * 60 * 1000;   // reload data this often while the app is open
 
 const EMPTY = { weights: [], inbody: [], measurements: [], logs: [], sessions: [], goal: null, days: [], profile: null, plan: null, planRow: null };

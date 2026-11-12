@@ -42,7 +42,7 @@ export const STR = {
     etaUnknown: "A few more weigh-ins and scans and Evolve can tell when you'll arrive.",
     fuelTitle: "Today's fuel", synced: "Watch synced · {date}", notSynced: "Watch not synced",
     calLabel: "Calories", proLabel: "Protein", left: "{n} {u} left", over: "{n} {u} over", reachedFuel: "Target reached",
-    eatenOf: "Eaten {n} of {t} {u}", vsLast: "vs {date}", chartWeighIn: "Weigh-in", chartTap: "Tap a point for its date and value",
+    eatenOf: "Eaten {n} of {t} {u}", vsLast: "vs {date}", vsPrevReading: "vs your previous reading", ringSr: "{p}% of the way to your target", chartWeighIn: "Weigh-in", chartTap: "Tap a point for its date and value",
 
     // Offline, rest timer, records, workout summary
     savedOffline: "No internet — saved on your phone. It sends by itself when you're back online.",
@@ -367,7 +367,7 @@ export const STR = {
     etaUnknown: "كم وزن وسكان زيادة ويقدر Evolve يقول لك متى توصل.",
     fuelTitle: "وقود اليوم", synced: "مزامنة الساعة · {date}", notSynced: "الساعة ما تزامنت",
     calLabel: "السعرات", proLabel: "البروتين", left: "باقي {n} {u}", over: "زيادة {n} {u}", reachedFuel: "وصلت الهدف",
-    eatenOf: "أكلت {n} من {t} {u}", vsLast: "عن {date}", chartWeighIn: "ميزان", chartTap: "اضغط على أي نقطة تشوف تاريخها وقيمتها",
+    eatenOf: "أكلت {n} من {t} {u}", vsLast: "عن {date}", vsPrevReading: "عن قراءتك السابقة", ringSr: "قطعت {p}% من الطريق لهدفك", chartWeighIn: "ميزان", chartTap: "اضغط على أي نقطة تشوف تاريخها وقيمتها",
 
     savedOffline: "ما فيه إنترنت — انحفظت في جوالك، وترسل لحالها لما يرجع النت.",
     pendingSync: "{n} تعديل ينتظر الإنترنت — يرسل لحاله.", setWaiting: "محفوظة في الجوال، تنتظر الإرسال",
