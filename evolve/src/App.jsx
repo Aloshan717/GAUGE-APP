@@ -17,7 +17,7 @@ import Planner from "./screens/Planner.jsx";
 import Sheets from "./sheets/Sheets.jsx";
 import { NewReportDot } from "./sheets/Weekly.jsx";
 
-export const VERSION = "1.13.0";
+export const VERSION = "1.13.1";
 const REFRESH_MS = 5 * 60 * 1000;   // reload data this often while the app is open
 
 const EMPTY = { weights: [], inbody: [], measurements: [], logs: [], sessions: [], goal: null, days: [], profile: null, plan: null, planRow: null };
@@ -85,7 +85,7 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     store.set("evolve_theme", theme);
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "light" ? "#f4f7f5" : "#0f1311");
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "light" ? "#f4f7f5" : "#0e0e10");
   }, [theme]);
   useEffect(() => {
     document.documentElement.lang = lang;

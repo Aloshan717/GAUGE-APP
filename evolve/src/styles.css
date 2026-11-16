@@ -1,15 +1,15 @@
 /* EVOLVE — one stylesheet. Colours are tokens so light and dark share every rule. */
 
 :root, :root[data-theme="dark"] {
-  /* Three clear steps: page → card → box/field inside a card, with borders a step lighter. */
-  --bg: #0f1311; --surface: #1e2521; --surface2: #29312d; --surface3: #353f3a;
-  --line: #303a35; --line2: #434f49;
-  --text: #f1f5f2; --text2: #e2e8e4; --sub: #b8c3bc; --muted: #909d96; --faint: #6b7871; --grid: #4e5a54;
+  /* Neutral greys in three clear steps: page → card → box/field inside a card, borders a step lighter. */
+  --bg: #0e0e10; --surface: #1c1c1f; --surface2: #27272b; --surface3: #323237;
+  --line: #2d2d32; --line2: #3f3f45;
+  --text: #f2f2f4; --text2: #e4e4e8; --sub: #bcbcc2; --muted: #93939a; --faint: #6c6c73; --grid: #4f4f56;
   --accent: #2fe57d; --ink: #03130a; --accent-text: #5cefa0; --accent-soft: #183826; --accent-line: #2d7049;
   --ok: #2fe57d; --warn: #ffc24b; --warn-soft: #3a2f15; --warn-line: #725a24; --bad: #ff5f57; --bad-soft: #3f1c19; --bad-line: #80332e;
   --fat: #ff9f43; --muscle: #5ac8fa; --muscle-soft: #17313d; --muscle-line: #326f8a;
-  --scrim: rgba(0, 0, 0, 0.62); --glow: 0 10px 26px rgba(47, 229, 125, 0.28); --body: #3e4944;
-  --sign-bg: radial-gradient(120% 55% at 50% -5%, rgba(47, 229, 125, 0.16), transparent 60%), #0f1311;
+  --scrim: rgba(0, 0, 0, 0.62); --glow: 0 10px 26px rgba(47, 229, 125, 0.28); --body: #404047;
+  --sign-bg: radial-gradient(120% 55% at 50% -5%, rgba(47, 229, 125, 0.16), transparent 60%), #0e0e10;
   color-scheme: dark;
 }
 :root[data-theme="light"] {
