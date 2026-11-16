@@ -32,22 +32,22 @@ function DayPicker({ value, onChange }) {
   );
 }
 
-// The + button: only what you add by hand. (Weigh-ins live in Body, workouts in
-// Train, the watch's burn in Account → Apple Watch.)
+// The + button (and Home's "+ Add"): only what you add by hand. (Weigh-ins live in
+// Body, workouts in Train, the watch's burn in Account → Apple Watch.)
 function LogMenu() {
-  const { t, openSheet } = useApp();
-  const tiles = [
-    ["kcal", "tFuel", "tFuelSub", () => openSheet("fuel", { fromLog: true }), true],
-    ["IB", "tScan", "tScanSub", () => openSheet("scan", { fromLog: true })],
+  const { t, rtl, openSheet } = useApp();
+  const items = [
+    ["kcal", "tFuel", "tFuelSub", () => openSheet("fuel", { fromLog: true })],
     ["cm", "tMeasure", "tMeasureSub", () => openSheet("measure", { fromLog: true })],
+    ["IB", "tScan", "tScanSub", () => openSheet("scan", { fromLog: true })],
   ];
   return (
-    <div className="tiles">
-      {tiles.map(([badge, title, sub, fn, hl]) => (
-        <button key={title} className={`tile${hl ? " hl wide" : ""}`} onClick={fn}>
+    <div className="add-list">
+      {items.map(([badge, title, sub, fn], i) => (
+        <button key={title} type="button" className={`add-row${i === 0 ? " hl" : ""}`} onClick={fn}>
           <span className="badge">{badge}</span>
-          <span className="t">{t(title)}</span>
-          <span className="s">{t(sub)}</span>
+          <span className="grow col" style={{ gap: 2, alignItems: "flex-start" }}><span className="t">{t(title)}</span><span className="s">{t(sub)}</span></span>
+          <Icon name="next" size={18} flip={rtl} color="var(--muted)" />
         </button>
       ))}
     </div>

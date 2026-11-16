@@ -42,7 +42,7 @@ export const STR = {
     etaUnknown: "A few more weigh-ins and scans and Evolve can tell when you'll arrive.",
     fuelTitle: "Today's fuel", synced: "Watch synced · {date}", notSynced: "Watch not synced",
     calLabel: "Calories", proLabel: "Protein", left: "{n} {u} left", over: "{n} {u} over", reachedFuel: "Target reached",
-    eatenOf: "Eaten {n} of {t} {u}", vsLast: "vs {date}", vsPrevReading: "vs your previous reading", ringSr: "{p}% of the way to your target", chartWeighIn: "Weigh-in", chartTap: "Tap a point for its date and value",
+    eatenOf: "Eaten {n} of {t} {u}", vsLast: "vs {date}", vsPrevReading: "vs your previous reading", legendActual: "Actual", legendPlanned: "Planned by today", chartWeighIn: "Weigh-in", chartTap: "Tap a point for its date and value",
 
     // Offline, rest timer, records, workout summary
     savedOffline: "No internet — saved on your phone. It sends by itself when you're back online.",
@@ -143,12 +143,12 @@ export const STR = {
     recProteinGood: "Protein target hit on {n} days — keep it up.",
     wksTitle: "Weekly reports", wksIntro: "Every week runs Sunday to Saturday. Tap one to open it, download it as a PDF or copy it.",
     wksDays: "Days trained: {n}", wksVolume: "{v} kg moved", wksKcal: "{k} kcal a day", wksEmpty: "Earlier weeks show up here once you log workouts or food.",
-    addFuel: "+ Add calories & protein",
+    addAny: "+ Add",
     noTargets: "Set a goal to get daily targets.", needProfile: "Add your sex, age and height so Evolve can work out your calories.", addProfile: "Add profile",
     trends: "Trends", lastNDays: "Last {n} days", changeIn: "{d} {u} in {n} days", eta: "ETA {date}", etaReached: "Reached", targetTxt: "Target {v}", noTrend: "Not enough readings yet",
 
     // Log menu
-    logTitle: "Log",
+    logTitle: "Add",
     tScan: "InBody scan", tScanSub: "Photo, PDF or by hand",
     tFuel: "Calories & protein", tFuelSub: "Today's totals only",
     tMeasure: "Measurements", tMeasureSub: "Waist, chest, arms…", burnByHand: "Type a day's burn by hand",
@@ -367,7 +367,7 @@ export const STR = {
     etaUnknown: "كم وزن وسكان زيادة ويقدر Evolve يقول لك متى توصل.",
     fuelTitle: "وقود اليوم", synced: "مزامنة الساعة · {date}", notSynced: "الساعة ما تزامنت",
     calLabel: "السعرات", proLabel: "البروتين", left: "باقي {n} {u}", over: "زيادة {n} {u}", reachedFuel: "وصلت الهدف",
-    eatenOf: "أكلت {n} من {t} {u}", vsLast: "عن {date}", vsPrevReading: "عن قراءتك السابقة", ringSr: "قطعت {p}% من الطريق لهدفك", chartWeighIn: "ميزان", chartTap: "اضغط على أي نقطة تشوف تاريخها وقيمتها",
+    eatenOf: "أكلت {n} من {t} {u}", vsLast: "عن {date}", vsPrevReading: "عن قراءتك السابقة", legendActual: "الفعلي", legendPlanned: "المخطط لليوم", chartWeighIn: "ميزان", chartTap: "اضغط على أي نقطة تشوف تاريخها وقيمتها",
 
     savedOffline: "ما فيه إنترنت — انحفظت في جوالك، وترسل لحالها لما يرجع النت.",
     pendingSync: "{n} تعديل ينتظر الإنترنت — يرسل لحاله.", setWaiting: "محفوظة في الجوال، تنتظر الإرسال",
@@ -464,11 +464,11 @@ export const STR = {
     recProteinGood: "وصلت هدف البروتين {n} أيام — كمّل.",
     wksTitle: "التقارير الأسبوعية", wksIntro: "كل أسبوع من الأحد للسبت. اضغط على أي أسبوع تفتحه وتحمّله PDF أو تنسخه.",
     wksDays: "أيام التمرين: {n}", wksVolume: "الحجم {v} كجم", wksKcal: "{k} سعرة باليوم", wksEmpty: "الأسابيع السابقة تطلع هنا أول ما تسجّل تمارين أو أكل.",
-    addFuel: "+ أضف السعرات والبروتين",
+    addAny: "+ إضافة",
     noTargets: "حدد هدف عشان تطلع لك أهداف يومية.", needProfile: "أضف جنسك وعمرك وطولك عشان Evolve يحسب سعراتك.", addProfile: "أضف ملفك",
     trends: "الاتجاهات", lastNDays: "آخر {n} يوم", changeIn: "{d} {u} في {n} يوم", eta: "متوقع {date}", etaReached: "وصلت", targetTxt: "الهدف {v}", noTrend: "القراءات للحين قليلة",
 
-    logTitle: "تسجيل",
+    logTitle: "إضافة",
     tScan: "سكان InBody", tScanSub: "صورة أو PDF أو يدوي",
     tFuel: "السعرات والبروتين", tFuelSub: "مجموع اليوم فقط",
     tMeasure: "القياسات", tMeasureSub: "الخصر والصدر والذراع…", burnByHand: "اكتب حرق يوم بيدك",

@@ -92,17 +92,27 @@ export default function Home({ name }) {
             const toward = tr?.target != null ? <><span aria-hidden="true">{lang === "ar" ? "←" : "→"}</span> {fmtNum(tr.target, 1)} {unitOf(k)}</> : unitOf(k);
             return (
               <div className="ring-col" key={k}>
-                <Ring value={has ? fmtNum(tr.curr, 1) : "—"} unit={toward} progress={p?.progress} color={STATUS_COLOR[paceColor(p)] || "var(--surface3)"} />
+                <Ring value={has ? fmtNum(tr.curr, 1) : "—"} unit={toward} progress={p?.progress} time={p ? p.elapsed ?? 0 : undefined} color={STATUS_COLOR[paceColor(p)] || "var(--surface3)"} />
                 <span className="row small strong" style={{ gap: 5, color: "var(--text2)", whiteSpace: "nowrap" }}><span className="dot" style={{ background: COLOR[k] }} />{t(LABEL[k])}</span>
+                {p && (
+                  <span className="ring-pct">
+                    <span className="sr-only">{t("legendActual")} </span><b style={{ color: STATUS_COLOR[paceColor(p)] }}>{Math.round(p.progress)}%</b>
+                    <span className="muted"> · <span className="sr-only">{t("legendPlanned")} </span>{Math.round(p.elapsed ?? 0)}%</span>
+                  </span>
+                )}
                 {ch ? (
                   <b className="ring-ch" style={{ color: ch.color }}>{ch.d === 0 ? "=" : ch.d < 0 ? "▼" : "▲"} {fmtNum(Math.abs(ch.d), 1)}{k === "bodyFat" ? "%" : ` ${unitOf(k)}`}</b>
                 ) : !has ? <span className="small muted">{t("noReading")}</span> : null}
-                {p && <span className="sr-only">{t("ringSr", { p: Math.round(p.progress) })}</span>}
               </div>
             );
           })}
         </div>
-        {chCaption && <div className="small muted center">{chCaption}</div>}
+        {/* Outer ring and first % = where you are on the way; inner grey ring and second % = where the plan has you by today. */}
+        <div className="legend">
+          <span><span style={{ width: 14, height: 5, borderRadius: 3, background: "var(--accent)" }} />{t("legendActual")}</span>
+          <span><span style={{ width: 14, height: 4, borderRadius: 2, background: "var(--sub)" }} />{t("legendPlanned")}</span>
+          {chCaption && <span>{chCaption}</span>}
+        </div>
         {(summary || eta) && (
           <div className="box col" style={{ gap: 6 }}>
             {summary && <div className="body">{summary}</div>}
@@ -170,7 +180,7 @@ export default function Home({ name }) {
       )}
       <MealChips date={today} row={row} limit={4} />
       <div className="grid2">
-        <button className="btn soft" onClick={() => openSheet("fuel")}>{t("addFuel")}</button>
+        <button className="btn soft" onClick={() => openSheet("log")}>{t("addAny")}</button>
         <button className="btn" onClick={() => openSheet("foodlog")}><Icon name="file" size={17} />{t("flOpenShort")}</button>
       </div>
     </div>
