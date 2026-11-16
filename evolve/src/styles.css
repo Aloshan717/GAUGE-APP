@@ -1,14 +1,15 @@
 /* EVOLVE — one stylesheet. Colours are tokens so light and dark share every rule. */
 
 :root, :root[data-theme="dark"] {
-  --bg: #060807; --surface: #0f1311; --surface2: #161b18; --surface3: #1f2622;
-  --line: #1c2320; --line2: #2a332e;
-  --text: #f1f5f2; --text2: #e2e8e4; --sub: #b2bdb6; --muted: #86938b; --faint: #59655e; --grid: #3a4540;
-  --accent: #2fe57d; --ink: #03130a; --accent-text: #5cefa0; --accent-soft: #0e2418; --accent-line: #1f5a39;
-  --ok: #2fe57d; --warn: #ffc24b; --warn-soft: #2a2210; --warn-line: #5c4a1e; --bad: #ff5f57; --bad-soft: #2a1210; --bad-line: #6a2a27;
-  --fat: #ff9f43; --muscle: #5ac8fa; --muscle-soft: #10222b; --muscle-line: #285c73;
-  --scrim: rgba(0, 0, 0, 0.62); --glow: 0 10px 26px rgba(47, 229, 125, 0.28); --body: #2c3531;
-  --sign-bg: radial-gradient(120% 55% at 50% -5%, rgba(47, 229, 125, 0.16), transparent 60%), #060807;
+  /* Three clear steps: page → card → box/field inside a card, with borders a step lighter. */
+  --bg: #0f1311; --surface: #1e2521; --surface2: #29312d; --surface3: #353f3a;
+  --line: #303a35; --line2: #434f49;
+  --text: #f1f5f2; --text2: #e2e8e4; --sub: #b8c3bc; --muted: #909d96; --faint: #6b7871; --grid: #4e5a54;
+  --accent: #2fe57d; --ink: #03130a; --accent-text: #5cefa0; --accent-soft: #183826; --accent-line: #2d7049;
+  --ok: #2fe57d; --warn: #ffc24b; --warn-soft: #3a2f15; --warn-line: #725a24; --bad: #ff5f57; --bad-soft: #3f1c19; --bad-line: #80332e;
+  --fat: #ff9f43; --muscle: #5ac8fa; --muscle-soft: #17313d; --muscle-line: #326f8a;
+  --scrim: rgba(0, 0, 0, 0.62); --glow: 0 10px 26px rgba(47, 229, 125, 0.28); --body: #3e4944;
+  --sign-bg: radial-gradient(120% 55% at 50% -5%, rgba(47, 229, 125, 0.16), transparent 60%), #0f1311;
   color-scheme: dark;
 }
 :root[data-theme="light"] {
@@ -73,7 +74,8 @@ h1, h2, h3 { margin: 0; }
 .nav-btn { flex: 1; min-height: 52px; border: none; background: transparent; color: var(--muted); font-size: 11px; font-weight: 700; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; padding: 0; }
 .nav-btn[aria-current="page"] { color: var(--accent-text); }
 .nav-ico { position: relative; display: grid; }
-.new-dot { position: absolute; top: -2px; inset-inline-end: -5px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg); pointer-events: none; }
+.new-dot { position: absolute; top: -2px; inset-inline-end: -5px; width: 9px; height: 9px; border-radius: 50%; background: var(--bad); box-shadow: 0 0 0 2px var(--bg); pointer-events: none; }
+.title-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); flex: none; }
 .nav-fab-wrap { flex: 1; display: flex; justify-content: center; }
 .fab { width: 58px; height: 58px; margin-top: -24px; border-radius: 20px; border: 4px solid var(--bg); background: var(--accent); color: var(--ink); display: grid; place-items: center; box-shadow: var(--glow); }
 
@@ -178,6 +180,7 @@ select.input { appearance: none; }
   padding: 13px; display: flex; flex-direction: column; align-items: flex-start; gap: 7px;
 }
 .tile.hl { border-color: var(--accent-line); }
+.tile.wide { grid-column: 1 / -1; }
 .tile .badge { min-width: 38px; height: 38px; padding: 0 6px; border-radius: 12px; background: var(--accent-soft); color: var(--accent-text); display: grid; place-items: center; font-weight: 800; font-size: 13px; }
 .tile .t { font-size: 14.5px; font-weight: 800; }
 .tile .s { font-size: 11.5px; color: var(--muted); line-height: 1.35; }

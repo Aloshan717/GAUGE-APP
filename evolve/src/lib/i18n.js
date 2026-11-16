@@ -149,9 +149,9 @@ export const STR = {
 
     // Log menu
     logTitle: "Log",
-    tScan: "InBody scan", tScanSub: "Photo, PDF or by hand", tWeigh: "Weigh-in", tWeighSub: "Today's weight",
-    tFuel: "Calories & protein", tFuelSub: "Today's totals only", tBurn: "Apple Watch burn", tBurnSub: "Auto-sync or type it",
-    tWorkout: "Start workout", tWorkoutSub: "Today's session", tMeasure: "Measurements", tMeasureSub: "Waist, chest, arms…",
+    tScan: "InBody scan", tScanSub: "Photo, PDF or by hand",
+    tFuel: "Calories & protein", tFuelSub: "Today's totals only",
+    tMeasure: "Measurements", tMeasureSub: "Waist, chest, arms…", burnByHand: "Type a day's burn by hand",
 
     // Weigh / measure
     weighTitle: "Weigh-in", weightKg: "Weight (kg)", weighTip: "Same time each day — after waking, before eating — gives the cleanest trend.",
@@ -469,9 +469,9 @@ export const STR = {
     trends: "الاتجاهات", lastNDays: "آخر {n} يوم", changeIn: "{d} {u} في {n} يوم", eta: "متوقع {date}", etaReached: "وصلت", targetTxt: "الهدف {v}", noTrend: "القراءات للحين قليلة",
 
     logTitle: "تسجيل",
-    tScan: "سكان InBody", tScanSub: "صورة أو PDF أو يدوي", tWeigh: "الوزن", tWeighSub: "وزن اليوم",
-    tFuel: "السعرات والبروتين", tFuelSub: "مجموع اليوم فقط", tBurn: "حرق ساعة أبل", tBurnSub: "مزامنة تلقائية أو يدوي",
-    tWorkout: "ابدأ التمرين", tWorkoutSub: "تمرين اليوم", tMeasure: "القياسات", tMeasureSub: "الخصر والصدر والذراع…",
+    tScan: "سكان InBody", tScanSub: "صورة أو PDF أو يدوي",
+    tFuel: "السعرات والبروتين", tFuelSub: "مجموع اليوم فقط",
+    tMeasure: "القياسات", tMeasureSub: "الخصر والصدر والذراع…", burnByHand: "اكتب حرق يوم بيدك",
 
     weighTitle: "الوزن", weightKg: "الوزن (كجم)", weighTip: "نفس الوقت كل يوم — بعد ما تصحى وقبل الأكل — يعطي أدق اتجاه.",
     measureTitle: "القياسات", waist: "الخصر", chest: "الصدر", hips: "الأرداف", arms: "الذراع", thighs: "الفخذ", measureTip: "بالسنتيمتر. المقاسات غالباً تتحرك قبل الميزان.",

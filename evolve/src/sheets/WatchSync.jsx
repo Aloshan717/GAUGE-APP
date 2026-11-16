@@ -103,6 +103,7 @@ export default function WatchSync() {
       <Step n={6} title={S(5)[0]} dim={!lastWatch}>{body(5)}</Step>
       <div className="small muted">{t("wsRestNote", { r: fmtNum(resting) })}</div>
       <Note kind="plain" icon="lock">{t("syncPrivacy")}</Note>
+      <button className="link" style={{ alignSelf: "center" }} onClick={() => openSheet("burn", { backTo: { name: "sync", opts: { fromAccount: true } } })}>{t("burnByHand")}</button>
     </>
   );
 }

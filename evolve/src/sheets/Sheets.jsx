@@ -32,20 +32,19 @@ function DayPicker({ value, onChange }) {
   );
 }
 
+// The + button: only what you add by hand. (Weigh-ins live in Body, workouts in
+// Train, the watch's burn in Account → Apple Watch.)
 function LogMenu() {
-  const { t, openSheet, setTab, closeSheet } = useApp();
+  const { t, openSheet } = useApp();
   const tiles = [
-    ["IB", "tScan", "tScanSub", () => openSheet("scan", { fromLog: true })],
-    ["kg", "tWeigh", "tWeighSub", () => openSheet("weigh", { fromLog: true })],
     ["kcal", "tFuel", "tFuelSub", () => openSheet("fuel", { fromLog: true }), true],
-    [<Icon key="w" name="watch" size={20} />, "tBurn", "tBurnSub", () => openSheet("burn", { fromLog: true }), true],
-    [<Icon key="p" name="play" size={18} />, "tWorkout", "tWorkoutSub", () => { closeSheet(); setTab("train"); window.scrollTo(0, 0); }],
+    ["IB", "tScan", "tScanSub", () => openSheet("scan", { fromLog: true })],
     ["cm", "tMeasure", "tMeasureSub", () => openSheet("measure", { fromLog: true })],
   ];
   return (
     <div className="tiles">
       {tiles.map(([badge, title, sub, fn, hl]) => (
-        <button key={title} className={`tile${hl ? " hl" : ""}`} onClick={fn}>
+        <button key={title} className={`tile${hl ? " hl wide" : ""}`} onClick={fn}>
           <span className="badge">{badge}</span>
           <span className="t">{t(title)}</span>
           <span className="s">{t(sub)}</span>
@@ -264,7 +263,7 @@ function BurnForm({ ctx }) {
         : lastWatch ? <Note>{t("autoOn", { date: fmtDate(lastWatch, lang) })}</Note>
         : hasKey ? <Note kind="plain" icon="watch">{t("autoWaiting")}</Note>
         : <Note kind="plain" icon="watch">{t("autoOff")}</Note>}
-      <button className="btn soft" onClick={() => openSheet("sync", { fromLog: true })}>{lastWatch && lastWatch < addDays(localISO(), -1) ? t("fixSync") : t("setupSync")}</button>
+      {ctx?.backTo?.name !== "sync" && <button className="btn soft" onClick={() => openSheet("sync", { fromLog: true })}>{lastWatch && lastWatch < addDays(localISO(), -1) ? t("fixSync") : t("setupSync")}</button>}
       <div className="divider" />
       <Field label={t("manualBurn")}><input className="input" inputMode="numeric" value={v} onChange={(e) => setV(e.target.value)} placeholder={row.burn_kcal ? String(row.burn_kcal) : "2780"} /></Field>
       <Field label={t("forDay")}><DayPicker value={date} onChange={setDate} /></Field>

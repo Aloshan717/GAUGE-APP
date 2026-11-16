@@ -46,7 +46,7 @@ export function NewReportCard() {
   const { week, r: wr } = nr;
   return (
     <div className="card accent">
-      <div className="row between"><span className="card-title">{t("wkTitle")}</span><span className="small muted">{weekRange(wr, lang)}</span></div>
+      <div className="row between"><span className="row" style={{ gap: 8 }}><span className="title-dot" aria-hidden="true" /><span className="card-title">{t("wkTitle")}</span></span><span className="small muted">{weekRange(wr, lang)}</span></div>
       <div className="wk-stats">
         <div><div className="num ltr">{wr.weight.delta != null ? signed(wr.weight.delta) : "—"}</div><div className="small muted strong">{t("wkKgShort")}</div></div>
         <div><div className="num">{wr.food.days ? fmtNum(wr.food.kcal) : "—"}</div><div className="small muted strong">{t("wkAvgShort")}</div></div>
