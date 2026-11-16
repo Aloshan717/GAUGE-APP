@@ -97,7 +97,8 @@ export default function Home({ name }) {
                 {p && (
                   <span className="ring-pct">
                     <span className="sr-only">{t("legendActual")} </span><b style={{ color: STATUS_COLOR[paceColor(p)] }}>{Math.round(p.progress)}%</b>
-                    <span className="muted"> · <span className="sr-only">{t("legendPlanned")} </span>{Math.round(p.elapsed ?? 0)}%</span>
+                    {/* The plan shows as the grey ring only; screen readers still hear it. */}
+                    <span className="sr-only"> · {t("legendPlanned")} {Math.round(p.elapsed ?? 0)}%</span>
                   </span>
                 )}
                 {ch ? (
@@ -107,7 +108,7 @@ export default function Home({ name }) {
             );
           })}
         </div>
-        {/* Outer ring and first % = where you are on the way; inner grey ring and second % = where the plan has you by today. */}
+        {/* Outer ring and its % = where you are on the way; inner grey ring = where the plan has you by today. */}
         <div className="legend">
           <span><span style={{ width: 14, height: 5, borderRadius: 3, background: "var(--accent)" }} />{t("legendActual")}</span>
           <span><span style={{ width: 14, height: 4, borderRadius: 2, background: "var(--sub)" }} />{t("legendPlanned")}</span>
