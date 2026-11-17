@@ -7,7 +7,7 @@ import { sb, store } from "../lib/api.js";
 import { coerceNumber, goalMuscleKg, musclePercent } from "../lib/core.js";
 import { feasibility, consistency, goalDirection, localISO } from "../lib/body.js";
 import { weeklySets } from "../lib/plan.js";
-import { reportWeek } from "../lib/weekly.js";
+import { reportPeriod } from "../lib/weekly.js";
 import { NewReportCard } from "../sheets/Weekly.jsx";
 
 const TAG = { ok: "tagOk", warn: "tagWarn", bad: "tagBad", done: "tagDone" };
@@ -215,7 +215,7 @@ export default function Goal() {
                   <button className="link" style={{ minHeight: 0, padding: 0 }} onClick={() => setKcalLock({ ...targets.lock, kcal: targets.autoKcal, shift: 0, since: localISO() })}>{t("lockUse")}</button>
                 </div>
               )}
-              <button className="btn soft sm" onClick={() => openSheet("weekly", { week: reportWeek(localISO()) })}>{t("wkOpenGoal")}</button>
+              <button className="btn soft sm" onClick={() => openSheet("weekly", { week: reportPeriod(localISO()) })}>{t("wkOpenGoal")}</button>
               {srcs.length > 0 && <div className="small muted">{t("from", { list: srcs.join(" + ") })}</div>}
             </>
           ) : (

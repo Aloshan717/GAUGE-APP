@@ -7,12 +7,12 @@ import { generatePlan, weeklySets, swapInPlan, toggleKept, setSlotSets, reviewCo
 import { musclesOf, slotMuscles, regionLevels, REGIONS, MUSCLE_LABELS, PARTS, mainView, focusBox, searchExercises, customMuscles, sameAngle } from "../src/lib/muscles.js";
 import { FRONT, BACK } from "../src/lib/bodymap.js";
 import { e1rm, bestOf, recordKind, recordIndex, volumeOf, restSeconds } from "../src/lib/train.js";
-import { reportWeek, weekWeight, calorieCheckin, weeklyReport, goalKey, MAX_STEP, pastWeeks, weekBefore } from "../src/lib/weekly.js";
+import { reportPeriod, weekWeight, calorieCheckin, weeklyReport, goalKey, MAX_STEP, pastPeriods, periodBefore } from "../src/lib/weekly.js";
 import { remapDone } from "../src/lib/queue.js";
 import { dayRows, lastSeven } from "../src/lib/foodlog.js";
 import { primeSound, scheduleBeep, cancelBeep } from "../src/lib/sound.js";
 import { restingEnergy, formulaMaintenance, maintenance, dailyTargets, goalDirection, feasibility, consistency, currentBody, adaptiveMaintenance, watchAverage, coachTips, localISO,
-  dayTarget, liveAdjust, kcalFloor } from "../src/lib/body.js";
+  dayTarget, liveAdjust, kcalFloor, typicalMuscleRate } from "../src/lib/body.js";
 import burnHandler, { toKcal, localDate } from "../api/burn.js";
 import { STR, makeT, burnLine } from "../src/lib/i18n.js";
 import { reportDoc, docText } from "../src/lib/reportdoc.js";
@@ -590,11 +590,15 @@ test("offline sets get their real ids once sent; a refused one shows as not save
 });
 
 // ── Weekly report and calorie check-in ──
-test("the report covers Sunday to Saturday, the week before the latest Sunday", () => {
-  assert.deepEqual(reportWeek("2026-11-15"), { key: "2026-11-15", from: "2026-11-08", to: "2026-11-14" });   // Sunday
-  assert.deepEqual(reportWeek("2026-11-14"), { key: "2026-11-08", from: "2026-11-01", to: "2026-11-07" });   // Saturday
-  assert.deepEqual(pastWeeks("2026-11-12", 3).map((w) => w.from), ["2026-11-01", "2026-10-25", "2026-10-18"]);
-  assert.deepEqual(weekBefore(reportWeek("2026-11-15")), { key: "2026-11-08", from: "2026-11-01", to: "2026-11-07" });
+test("a report covers two weeks, Sunday to Saturday, and comes every other Sunday", () => {
+  assert.deepEqual(reportPeriod("2026-11-15"), { key: "2026-11-15", from: "2026-11-01", to: "2026-11-14" });   // a report Sunday
+  assert.deepEqual(reportPeriod("2026-11-17"), { key: "2026-11-15", from: "2026-11-01", to: "2026-11-14" });
+  assert.deepEqual(reportPeriod("2026-11-22"), { key: "2026-11-15", from: "2026-11-01", to: "2026-11-14" });   // the Sunday between: no new one
+  assert.deepEqual(reportPeriod("2026-11-29"), { key: "2026-11-29", from: "2026-11-15", to: "2026-11-28" });
+  assert.deepEqual(reportPeriod("2026-11-14"), { key: "2026-11-01", from: "2026-10-18", to: "2026-10-31" });   // Saturday before
+  assert.deepEqual(reportPeriod("2027-01-10"), { key: "2027-01-10", from: "2026-12-27", to: "2027-01-09" });
+  assert.deepEqual(pastPeriods("2026-11-17", 3).map((w) => w.from), ["2026-11-01", "2026-10-18", "2026-10-04"]);
+  assert.deepEqual(periodBefore(reportPeriod("2026-11-15")), { key: "2026-11-01", from: "2026-10-18", to: "2026-10-31" });
   assert.equal(goalKey(null), null);
   assert.notEqual(goalKey({ id: 1, target_weight: 80 }), goalKey({ id: 1, target_weight: 79 }));
 });
@@ -632,16 +636,16 @@ test("check-in needs food logged 5+ days and weigh-ins; waits 2 weeks for a new 
 });
 test("weekly report: food average, workouts, sets and records of the week", () => {
   const data = {
-    days: [{ date: "2026-11-08", kcal_in: 2000, protein_g: 150 }, { date: "2026-11-09", kcal_in: 2400, protein_g: 170 }, { date: "2026-11-01", kcal_in: 9999 }],
+    days: [{ date: "2026-11-08", kcal_in: 2000, protein_g: 150 }, { date: "2026-11-09", kcal_in: 2400, protein_g: 170 }, { date: "2026-10-31", kcal_in: 9999 }],
     logs: [
-      { date: "2026-11-01", exercise_id: "bench_press", weight_kg: 80, reps: 8 },
+      { date: "2026-10-25", exercise_id: "bench_press", weight_kg: 80, reps: 8 },
       { date: "2026-11-10", exercise_id: "bench_press", weight_kg: 82.5, reps: 8 },
       { date: "2026-11-10", exercise_id: "bench_press", weight_kg: 80, reps: 8 },
       { date: "2026-11-12", exercise_id: "lat_pulldown", weight_kg: 60, reps: 10 },
     ],
     weights: [], inbody: [], sessions: [], goal: null,
   };
-  const r = weeklyReport({ week: reportWeek("2026-11-15"), data, current: 2200, protein: 170 });
+  const r = weeklyReport({ week: reportPeriod("2026-11-15"), data, current: 2200, protein: 170 });
   assert.equal(r.food.days, 2); assert.equal(r.food.kcal, 2200); assert.equal(r.food.protein, 160);
   assert.equal(r.training.workouts, 2); assert.equal(r.training.sets, 3);
   assert.deepEqual(r.training.records.map((x) => [x.id, x.kg]), [["bench_press", 82.5]]);
@@ -651,20 +655,20 @@ test("weekly report: time, weight moved, sets per muscle, each exercise vs last 
   const set = (date, id, muscle, kg, reps) => ({ date, exercise_id: id, exercise: BY_ID[id].name[0], muscle_group: muscle, weight_kg: kg, reps });
   const data = {
     logs: [
-      set("2026-11-03", "bench_press", "Chest", 80, 8), set("2026-11-03", "bench_press", "Chest", 80, 8),
-      set("2026-11-03", "incline_db_curl", "Biceps", 12, 12), set("2026-11-03", "incline_db_curl", "Biceps", 12, 12),
+      set("2026-10-27", "bench_press", "Chest", 80, 8), set("2026-10-27", "bench_press", "Chest", 80, 8),
+      set("2026-10-27", "incline_db_curl", "Biceps", 12, 12), set("2026-10-27", "incline_db_curl", "Biceps", 12, 12),
       set("2026-11-10", "bench_press", "Chest", 82.5, 8), set("2026-11-10", "bench_press", "Chest", 82.5, 8), set("2026-11-10", "bench_press", "Chest", 82.5, 7),
       set("2026-11-12", "incline_db_curl", "Biceps", 12, 15), set("2026-11-12", "incline_db_curl", "Biceps", 12, 15), set("2026-11-12", "incline_db_curl", "Biceps", 12, 15),
       set("2026-11-12", "lat_pulldown", "Back", 60, 10),
     ],
-    sessions: [{ date: "2026-11-10", duration_min: 55 }, { date: "2026-11-12", duration_min: 48 }, { date: "2026-11-03", duration_min: 40 }],
+    sessions: [{ date: "2026-11-10", duration_min: 55 }, { date: "2026-11-12", duration_min: 48 }, { date: "2026-10-27", duration_min: 40 }],
     days: [
       { date: "2026-11-08", kcal_in: 2000, protein_g: 120, burn_kcal: 2500 }, { date: "2026-11-09", kcal_in: 2400, protein_g: 130, burn_kcal: 2700 },
-      { date: "2026-11-10", kcal_in: 2200, protein_g: 140, burn_kcal: 2600 }, { date: "2026-11-03", kcal_in: 2600, burn_kcal: 2400 },
+      { date: "2026-11-10", kcal_in: 2200, protein_g: 140, burn_kcal: 2600 }, { date: "2026-10-27", kcal_in: 2600, burn_kcal: 2400 },
     ],
-    weights: [{ date: "2026-11-02", weight: 86 }, { date: "2026-11-13", weight: 85.4 }], inbody: [], goal: null,
+    weights: [{ date: "2026-10-30", weight: 86 }, { date: "2026-11-13", weight: 85.4 }], inbody: [], goal: null,
   };
-  const r = weeklyReport({ week: reportWeek("2026-11-15"), data, current: 2200, protein: 170, resting: 1900 });
+  const r = weeklyReport({ week: reportPeriod("2026-11-15"), data, current: 2200, protein: 170, resting: 1900 });
   assert.equal(r.training.minutes, 103); assert.equal(r.training.sessions, 2);
   assert.equal(r.training.volume, Math.round(82.5 * 8 * 2 + 82.5 * 7 + 12 * 15 * 3 + 60 * 10));
   assert.deepEqual(r.training.muscles, { Chest: 3, Biceps: 3, Back: 1 });
@@ -677,7 +681,8 @@ test("weekly report: time, weight moved, sets per muscle, each exercise vs last 
   assert.equal(r.training.exercises[0].muscle, "Chest");                            // ordered by muscle
   assert.deepEqual([r.burn.avg, r.burn.body, r.burn.moving, r.burn.days], [2600, 1900, 700, 3]);
   assert.deepEqual(r.balance, { kcal: -400, kgPerWeek: -0.36 });
-  assert.equal(r.food.daily.length, 7); assert.equal(r.food.daily[0].kcal, 2000); assert.equal(r.food.daily[6].kcal, null);
+  assert.equal(r.food.daily.length, 14); assert.equal(r.food.daily[7].kcal, 2000); assert.equal(r.food.daily[13].kcal, null);
+  assert.equal(r.food.daily[7].target, 2200);                                     // each day with its target
   assert.equal(r.food.proteinHit, 0);
   assert.equal(r.weight.delta, -0.6);
   assert.deepEqual([r.prev.workouts, r.prev.sets, r.prev.minutes, r.prev.kcal], [1, 4, 40, 2600]);
@@ -688,19 +693,19 @@ test("weekly report: time, weight moved, sets per muscle, each exercise vs last 
   assert.ok(ks.includes("recSetsLow"));
   assert.equal(r.recs.find((x) => x.k === "recUp").p.name[0], "Incline dumbbell curl");
   assert.ok(r.recs.length <= 8);
-  // A week with nothing at all asks for training first.
-  const empty = weeklyReport({ week: reportWeek("2026-11-22"), data, current: 2200, protein: 170, resting: 1900 });
+  // Two weeks with nothing at all ask for training first.
+  const empty = weeklyReport({ week: reportPeriod("2026-11-29"), data, current: 2200, protein: 170, resting: 1900 });
   assert.equal(empty.recs[0].k, "recNoTraining");
 });
 test("report document: every section, in both languages, and as text to paste anywhere", () => {
   const set = (date, id, muscle, kg, reps) => ({ date, exercise_id: id, exercise: BY_ID[id].name[0], muscle_group: muscle, weight_kg: kg, reps });
   const data = {
-    logs: [set("2026-11-03", "bench_press", "Chest", 80, 8), set("2026-11-10", "bench_press", "Chest", 82.5, 8), set("2026-11-12", "lat_pulldown", "Back", 60, 10)],
+    logs: [set("2026-10-27", "bench_press", "Chest", 80, 8), set("2026-11-10", "bench_press", "Chest", 82.5, 8), set("2026-11-12", "lat_pulldown", "Back", 60, 10)],
     sessions: [{ date: "2026-11-10", duration_min: 75 }],
     days: [{ date: "2026-11-09", kcal_in: 2400, protein_g: 130, burn_kcal: 2700 }, { date: "2026-11-10", kcal_in: 2200, protein_g: 175, burn_kcal: 2600 }],
-    weights: [{ date: "2026-11-02", weight: 86 }, { date: "2026-11-13", weight: 85.4 }], inbody: [], goal: null,
+    weights: [{ date: "2026-10-30", weight: 86 }, { date: "2026-11-13", weight: 85.4 }], inbody: [], goal: null,
   };
-  const r = weeklyReport({ week: reportWeek("2026-11-15"), data, current: 2200, protein: 170, resting: 1900 });
+  const r = weeklyReport({ week: reportPeriod("2026-11-15"), data, current: 2200, protein: 170, resting: 1900 });
   for (const lang of ["en", "ar"]) {
     const t = makeT(lang);
     const blocks = reportDoc(r, { t, lang, name: "Ali" });
@@ -712,13 +717,13 @@ test("report document: every section, in both languages, and as text to paste an
     assert.ok(text.includes("82.5×8"), lang);
     assert.ok(text.includes("1,250") || text.includes("1250") || text.length > 400);
     if (lang === "en") {
-      assert.ok(text.startsWith("# Weekly report"));
+      assert.ok(text.startsWith("# Two-week report"));
       assert.ok(text.includes("| Exercise | Sets | Best set | vs last time |"));
       assert.ok(text.includes("Bench press"));
       assert.ok(text.includes("body 1,900 + movement 750"));     // (2,700 + 2,600) / 2 = 2,650
-      assert.ok(text.includes("## For next week"));
+      assert.ok(text.includes("## For the next two weeks"));
     } else {
-      assert.ok(text.startsWith("# التقرير الأسبوعي"));
+      assert.ok(text.startsWith("# تقرير الأسبوعين"));
       assert.ok(text.includes("بنش برس"));
       assert.ok(text.includes("جسمك 1,900 + حركتك 750"));
     }
@@ -816,9 +821,9 @@ test("weekly report: food against each day's target; the check-in against what y
   const weights = [{ date: "2026-10-18", weight: 86 }, { date: "2026-10-25", weight: 85.95 }, { date: "2026-11-01", weight: 85.9 }, { date: "2026-11-08", weight: 85.85 }, { date: "2026-11-14", weight: 85.8 }];
   const data = { days, weights, inbody: [], sessions: [], logs: [], goal: ciGoal };
   const targetFor = (burn) => (burn ? { kcal: burn - 240, live: true, adjust: -240 } : { kcal: 2150, live: false });
-  const args = { week: reportWeek("2026-11-15"), data, profile: ciProfile, body: { weight: 85.8 }, current: 2150, protein: 170 };
+  const args = { week: reportPeriod("2026-11-15"), data, profile: ciProfile, body: { weight: 85.8 }, current: 2150, protein: 170 };
   const r = weeklyReport({ ...args, targetFor, adjust: -240 });
-  assert.equal(r.food.liveDays, 7);
+  assert.equal(r.food.liveDays, 14);
   assert.equal(r.food.target, r.food.kcal);                              // you ate each day's target
   assert.ok(!r.recs.some((x) => x.k === "recEatOver" || x.k === "recEatUnder"), r.recs.map((x) => x.k).join());
   assert.deepEqual([r.checkin.live, r.checkin.adjust, r.checkin.current], [true, -240, r.food.target]);   // not the 2,150 plan
@@ -863,6 +868,53 @@ test("no text field under 16px (iPhone zooms the whole page into smaller ones)",
   for (const f of ["src/screens/Train.jsx", "src/sheets/AddExercise.jsx", "src/sheets/Sheets.jsx"]) {
     const src = readFileSync(f, "utf8");
     assert.ok(!/<input[^>]*fontSize:\s*1[0-5]\b/.test(src), f);
+  }
+});
+
+// ── Goals in the report, and the realistic-date check ──
+test("realistic check: no training experience saved counts as 6 months–2 years; muscle counts in the realistic date", () => {
+  assert.equal(typicalMuscleRate({ experience: null, sex: "m", losing: true }), typicalMuscleRate({ experience: "mid", sex: "m", losing: true }));
+  assert.ok(typicalMuscleRate({ experience: undefined }) > 0);
+  const f = feasibility({ goal: { target_weight: 83, target_body_fat: 18.5, target_muscle_kg: 65, target_date: "2027-01-05" },
+    body: { weight: 84, bodyFat: 20.1, muscleKg: 63.7 }, profile: { sex: "m", experience: null }, now: Date.UTC(2026, 10, 17) });
+  assert.ok(f.muscle.typical > 0 && f.muscle.kind === "bad", JSON.stringify(f.muscle));   // was NaN → "Typical: about —"
+  assert.equal(f.earliest, f.byTarget.muscle);              // the slowest target sets the date
+  assert.ok(f.earliest > "2027-01-05", f.earliest);           // later than the date picked, never earlier
+});
+test("two-week report, led by the goals: needed vs actual pace, status, the deficit it takes, what to do", () => {
+  const goal = { id: "g", start_date: "2026-10-01", target_date: "2027-01-05", target_weight: 83, target_body_fat: 18.5, target_muscle_kg: 65 };
+  const weights = [["2026-10-12", 85.0], ["2026-10-19", 84.95], ["2026-10-26", 84.85], ["2026-11-02", 84.8], ["2026-11-09", 84.7], ["2026-11-13", 84.6]]
+    .map(([date, weight], i) => ({ id: `w${i}`, date, weight }));
+  const inbody = [{ date: "2026-10-13", weight: 85, body_fat: 20.6, smm_kg: 38.4 }, { date: "2026-11-11", weight: 84.6, body_fat: 20.2, smm_kg: 38.2 }];
+  const days = Array.from({ length: 14 }, (_, i) => ({ date: new Date(Date.UTC(2026, 10, 1 + i)).toISOString().slice(0, 10), kcal_in: 2300, protein_g: 150, burn_kcal: 2450, burn_source: "watch" }));
+  const set = (date, id, muscle, kg, reps) => ({ date, exercise_id: id, exercise: BY_ID[id].name[0], muscle_group: muscle, weight_kg: kg, reps });
+  const logs = [set("2026-11-03", "bench_press", "Chest", 80, 8), set("2026-11-05", "lat_pulldown", "Back", 60, 10), set("2026-11-10", "bench_press", "Chest", 80, 8)];
+  const data = { days, weights, inbody, logs, sessions: [], goal };
+  const targetFor = (burn) => (burn ? { kcal: burn - 300, live: true, adjust: -300 } : { kcal: 2150, live: false });
+  const r = weeklyReport({ week: reportPeriod("2026-11-17"), data, profile: { sex: "m" }, body: { weight: 84.6 }, current: 2150, protein: 175, targetFor, adjust: -300 });
+  const G = r.goals;
+  const by = Object.fromEntries(G.rows.map((x) => [x.key, x]));
+  assert.equal(G.daysLeft, 51);                                  // from the report day, 15 Nov, to 5 Jan
+  assert.equal(by.weight.status, "behind", JSON.stringify(by.weight));
+  assert.ok(by.weight.need < -0.2 && by.weight.pace > by.weight.need && by.weight.pace < 0, JSON.stringify(by.weight));
+  assert.equal(by.bodyFat.status, "behind", JSON.stringify(by.bodyFat));
+  assert.equal(by.muscle.status, "wrong", JSON.stringify(by.muscle));
+  assert.deepEqual([G.deficitNeed, G.deficitNow], [300, 150]);   // the goal takes 300 off; you ran 150
+  assert.ok(G.muscle && G.muscle.needWeek > G.muscle.typicalWeek * 1.5 && G.muscle.realistic > "2027-01-05", JSON.stringify(G.muscle));
+  const ks = r.recs.map((x) => x.k);
+  assert.equal(ks[0], "recDeficitUp", ks.join());
+  assert.equal(r.recs[0].p.x, 150);
+  assert.ok(ks.includes("recMuscleLow") && ks.includes("recMuscleDate"), ks.join());
+  assert.ok(!ks.includes("recEatOver") && !ks.includes("recEatUnder"), ks.join());   // said once, by the goal advice
+  for (const lang of ["en", "ar"]) {
+    const text = docText(reportDoc(r, { t: makeT(lang), lang, name: "" }));
+    assert.ok(!/\{[a-z0-9]+\}/i.test(text), `${lang}: an unfilled {placeholder}`);
+    if (lang === "en") {
+      assert.ok(text.includes("## Your goals") && text.includes("| Goal | Now → target | Needed a week | Your pace a week | Status |"), text.slice(0, 900));
+      assert.ok(text.includes("Behind") && text.includes("Wrong way"));
+      assert.ok(text.includes("about 300 kcal a day off your burn; these two weeks you averaged a 150 kcal deficit"));
+      assert.ok(text.includes("eat about 150 kcal a day less"));
+    } else assert.ok(text.includes("## أهدافك") && text.includes("متأخر"));
   }
 });
 

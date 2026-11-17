@@ -1,10 +1,10 @@
-// Earlier weekly reports: one line per week (Sunday → Saturday); tap to open it.
+// Earlier reports: one line per two weeks (Sunday → Saturday); tap to open it.
 import React, { useMemo } from "react";
 import { useApp } from "../ctx.js";
 import { Icon } from "../ui.jsx";
 import { fmtNum, signed } from "../lib/i18n.js";
 import { localISO } from "../lib/body.js";
-import { pastWeeks, weeklyReport, hasContent } from "../lib/weekly.js";
+import { pastPeriods, weeklyReport, hasContent } from "../lib/weekly.js";
 import { useResting } from "../hooks.js";
 import { liveAdjust } from "../lib/body.js";
 import { weekRange } from "./Weekly.jsx";
@@ -12,7 +12,7 @@ import { weekRange } from "./Weekly.jsx";
 export default function Weeks() {
   const { t, lang, rtl, data, derived, openSheet } = useApp();
   const resting = useResting();
-  const list = useMemo(() => pastWeeks(localISO(), 16).map((week) => ({
+  const list = useMemo(() => pastPeriods(localISO(), 12).map((week) => ({
     week,
     r: weeklyReport({ week, data, profile: data.profile || {}, body: derived.body, current: derived.targets?.kcal, protein: derived.targets?.protein, resting,
       targetFor: derived.targetFor, adjust: derived.targets ? liveAdjust(derived.targets) : null }),

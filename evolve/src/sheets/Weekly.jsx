@@ -1,4 +1,4 @@
-// The weekly report: a week (Sunday → Saturday) in full — training, food, burn,
+// The two-week report: two weeks (Sunday → Saturday) in full, goals first — training, food, burn,
 // body, the change from the week before and what to do next — the calorie
 // check-in (latest week), earlier weeks, and the report as a PDF or as text.
 import React, { useEffect, useMemo, useState } from "react";
@@ -7,7 +7,7 @@ import { Icon, Note } from "../ui.jsx";
 import { store } from "../lib/api.js";
 import { fmtDate, fmtNum, signed, signedIso } from "../lib/i18n.js";
 import { localISO, addDays, liveAdjust, kcalFloor } from "../lib/body.js";
-import { reportWeek, weekBefore, weeklyReport, hasContent, MIN_LOGGED } from "../lib/weekly.js";
+import { reportPeriod, periodBefore, weeklyReport, hasContent, MIN_LOGGED } from "../lib/weekly.js";
 import { reportDoc, docText, cellText } from "../lib/reportdoc.js";
 import { docToPdf, shareOrSave } from "../lib/pdf.js";
 import { lastPhotoDate } from "../lib/photos.js";
@@ -27,7 +27,7 @@ export function useWeekly(week) {
 // The latest report, until you open it (and only if the week has something in it).
 export function useNewReport() {
   const { user } = useApp();
-  const week = reportWeek(localISO());
+  const week = reportPeriod(localISO());
   const r = useWeekly(week);
   return user?.id && store.get(seenKey(user.id)) !== week.key && hasContent(r) ? { week, r } : null;
 }
@@ -138,7 +138,7 @@ function DocView({ blocks, checkin }) {
 
 export default function Weekly({ ctx }) {
   const { t, lang, rtl, user, data, derived, setKcalLock, kcalLock, closeSheet, toast, setTab, openSheet } = useApp();
-  const latest = reportWeek(localISO());
+  const latest = reportPeriod(localISO());
   const [week, setWeek] = useState(ctx.week || latest);
   const isLatest = week.key === latest.key;
   const r = useWeekly(week);
@@ -155,7 +155,7 @@ export default function Weekly({ ctx }) {
   useEffect(() => { setPdf(null); }, [week.key, lang]);
 
   const title = `${t("rpTitle")} ${range}`;
-  const filename = `evolve-week-${r.from}.pdf`;
+  const filename = `evolve-report-${r.from}.pdf`;
   const makePdf = async () => {
     if (pdf === "making") return;
     if (pdf?.blob) { const res = await shareOrSave(pdf.blob, filename, { title }); if (res !== "needs-tap") setPdf(null); if (res === "downloaded") toast(t("rpSaved")); return; }
@@ -235,12 +235,12 @@ export default function Weekly({ ctx }) {
   return (
     <>
       <div className="rp-nav">
-        <button type="button" className="icon-btn" onClick={() => setWeek(weekBefore(week))} aria-label={t("rpPrev")}><Icon name="back" flip={rtl} /></button>
+        <button type="button" className="icon-btn" onClick={() => setWeek(periodBefore(week))} aria-label={t("rpPrev")}><Icon name="back" flip={rtl} /></button>
         <div className="col" style={{ alignItems: "center", gap: 1, minWidth: 0 }}>
           <span className="strong" style={{ fontSize: 16 }}>{range}</span>
           <span className="small muted">{isLatest ? t("rpLatest") : t("rpEarlier")}</span>
         </div>
-        <button type="button" className="icon-btn" disabled={isLatest} onClick={() => setWeek(weekBefore(week, -1))} aria-label={t("rpNext")}><Icon name="next" flip={rtl} /></button>
+        <button type="button" className="icon-btn" disabled={isLatest} onClick={() => setWeek(periodBefore(week, -1))} aria-label={t("rpNext")}><Icon name="next" flip={rtl} /></button>
       </div>
       <div className="grid2">
         <button type="button" className={`btn ${pdf?.blob ? "primary" : "soft"}`} onClick={makePdf} disabled={pdf === "making"}>

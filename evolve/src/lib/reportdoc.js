@@ -1,4 +1,4 @@
-// EVOLVE — the weekly report as a document: a list of blocks that the app
+// EVOLVE — the two-week report as a document: a list of blocks that the app
 // shows, the PDF draws and "copy as text" writes out. One source, so all three
 // always say the same thing.
 //
@@ -6,6 +6,10 @@
 import { fmtDate, fmtNum, signedIso } from "./i18n.js";
 import { MUSCLES, MUSCLE_NAMES } from "./exercises.js";
 import { localISO } from "./body.js";
+import { MIN_LOGGED } from "./weekly.js";
+
+const GOAL_NAME = { weight: "mWeight", bodyFat: "mFat", muscle: "mMuscle" };
+const STATUS = { ok: ["stOk", "ok"], behind: ["stBehind", "warn"], wrong: ["stWrong", "bad"], done: ["stDone", "ok"], nodata: ["stNoData", null] };
 
 const KIND_ICON = { train: "train", food: "flame", up: "bolt", stall: "repeat", sync: "watch", good: "check" };
 // Keep a number expression in one piece, left to right, inside Arabic text.
@@ -40,13 +44,38 @@ export function reportDoc(r, { t, lang, name }) {
   blocks.push({ type: "title", text: t("rpTitle") });
   blocks.push({ type: "sub", text: [`${fmtDate(r.from, lang)} – ${fmtDate(r.to, lang, "long")}`, name].filter(Boolean).join(" · ") });
 
+  // ── Your goals: where each stands, the pace it needs vs yours, and what it takes ──
+  const G = r.goals;
+  if (G) {
+    blocks.push({ type: "h2", text: t("rpGoals"), icon: "goal" });
+    blocks.push({ type: "p", text: t("rpGoalsLine", { d: Math.max(0, G.daysLeft), date: fmtDate(G.targetDate, lang, "long") }) });
+    const u = (x) => (x.unit === "%" ? "%" : ` ${kg}`);
+    const val = (v, x) => (v == null ? "—" : `${fmtNum(v, 1)}${x.unit === "%" ? "%" : ""}`);
+    const wk = (v, x) => (v == null ? "—" : `${signedIso(v, 2)}${u(x)}`);
+    blocks.push({
+      type: "table",
+      cols: [{ h: t("rpColGoal"), w: 1.2 }, { h: t("rpColNowTarget"), w: 1.45, end: true }, { h: t("rpColNeed"), w: 1.2, end: true }, { h: t("rpColPace"), w: 1.2, end: true }, { h: t("rpColStatus"), w: 1.15, end: true }],
+      rows: G.rows.map((x) => [t(GOAL_NAME[x.key]), `${val(x.now, x)} ${arrow} ${val(x.target, x)}`, wk(x.need, x), wk(x.pace, x), { text: t(STATUS[x.status][0]), tone: STATUS[x.status][1] }]),
+    });
+    const eta = G.rows.filter((x) => x.status !== "done" && x.status !== "nodata").map((x) => (x.eta
+      ? t("rpEtaItem", { m: t(GOAL_NAME[x.key]), date: fmtDate(x.eta, lang), when: x.late > 3 ? t("rpLate", { n: x.late }) : x.late < -3 ? t("rpEarly", { n: -x.late }) : t("rpOnTime") })
+      : t("rpEtaNever", { m: t(GOAL_NAME[x.key]) })));
+    if (eta.length) blocks.push({ type: "p", text: t("rpEta", { list: eta.join(lang === "ar" ? "، " : "; ") }) });
+    if (G.deficitNeed) {
+      blocks.push({ type: "p", text: G.deficitNow == null ? t("rpEnergyNoBurn", { g: fmtNum(G.deficitNeed) })
+        : t(G.deficitNow >= 0 ? "rpEnergyDef" : "rpEnergySur", { g: fmtNum(G.deficitNeed), d: fmtNum(Math.abs(Math.round(G.deficitNow))) }) });
+    }
+    const mu = G.rows.find((x) => x.key === "muscle");
+    if (G.muscle && mu) blocks.push({ type: "p", text: t("rpMuscleLine", { n: signedIso(G.muscle.needWeek, 2), t: fmtNum(G.muscle.typicalWeek, 2), target: fmtNum(mu.target, 1), date: fmtDate(G.muscle.realistic, lang, "long") }) });
+  }
+
   // ── At a glance ──
   blocks.push({ type: "stats", items: [
     { v: String(tr.workouts), l: t("rpWorkouts"), d: vs(tr.workouts, pv.workouts) },
     { v: hm(tr.minutes), l: t("rpTime"), d: vs(tr.minutes, pv.minutes, { unit: ` ${t("rpMinShort")}` }) },
     { v: tr.volume ? fmtNum(tr.volume) : "—", l: t("rpVolume"), d: vs(tr.volume, pv.volume, { pct: true }) },
-    { v: f.days ? n0(f.kcal) : "—", l: f.target ? t("rpKcal", { t: fmtNum(f.target) }) : t("rpKcalNoT"), d: { text: t("rpLogged", { n: f.days }), tone: f.days >= 5 ? "ok" : "warn" } },
-    { v: f.days ? `${n0(f.protein)} ${g}` : "—", l: f.proteinTarget ? t("rpProtein", { t: fmtNum(f.proteinTarget) }) : t("rpProteinNoT"), d: f.proteinHit != null && f.days ? { text: t("rpProteinHit", { n: f.proteinHit }), tone: f.proteinHit >= 5 ? "ok" : "warn" } : null },
+    { v: f.days ? n0(f.kcal) : "—", l: f.target ? t("rpKcal", { t: fmtNum(f.target) }) : t("rpKcalNoT"), d: { text: t("rpLogged", { n: f.days }), tone: f.days >= MIN_LOGGED ? "ok" : "warn" } },
+    { v: f.days ? `${n0(f.protein)} ${g}` : "—", l: f.proteinTarget ? t("rpProtein", { t: fmtNum(f.proteinTarget) }) : t("rpProteinNoT"), d: f.proteinHit != null && f.days ? { text: t("rpProteinHit", { n: f.proteinHit }), tone: f.proteinHit >= MIN_LOGGED ? "ok" : "warn" } : null },
     { v: r.burn ? n0(r.burn.avg) : "—", l: t("rpBurn"), d: r.burn?.body != null ? { text: t("rpBurnSplit", { b: fmtNum(r.burn.body), m: fmtNum(r.burn.moving) }), tone: null } : null },
     { v: weightDelta != null ? `${signedIso(weightDelta, 1)} ${kg}` : w.end && w.end.date >= r.from ? `${n0(w.end.weight, 1)} ${kg}` : "—", l: t("rpWeight"),
       d: w.end && w.start ? { text: `${fmtNum(w.start.weight, 1)} ${arrow} ${fmtNum(w.end.weight, 1)}`, tone: null } : null },
@@ -85,8 +114,10 @@ export function reportDoc(r, { t, lang, name }) {
   if (f.days || r.burn) {
     blocks.push({
       type: "table",
-      cols: [{ h: t("rpColDay"), w: 1.6 }, { h: t("rpColKcal"), w: 1, end: true }, { h: t("rpColPro"), w: 1, end: true }, { h: t("rpColBurn"), w: 1, end: true }],
-      rows: f.daily.map((d) => [fmtDate(d.date, lang, "day"), d.kcal ? fmtNum(d.kcal) : "—", d.protein ? `${fmtNum(d.protein)} ${g}` : "—", d.burn ? fmtNum(d.burn) : "—"]),
+      cols: [{ h: t("rpColDay"), w: 1.5 }, { h: t("rpColKcal"), w: 1, end: true }, { h: t("rpColTarget"), w: 1, end: true }, { h: t("rpColPro"), w: 1, end: true }, { h: t("rpColBurn"), w: 1, end: true }],
+      rows: f.daily.map((d) => [fmtDate(d.date, lang, "day"),
+        d.kcal ? { text: fmtNum(d.kcal), tone: d.target && d.kcal > d.target + 100 ? "warn" : null } : "—",
+        d.target ? fmtNum(d.target) : "—", d.protein ? `${fmtNum(d.protein)} ${g}` : "—", d.burn ? fmtNum(d.burn) : "—"]),
     });
   }
 
@@ -121,7 +152,11 @@ export function reportDoc(r, { t, lang, name }) {
 
   // ── For next week ──
   blocks.push({ type: "h2", text: t("rpRecs"), icon: "bolt" });
-  const params = (p) => Object.fromEntries(Object.entries(p || {}).map(([k, v]) => [k, Array.isArray(v) ? pick(v) : typeof v === "number" ? fmtNum(v, k === "from" || k === "to" ? 2 : 0) : v]));
+  const fmtParam = (k, v) => (Array.isArray(v) ? pick(v)
+    : typeof v === "number" ? fmtNum(v, k === "from" || k === "to" ? 2 : 0)
+    : v && typeof v === "object" ? (v.date ? fmtDate(v.date, lang, "long") : v.metric ? t(GOAL_NAME[v.metric]) : v.signed != null ? signedIso(v.signed, v.digits ?? 0) : v.num != null ? fmtNum(v.num, v.digits ?? 0) : "")
+    : v);
+  const params = (p) => Object.fromEntries(Object.entries(p || {}).map(([k, v]) => [k, fmtParam(k, v)]));
   blocks.push({ type: "list", items: r.recs.length ? r.recs.map((x) => ({ text: t(x.k, params(x.p)), kind: x.kind, icon: KIND_ICON[x.kind] || "info" })) : [{ text: t("rpAllGood"), kind: "good", icon: "check" }] });
 
   // ── Calorie check-in ──

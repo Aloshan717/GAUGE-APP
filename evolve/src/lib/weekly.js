@@ -1,15 +1,17 @@
-// EVOLVE — the weekly report and the calorie check-in.
+// EVOLVE — the two-week report and the calorie check-in.
 //
-// Every Sunday: a look back at the week before (Sunday … Saturday) — training
-// (days, time, sets, weight moved, sets per muscle, every exercise with its
-// best set and how it moved since last time, records), food (calories and
-// protein against your targets), burn (body + movement), weight and InBody,
-// the change from the week before and what to do next week — and a calorie
-// check-in: your real burn, measured from what you ate and how your weight
-// moved, and the calorie target that matches your goal. The target in use
-// only changes when you tap "Apply".
-import { coerceNumber, normalizeDate, mergeWeightSeries, withMuscleKg, goalStartDate } from "./core.js";
-import { addDays, adaptiveMaintenance, maintenance, dailyTargets, burnByDate } from "./body.js";
+// Every other Sunday: a look back at the two weeks before (Sunday … Saturday),
+// led by your goals — where each one stands, the pace it needs from here vs
+// your pace, when you'd get there, and the food (deficit) and training it
+// takes — then training (days, time, sets, weight moved, sets per muscle,
+// every exercise with its best set and how it moved since last time, records),
+// food (calories and protein against each day's target), burn (body +
+// movement), weight and InBody, the change from the two weeks before and what
+// to do next, goals first. And a calorie check-in: your real burn, measured
+// from what you ate and how your weight moved, and the calorie target that
+// matches your goal. The target in use only changes when you tap "Apply".
+import { coerceNumber, normalizeDate, mergeWeightSeries, withMuscleKg, goalStartDate, goalTracks } from "./core.js";
+import { addDays, adaptiveMaintenance, maintenance, dailyTargets, burnByDate, arrival, typicalMuscleRate, goalDirection } from "./body.js";
 import { BY_ID, MUSCLES, MUSCLE_NAMES, logExerciseId } from "./exercises.js";
 import { e1rm, liftHistory, recommend, repsFor, volumeOf } from "./train.js";
 
@@ -17,19 +19,22 @@ const DAY = 86400000;
 const t0 = (d) => new Date(`${d}T00:00:00Z`).getTime();
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
-export const REPORT_DAY = 0;   // Sunday — the week runs Sunday → Saturday
-export const MAX_STEP = 150;   // the most a check-in moves your target, kcal/day
-export const MIN_LOGGED = 5;   // days of food logged in the week for a check-in
+export const REPORT_DAY = 0;        // Sunday — weeks run Sunday → Saturday
+export const PERIOD_DAYS = 14;      // a report covers two weeks
+const REPORT_ANCHOR = "2026-11-15"; // a report Sunday: reports come every other Sunday from it
+export const MAX_STEP = 150;        // the most a check-in moves your target, kcal/day
+export const MIN_LOGGED = 10;       // days of food logged in the two weeks for a check-in
 
-// The week a report covers: Sunday to Saturday, the week before the latest Sunday.
-export function reportWeek(today) {
+// The two weeks the latest report covers: the 14 days before the latest report Sunday.
+export function reportPeriod(today) {
   const dow = new Date(`${today}T12:00:00Z`).getUTCDay();
-  const day = addDays(today, -((dow - REPORT_DAY + 7) % 7));
-  return { key: day, from: addDays(day, -7), to: addDays(day, -1) };
+  let key = addDays(today, -((dow - REPORT_DAY + 7) % 7));
+  if (Math.abs(Math.round((t0(key) - t0(REPORT_ANCHOR)) / (7 * DAY))) % 2 === 1) key = addDays(key, -7);
+  return { key, from: addDays(key, -PERIOD_DAYS), to: addDays(key, -1) };
 }
-// The report n weeks before this one, and the latest n reports (newest first).
-export const weekBefore = (week, n = 1) => { const key = addDays(week.key, -7 * n); return { key, from: addDays(key, -7), to: addDays(key, -1) }; };
-export const pastWeeks = (today, n = 12) => Array.from({ length: n }, (_, i) => weekBefore(reportWeek(today), i));
+// The report n periods before this one, and the latest n reports (newest first).
+export const periodBefore = (p, n = 1) => { const key = addDays(p.key, -PERIOD_DAYS * n); return { key, from: addDays(key, -PERIOD_DAYS), to: addDays(key, -1) }; };
+export const pastPeriods = (today, n = 8) => Array.from({ length: n }, (_, i) => periodBefore(reportPeriod(today), i));
 
 // Same goal = same locked target. A new goal starts a new lock.
 export const goalKey = (g) => (g ? [g.id, g.target_weight, g.target_body_fat, g.target_muscle_kg, g.target_date].join("|") : null);
@@ -52,7 +57,7 @@ export function calorieCheckin({ goal, profile = {}, body, days, sessions, weigh
   const end = t0(to) + DAY - 1;
   const start = goalStartDate(goal);
   if (start && (t0(to) - t0(start)) / DAY < 13) return { status: "early" };
-  const logged = (days || []).filter((r) => { const d = normalizeDate(r?.date); return d && d >= addDays(to, -6) && d <= to && coerceNumber(r.kcal_in) >= 600; }).length;
+  const logged = (days || []).filter((r) => { const d = normalizeDate(r?.date); return d && d >= addDays(to, -(PERIOD_DAYS - 1)) && d <= to && coerceNumber(r.kcal_in) >= 600; }).length;
   if (logged < MIN_LOGGED) return { status: "need-food", logged };
   // Your real burn: average eaten − weight change (7,700 kcal per kg). Longer
   // windows when weigh-ins are spread out.
@@ -88,7 +93,61 @@ function trainingIn(data, week) {
   };
 }
 
-// Food in one week: averages over the days you logged, and the average of
+// Where each goal stands at the end of the period: now → target, the pace the
+// goal needs from here (per week, to the target date) against your pace (the
+// trend of your readings), when you'd arrive at that pace — and what it takes:
+// the daily deficit the goal asks for vs the one you ran, and the muscle gain
+// that's realistic for you right now.
+export function goalsIn({ data, period, goal, profile = {}, balance, adjust }) {
+  if (!goal?.target_date) return null;
+  const end = t0(period.to) + DAY - 1;
+  const upTo = (rows) => (rows || []).filter((r) => { const d = normalizeDate(r?.date); return d && d <= period.to; });
+  const scans = upTo(data.inbody);
+  const tracks = goalTracks({ goal, weights: upTo(data.weights), scans, now: end });
+  const daysLeft = Math.round((t0(goal.target_date) - t0(period.key)) / DAY);
+  const rows = [];
+  for (const key of ["weight", "bodyFat", "muscle"]) {
+    const tr = tracks[key];
+    if (!tr || tr.target == null) continue;
+    const unit = key === "bodyFat" ? "%" : "kg";
+    if (tr.curr == null) { rows.push({ key, unit, target: tr.target, status: "nodata" }); continue; }
+    const left = +(tr.target - tr.curr).toFixed(2);
+    const a = arrival(tr, end);
+    const need = daysLeft > 0 ? +((left / daysLeft) * 7).toFixed(2) : null;
+    const pace = a && !a.reached && a.perWeek != null ? +a.perWeek.toFixed(2) : null;
+    // The change across these two weeks: the last reading before them vs the last one in them.
+    const pts = tr.points;
+    const last = pts[pts.length - 1];
+    const before = [...pts].reverse().find((p) => p.date < period.from && p.date >= addDays(period.from, -28));
+    const change = before && last && last.date >= period.from ? +(coerceNumber(last[tr.field]) - coerceNumber(before[tr.field])).toFixed(1) : null;
+    const status = a?.reached || Math.abs(left) < 0.2 ? "done"
+      : pace == null ? "nodata"
+      : pace * Math.sign(left) <= 0 ? "wrong"
+      : need != null && Math.abs(pace) >= Math.abs(need) * 0.9 ? "ok" : "behind";
+    rows.push({ key, unit, now: tr.curr, target: tr.target, left, need, pace, change, status,
+      eta: a?.date || null, late: a?.date ? Math.round((t0(a.date) - t0(goal.target_date)) / DAY) : null });
+  }
+  if (!rows.length) return null;
+  const by = Object.fromEntries(rows.map((x) => [x.key, x]));
+  const losing = ["weight", "bodyFat"].some((k) => by[k]?.left < 0);
+  let muscle = null;
+  if (by.muscle?.left > 0.2) {
+    const dir = goalDirection(goal, { weight: tracks.weight.curr, bodyFat: tracks.bodyFat.curr, muscleKg: tracks.muscle.curr });
+    const week = typicalMuscleRate({ experience: profile.experience, sex: profile.sex, losing: dir === "lose" || dir === "recomp" }) / 4.345;
+    muscle = { needWeek: by.muscle.need, typicalWeek: +week.toFixed(2), realistic: addDays(period.key, Math.ceil((by.muscle.left / week) * 7)) };
+  }
+  const inPeriod = (rows2) => (rows2 || []).filter((r) => { const d = normalizeDate(r?.date); return d && d >= period.from && d <= period.to; }).length;
+  return {
+    rows, daysLeft, targetDate: goal.target_date,
+    deficitNeed: losing && adjust != null && adjust < 0 ? -adjust : null,   // what your goal takes off each day's burn
+    deficitNow: balance ? -balance.kcal : null,                             // burned − eaten, a day, these two weeks
+    muscle,
+    lastScan: scans.map((s) => normalizeDate(s.date)).filter(Boolean).sort().pop() || null,
+    weighIns: inPeriod(data.weights) + inPeriod(data.inbody),
+  };
+}
+
+// Food in a period: averages over the days you logged, and the average of
 // those days' targets (each day's burn with your goal's deficit — targetFor —
 // or the plan on a day with no burn).
 function foodIn(data, week, { target, proteinTarget, targetFor }) {
@@ -106,7 +165,7 @@ function foodIn(data, week, { target, proteinTarget, targetFor }) {
   };
 }
 
-// Burn in one week: the average whole day (body + movement) from the watch.
+// Burn in a period: the average whole day (body + movement) from the watch.
 function burnIn(data, week, resting) {
   const inWeek = inRange(week);
   const vals = [...burnByDate(data.days, data.sessions).entries()].filter(([d, v]) => inWeek(d) && v > 0).map(([, v]) => v);
@@ -181,19 +240,23 @@ export function weeklyReport({ week, data, profile = {}, body, current, protein,
       muscleDelta: p && s.muscle_kg != null && p.muscle_kg != null && s.muscle_kind === p.muscle_kind ? +(s.muscle_kg - p.muscle_kg).toFixed(1) : null };
   }
 
+  const burns = burnByDate(data.days, data.sessions);
   const r = {
     from, to, key: week.key,
     weight: weekWeight(data.weights, data.inbody, week),
-    food: { ...food, daily: Array.from({ length: 7 }, (_, i) => {
+    food: { ...food, daily: Array.from({ length: Math.round((t0(to) - t0(from)) / DAY) + 1 }, (_, i) => {
       const date = addDays(from, i);
       const row = (data.days || []).find((x) => normalizeDate(x.date) === date) || {};
-      return { date, kcal: coerceNumber(row.kcal_in) || null, protein: coerceNumber(row.protein_g) || null, burn: burnByDate(data.days, data.sessions).get(date) || null };
+      const burnDay = burns.get(date) || null;
+      return { date, kcal: coerceNumber(row.kcal_in) || null, protein: coerceNumber(row.protein_g) || null, burn: burnDay,
+        target: (targetFor ? targetFor(burnDay)?.kcal : null) ?? current ?? null };
     }) },
     burn, balance,
+    goals: goalsIn({ data, period: week, goal: data.goal, profile, balance, adjust }),
     training: { workouts: train.workouts, days: train.days, sessions: train.sessions, minutes: train.minutes, sets: train.sets, volume: train.volume, muscles: train.muscles,
       exercises, records: exercises.filter((x) => x.record).map((x) => ({ id: x.id || x.key, name: x.name, kg: x.best.kg, reps: x.best.reps })) },
     inbody,
-    prev: summaryOf(data, weekBefore(week), ctx),
+    prev: summaryOf(data, periodBefore(week), ctx),
     // Measured against what you were asked to eat that week (on average).
     checkin: { ...calorieCheckin({ goal: data.goal, profile, body, days: data.days, sessions: data.sessions, weights: data.weights, scans: data.inbody, current: (food.days && food.target) || current, to }),
       live: food.days > 0 && food.liveDays > food.days / 2, adjust },
@@ -204,17 +267,59 @@ export function weeklyReport({ week, data, profile = {}, body, current, protein,
 
 // What to do next week, most important first: [{ k: i18n key, p: params, kind }].
 // Names come as [English, Arabic] pairs; the report picks the language.
+// Params can be numbers, [English, Arabic] pairs, or for the report to format:
+// { date }, { signed, digits }, { num, digits } and { metric } (a goal's name).
 export function weekRecs(r, { profile = {}, data = {}, week } = {}) {
   const recs = [];
   const tr = r.training;
+  const days = week ? Math.round((t0(week.to) - t0(week.from)) / DAY) + 1 : PERIOD_DAYS;
+  const weeks = days / 7;
+  const round10 = (n) => Math.round(n / 10) * 10;
+
+  // ── Your goals first: what the numbers say it takes ──
+  const G = r.goals;
+  let energySaid = false;
+  if (G) {
+    const by = Object.fromEntries(G.rows.map((x) => [x.key, x]));
+    const off = ["bodyFat", "weight"].map((k) => by[k]).find((x) => x && x.left < 0 && (x.status === "behind" || x.status === "wrong"));
+    if (off && G.deficitNeed && G.deficitNow != null && G.deficitNeed - G.deficitNow >= 50) {
+      recs.push({ k: "recDeficitUp", p: { m: { metric: off.key }, x: Math.min(400, round10(G.deficitNeed - G.deficitNow)), d: { signed: Math.round(G.deficitNow), digits: 0 }, g: G.deficitNeed }, kind: "food" });
+      energySaid = true;
+    } else if (off?.status === "wrong") {
+      recs.push({ k: "recWrongWay", p: { m: { metric: off.key }, c: off.change != null ? { signed: off.change, digits: 1 } : "—" }, kind: "food" });
+      energySaid = true;
+    } else if (off && G.deficitNeed && G.deficitNow != null) {
+      // The deficit is there; the readings lag (water, InBody variation) — say so rather than cut more.
+      recs.push({ k: off.key === "bodyFat" ? "recBehindOkFat" : "recBehindOkWeight", p: { d: Math.round(G.deficitNow), g: G.deficitNeed }, kind: "good" });
+      energySaid = true;
+    }
+    const w = by.weight;
+    if (w && w.left < 0 && w.pace != null && w.pace < 0 && w.need != null && w.now && Math.abs(w.pace) > Math.abs(w.need) * 1.5 && Math.abs(w.pace) / w.now > 0.01) {
+      recs.push({ k: "recTooFast", p: { a: { signed: w.pace, digits: 2 }, n: { signed: w.need, digits: 2 }, x: Math.min(300, round10(((Math.abs(w.pace) - Math.abs(w.need)) * 7700) / 7)) }, kind: "food" });
+      energySaid = true;
+    }
+    const mu = by.muscle;
+    if (mu && mu.left > 0.2 && mu.status !== "ok" && mu.status !== "done") {
+      const perWeek = MUSCLES.map((m) => [m, (tr.muscles[m] || 0) / weeks]).filter(([m]) => m !== "Core" && m !== "Abs");
+      const low = perWeek.filter(([, s]) => s < 10).sort((a, b) => a[1] - b[1])[0];
+      recs.push({ k: low ? "recMuscleLow" : "recMuscleGoal", p: { n: { signed: mu.need ?? 0, digits: 2 }, p: r.food.proteinTarget || "—", a: r.food.protein || "—", lm: low ? MUSCLE_NAMES[low[0]] || [low[0], low[0]] : "", ls: low ? Math.round(low[1]) : 0 }, kind: "train" });
+    }
+    if (mu && G.muscle && G.muscle.needWeek > G.muscle.typicalWeek * 1.5) recs.push({ k: "recMuscleDate", p: { t: { num: mu.target, digits: 1 }, date: { date: G.muscle.realistic } }, kind: "stall" });
+    if (by.bodyFat || by.muscle) {
+      if (!G.lastScan) recs.push({ k: "recScanNone", p: {}, kind: "sync" });
+      else if (G.lastScan < addDays(r.to, -28)) recs.push({ k: "recScan", p: { date: { date: G.lastScan } }, kind: "sync" });
+    }
+    if (w && G.weighIns < 2 * weeks) recs.push({ k: "recWeighIn", p: { n: G.weighIns }, kind: "sync" });
+  }
+
   const planned = profile.train_days?.length || data.plan?.days?.length || null;
   if (!tr.workouts) recs.push({ k: "recNoTraining", p: {}, kind: "train" });
-  else if (planned && tr.workouts < planned) recs.push({ k: "recFewer", p: { w: tr.workouts, n: planned }, kind: "train" });
+  else if (planned && tr.workouts < planned * weeks) recs.push({ k: "recFewer", p: { w: tr.workouts, n: Math.round(planned * weeks) }, kind: "train" });
 
-  if (r.food.days && r.food.proteinTarget && r.food.protein < r.food.proteinTarget * 0.9) {
+  if (r.food.days && r.food.proteinTarget && r.food.protein < r.food.proteinTarget * 0.9 && !recs.some((x) => x.k === "recMuscleGoal" || x.k === "recMuscleLow")) {
     recs.push({ k: "recProtein", p: { p: r.food.protein, t: r.food.proteinTarget, g: r.food.proteinTarget - r.food.protein }, kind: "food" });
   }
-  if (r.food.days >= 3 && r.food.target) {
+  if (!energySaid && r.food.days >= 3 && r.food.target) {
     const d = r.food.kcal - r.food.target;
     if (d > 150) recs.push({ k: "recEatOver", p: { d }, kind: "food" });
     else if (d < -300) recs.push({ k: "recEatUnder", p: { d: -d }, kind: "food" });
@@ -226,11 +331,13 @@ export function weekRecs(r, { profile = {}, data = {}, week } = {}) {
   const stall = tr.exercises.find((x) => x.next?.kind === "stall");
   if (stall) recs.push({ k: "recStall", p: { name: stall.name }, kind: "stall" });
 
-  MUSCLES.map((m) => [m, tr.muscles[m] || 0]).filter(([m, s]) => s > 0 && s < (m === "Legs" ? 10 : 8))
-    .sort((a, b) => a[1] - b[1]).slice(0, 2)
-    .forEach(([m, s]) => recs.push({ k: "recSetsLow", p: { m: MUSCLE_NAMES[m] || [m, m], s }, kind: "train" }));
-  if (week) {   // a muscle you train most weeks but skipped this one
-    const recent = new Set((data.logs || []).filter((l) => { const d = normalizeDate(l.date); return d && d >= addDays(week.from, -21) && d < week.from; }).map((l) => l.muscle_group));
+  if (!recs.some((x) => x.k === "recMuscleLow")) {
+    MUSCLES.map((m) => [m, tr.muscles[m] || 0]).filter(([m, s]) => s > 0 && s < (m === "Legs" ? 10 : 8) * weeks)
+      .sort((a, b) => a[1] - b[1]).slice(0, 2)
+      .forEach(([m, s]) => recs.push({ k: "recSetsLow", p: { m: MUSCLE_NAMES[m] || [m, m], s }, kind: "train" }));
+  }
+  if (week) {   // a muscle you usually train but skipped in this period
+    const recent = new Set((data.logs || []).filter((l) => { const d = normalizeDate(l.date); return d && d >= addDays(week.from, -28) && d < week.from; }).map((l) => l.muscle_group));
     MUSCLES.filter((m) => recent.has(m) && !tr.muscles[m]).slice(0, 1)
       .forEach((m) => recs.push({ k: "recSkipped", p: { m: MUSCLE_NAMES[m] || [m, m] }, kind: "train" }));
   }
@@ -242,8 +349,8 @@ export function weekRecs(r, { profile = {}, data = {}, week } = {}) {
     else if (pct >= 10) recs.push({ k: "recVolUp", p: { pct }, kind: "good" });
   }
   if (!r.burn) recs.push({ k: "recSyncNone", p: {}, kind: "sync" });
-  else if (r.burn.days < 4) recs.push({ k: "recSync", p: { n: r.burn.days }, kind: "sync" });
-  if (r.food.proteinHit != null && r.food.proteinHit >= 5) recs.push({ k: "recProteinGood", p: { n: r.food.proteinHit }, kind: "good" });
+  else if (r.burn.days < days * 0.55) recs.push({ k: "recSync", p: { n: r.burn.days }, kind: "sync" });
+  if (r.food.proteinHit != null && r.food.proteinHit >= days * 0.7) recs.push({ k: "recProteinGood", p: { n: r.food.proteinHit }, kind: "good" });
   return recs.slice(0, 8);
 }
 

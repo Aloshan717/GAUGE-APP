@@ -215,8 +215,9 @@ export function dayTarget({ targets, burn, bmr, sex }) {
 
 // Muscle Mass gain, kg per month, men eating at or above maintenance.
 export const MUSCLE_RATE = { new: 0.9, mid: 0.45, adv: 0.2 };
-export function typicalMuscleRate({ experience = "mid", sex = "m", losing = false }) {
-  return +(MUSCLE_RATE[experience] * (sex === "f" ? 0.5 : 1) * (losing ? 0.5 : 1)).toFixed(2);
+// (No experience saved yet — null from the profile — counts as 6 months – 2 years.)
+export function typicalMuscleRate({ experience, sex = "m", losing = false }) {
+  return +((MUSCLE_RATE[experience] ?? MUSCLE_RATE.mid) * (sex === "f" ? 0.5 : 1) * (losing ? 0.5 : 1)).toFixed(2);
 }
 
 const grade = (ratio, okMax, warnMax) => (ratio <= okMax ? "ok" : ratio <= warnMax ? "warn" : "bad");
