@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { EXERCISES, BY_ID, GROUPS, usable, swapOptions, matchExercise, logExerciseId } from "../src/lib/exercises.js";
 import { buildSession, recommend, liftHistory, weightStep, exercisesFor, adjustSession, recommendedCounts, makeCustomSlot, customMatch, makeSlot, setAllSets, suggestedSets,
-  pastWorkouts, lastTimeFor, slotsFromItems, sameExercise, coverage } from "../src/lib/train.js";
+  pastWorkouts, lastTimeFor, slotsFromItems, sameExercise, coverage, groupSlots } from "../src/lib/train.js";
 import { generatePlan, weeklySets, swapInPlan, toggleKept, setSlotSets, reviewCount, planDayFor, nextPlanDay, DEFAULT_DAYS } from "../src/lib/plan.js";
 import { musclesOf, slotMuscles, regionLevels, REGIONS, MUSCLE_LABELS, PARTS, mainView, focusBox, searchExercises, customMuscles, sameAngle } from "../src/lib/muscles.js";
 import { FRONT, BACK } from "../src/lib/bodymap.js";
@@ -72,6 +72,20 @@ test("a chest + triceps session starts with a press and works every triceps head
   assert.equal(tri.length, 3);
   assert.deepEqual(tri.map((x) => musclesOf(x.ex).primary[0]).sort(), ["tricepsLateral", "tricepsLong", "tricepsMedial"]);
   assert.equal(new Set(s.map((x) => x.ex)).size, s.length);
+});
+test("today's exercises split into one block per muscle, in the order you picked them", () => {
+  const s = [
+    { id: "a", group: "row", ex: "seated_cable_row" }, { id: "b", group: "curl", ex: "db_curl" },
+    { id: "c", group: "vpull", ex: "lat_pulldown" }, { id: "d", custom: true, name: "My curl", muscle: "Biceps" },
+    { id: "e", group: "lateral", ex: "db_lateral_raise" },
+  ];
+  const g = groupSlots(s, ["Back", "Biceps"]);
+  assert.deepEqual(g.map((x) => x.muscle), ["Back", "Biceps", "Shoulders"]);
+  assert.deepEqual(g[0].slots.map((x) => x.id), ["a", "c"]);
+  assert.deepEqual(g[1].slots.map((x) => x.id), ["b", "d"]);
+  // A muscle picked but with nothing in it yet shows no empty block.
+  assert.deepEqual(groupSlots(s.slice(0, 1), ["Biceps", "Back"]).map((x) => x.muscle), ["Back"]);
+  assert.deepEqual(groupSlots([], ["Back"]), []);
 });
 test("session size follows the time you have", () => {
   assert.ok(buildSession({ muscles: ["Legs", "Back", "Chest"], minutes: 45 }).length <= exercisesFor(45));
@@ -382,8 +396,11 @@ test("plan review: change the sets of one exercise", () => {
 
 // ── Library and muscle map ──
 test("every exercise has a known group and muscles on the map; photos are unique", () => {
-  assert.ok(EXERCISES.length >= 270);
-  assert.ok(EXERCISES.filter((e) => !e.img).length <= 15);
+  assert.ok(EXERCISES.length >= 310);
+  // Only gym machines and cable stations may lack a photo (the free photo library has few of them).
+  const noPhoto = EXERCISES.filter((e) => !e.img);
+  assert.ok(noPhoto.length <= 50, `${noPhoto.length} without a photo`);
+  for (const e of noPhoto) assert.ok(e.equip.includes("machine") || e.equip.includes("cable"), `${e.id} needs a photo`);
   const regionsFront = new Set(FRONT.map(([r]) => r)), regionsBack = new Set(BACK.map(([r]) => r));
   for (const e of EXERCISES) {
     assert.ok(GROUPS[e.group], e.id);
@@ -407,6 +424,22 @@ test("plenty of swaps: biceps alone has 20+ in a full gym", () => {
     if (["legpress", "legext", "abduction", "adduction"].includes(g)) continue;
     assert.ok(EXERCISES.filter((e) => e.group === g).length >= 5, g);
   }
+});
+test("plenty of machines: every muscle has several, every movement in a full gym has at least one", () => {
+  const machines = EXERCISES.filter((e) => e.equip.includes("machine"));
+  assert.ok(machines.length >= 95, `${machines.length} machines`);
+  for (const m of ["Chest", "Back", "Shoulders", "Biceps", "Triceps", "Legs", "Core"]) {
+    const n = machines.filter((e) => GROUPS[e.group].muscle === m).length;
+    assert.ok(n >= 4, `${m}: ${n} machines`);
+  }
+  for (const g of Object.keys(GROUPS)) {
+    if (g === "frontraise") continue;   // no front-raise machine in most gyms
+    assert.ok(machines.some((e) => e.group === g), `${g}: no machine`);
+  }
+  // Swapping the reverse pec deck now offers other rear-delt machines.
+  assert.ok(swapOptions("reverse_pec_deck", { equipment: "gym" }).filter((e) => e.equip.includes("machine")).length >= 3);
+  // At home, no machine sneaks in.
+  assert.ok(!swapOptions("db_lateral_raise", { equipment: "home" }).some((e) => e.equip.includes("machine")));
 });
 test("muscle map: hammer curls hit brachialis and forearm, deadlifts light the whole back chain", () => {
   assert.deepEqual(musclesOf("hammer_curl").primary, ["brachialis", "brachioradialis"]);

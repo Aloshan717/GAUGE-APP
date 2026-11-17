@@ -7,11 +7,11 @@ import { Icon, Chips, Photo, Note, Stepper, MuscleMap } from "../ui.jsx";
 import { sb, store } from "../lib/api.js";
 import { fmtNum, fmtDate } from "../lib/i18n.js";
 import { BY_ID, GROUPS, MUSCLES, MUSCLE_NAMES } from "../lib/exercises.js";
-import { liftHistory, recommend, setsText, recommendedCounts, adjustSession, slotMuscle, customMatch, setAllSets, suggestedSets,
+import { liftHistory, recommend, setsText, recommendedCounts, adjustSession, slotMuscle, groupSlots, customMatch, setAllSets, suggestedSets,
   pastWorkouts, lastTimeFor, slotsFromItems, sameExercise, bestOf, recordKind, recordIndex, volumeOf, restSeconds, MAX_PER_MUSCLE, MAX_SETS, coverage } from "../lib/train.js";
 import { enqueue, patchQueued, dropQueued, tempId, isTemp } from "../lib/queue.js";
 import { primeSound, scheduleBeep, cancelBeep, buzz } from "../lib/sound.js";
-import { slotMuscles, muscleNames } from "../lib/muscles.js";
+import { slotMuscles, muscleNames, customMuscles } from "../lib/muscles.js";
 import { findMine } from "../lib/myex.js";
 import { planDayFor, nextPlanDay, slotMinutes, WEEKDAYS_FULL } from "../lib/plan.js";
 import { localISO } from "../lib/body.js";
@@ -313,6 +313,24 @@ function RestBar({ rest, onAdjust, onSkip }) {
   );
 }
 
+// The header above one muscle's exercises: which muscle, how many, how many done.
+function MuscleHead({ n, muscle, slots, session }) {
+  const { t, lang } = useApp();
+  const name = muscle ? (MUSCLE_NAMES[muscle] || [muscle, muscle])[L(lang)] : "—";
+  const done = slots.filter((x) => isComplete(x, session)).length;
+  const all = done === slots.length;
+  return (
+    <div className={`mus-head${all ? " done" : ""}`} role="heading" aria-level={3}>
+      <span className="mus-n num" aria-hidden="true">{all ? <Icon name="check" size={16} stroke={3} /> : n}</span>
+      <span className="grow col" style={{ gap: 1 }}>
+        <span className="mus-name">{name}</span>
+        <span className="small muted">{exCount(t, slots.length)}{done > 0 && <b style={{ color: "var(--accent-text)" }}> · {t("doneCount", { d: done, n: slots.length })}</b>}</span>
+      </span>
+      {muscle && <MuscleMap muscles={customMuscles(muscle)} height={42} views="main" zoom />}
+    </div>
+  );
+}
+
 // Your recent workouts — one tap repeats the same exercises and sets.
 function RepeatList({ workouts, onRepeat, current }) {
   const { t, lang } = useApp();
@@ -432,14 +450,19 @@ export default function Train() {
   });
 
   const slots = active?.slots || [];
+  // Muscles you picked: one block per muscle, each with its own header. A plan
+  // day keeps the plan's order (big lifts first, muscles alternating).
+  const blocks = picking ? groupSlots(slots, muscles) : [{ muscle: null, slots }];
+  const showBlocks = blocks.length > 1;
+  const ordered = blocks.flatMap((b) => b.slots);
   const minutes = Math.round(slots.reduce((a, s) => a + slotMinutes(s.sets, GROUPS[s.group]?.compound), 0) + 5);
   const setsDone = Object.values(active?.done || {}).reduce((a, l) => a + l.filter(Boolean).length, 0);
   const differs = mode === "manual" || (mode === "auto" && (muscles.some((m) => (counts[m] ?? 0) !== rec[m]) || active?.sets));
   const completeCount = slots.filter((x) => isComplete(x, active)).length;
   // A finished exercise closes and the next unfinished one opens.
   const advance = (id) => {
-    const i = slots.findIndex((x) => x.id === id);
-    const nextSlot = [...slots.slice(i + 1), ...slots.slice(0, Math.max(0, i))].find((x) => x.id !== id && !isComplete(x, active));
+    const i = ordered.findIndex((x) => x.id === id);
+    const nextSlot = [...ordered.slice(i + 1), ...ordered.slice(0, Math.max(0, i))].find((x) => x.id !== id && !isComplete(x, active));
     setTimeout(() => {
       setOpen(nextSlot ? nextSlot.id : null);
       if (nextSlot) setTimeout(() => document.getElementById(`ex-${nextSlot.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
@@ -588,9 +611,14 @@ export default function Train() {
           <span className="small muted">{t("sessionMeta", { n: slots.length, m: minutes })}{completeCount > 0 && <b style={{ color: "var(--accent-text)" }}> · {t("doneCount", { d: completeCount, n: slots.length })}</b>}</span>
         </div>
       )}
-      {slots.map((slot) => (
-        <ExerciseCard key={slot.id} slot={slot} logs={data.logs} session={active} setSession={setActive}
-          open={open === slot.id} onToggle={() => setOpen(open === slot.id ? null : slot.id)} onRemove={() => removeSlot(slot)} onComplete={() => advance(slot.id)} onRest={startRest} />
+      {blocks.map((b, bi) => (
+        <React.Fragment key={b.muscle || `b${bi}`}>
+          {showBlocks && <MuscleHead n={bi + 1} muscle={b.muscle} slots={b.slots} session={active} />}
+          {b.slots.map((slot) => (
+            <ExerciseCard key={slot.id} slot={slot} logs={data.logs} session={active} setSession={setActive}
+              open={open === slot.id} onToggle={() => setOpen(open === slot.id ? null : slot.id)} onRemove={() => removeSlot(slot)} onComplete={() => advance(slot.id)} onRest={startRest} />
+          ))}
+        </React.Fragment>
       ))}
       {(slots.length > 0 || (picking && muscles.length > 0)) && !active?.finished && (
         <button className="btn" onClick={addExercise}><Icon name="plus" size={18} />{t("addExercise")}</button>

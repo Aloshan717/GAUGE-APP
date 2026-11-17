@@ -38,6 +38,8 @@ const P = {
   eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>,
   repeat: <><path d="M17 2.5 20 5.5l-3 3" /><path d="M4 11V9.5a4 4 0 0 1 4-4h12" /><path d="M7 21.5 4 18.5l3-3" /><path d="M20 13v1.5a4 4 0 0 1-4 4H4" /></>,
   search: <><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.2-4.2" /></>,
+  // A weight-stack machine: frame, pulley, cable and plates — shown when a machine has no photo.
+  machine: <><path d="M5 21V3h14v18M3 21h18" /><circle cx="12" cy="6" r="1.4" /><path d="M12 7.4V11" /><rect x="8.5" y="11" width="7" height="2.6" rx="0.6" /><rect x="8.5" y="14.6" width="7" height="2.6" rx="0.6" /></>,
 };
 
 export function Icon({ name, size = 20, stroke = 1.9, color = "currentColor", flip = false, style }) {
@@ -184,8 +186,11 @@ export function Spark({ points, target, color = "var(--accent)", height = 74, la
   );
 }
 
+// The title and ✕ stay pinned at the top while the sheet scrolls; a hairline
+// appears under them once the content slides underneath.
 export function Sheet({ title, onClose, onBack, children, closeLabel = "Close", backLabel = "Back", rtl }) {
   const ref = useRef(null);
+  const [scrolled, setScrolled] = React.useState(false);
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
     document.addEventListener("keydown", onKey);
@@ -197,12 +202,15 @@ export function Sheet({ title, onClose, onBack, children, closeLabel = "Close", 
   return (
     <div className="sheet-wrap">
       <button className="scrim" aria-label={closeLabel} onClick={onClose} />
-      <div className="sheet" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={ref}>
-        <div className="grabber"><span /></div>
-        <div className="row">
-          {onBack && <button className="icon-btn" aria-label={backLabel} onClick={onBack}><Icon name="back" flip={rtl} /></button>}
-          <span className="sheet-title">{title}</span>
-          <button className="icon-btn" aria-label={closeLabel} onClick={onClose}><Icon name="close" /></button>
+      <div className="sheet" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={ref}
+        onScroll={(e) => { const s = e.currentTarget.scrollTop > 4; if (s !== scrolled) setScrolled(s); }}>
+        <div className={`sheet-head${scrolled ? " scrolled" : ""}`}>
+          <div className="grabber"><span /></div>
+          <div className="row">
+            {onBack && <button className="icon-btn" aria-label={backLabel} onClick={onBack}><Icon name="back" flip={rtl} /></button>}
+            <span className="sheet-title">{title}</span>
+            <button className="icon-btn" aria-label={closeLabel} onClick={onClose}><Icon name="close" /></button>
+          </div>
         </div>
         {children}
       </div>
@@ -267,7 +275,7 @@ export function Photo({ ex, small, big, frame = 0 }) {
     <div className={`ex-photo${small ? " sm" : ""}${big ? " xl" : ""}`}>
       {i < srcs.length
         ? <img src={srcs[i]} alt="" loading="lazy" onError={() => setI((n) => n + 1)} />
-        : <Icon name="train" size={small ? 22 : 26} />}
+        : <Icon name={ex?.equip?.includes("machine") ? "machine" : "train"} size={small ? 22 : 26} />}
     </div>
   );
 }

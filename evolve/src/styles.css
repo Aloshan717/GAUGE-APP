@@ -2,14 +2,14 @@
 
 :root, :root[data-theme="dark"] {
   /* Neutral greys in three clear steps: page → card → box/field inside a card, borders a step lighter. */
-  --bg: #0e0e10; --surface: #1c1c1f; --surface2: #27272b; --surface3: #323237;
-  --line: #2d2d32; --line2: #3f3f45;
-  --text: #f2f2f4; --text2: #e4e4e8; --sub: #bcbcc2; --muted: #93939a; --faint: #6c6c73; --grid: #4f4f56;
+  --bg: #121214; --surface: #212124; --surface2: #2c2c30; --surface3: #37373c;
+  --line: #333338; --line2: #46464c;
+  --text: #f2f2f4; --text2: #e4e4e8; --sub: #bfbfc5; --muted: #97979e; --faint: #717178; --grid: #56565d;
   --accent: #2fe57d; --ink: #03130a; --accent-text: #5cefa0; --accent-soft: #183826; --accent-line: #2d7049;
   --ok: #2fe57d; --warn: #ffc24b; --warn-soft: #3a2f15; --warn-line: #725a24; --bad: #ff5f57; --bad-soft: #3f1c19; --bad-line: #80332e;
   --fat: #ff9f43; --muscle: #5ac8fa; --muscle-soft: #17313d; --muscle-line: #326f8a;
-  --scrim: rgba(0, 0, 0, 0.62); --glow: 0 10px 26px rgba(47, 229, 125, 0.28); --body: #404047;
-  --sign-bg: radial-gradient(120% 55% at 50% -5%, rgba(47, 229, 125, 0.16), transparent 60%), #0e0e10;
+  --scrim: rgba(0, 0, 0, 0.62); --glow: 0 10px 26px rgba(47, 229, 125, 0.28); --body: #47474e;
+  --sign-bg: radial-gradient(120% 55% at 50% -5%, rgba(47, 229, 125, 0.16), transparent 60%), #121214;
   color-scheme: dark;
 }
 :root[data-theme="light"] {
@@ -171,6 +171,13 @@ select.input { appearance: none; }
 }
 @keyframes up { from { transform: translateY(30px); opacity: 0.4; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }
+/* Title + ✕ pinned at the top of the sheet; covers the sheet's own top padding and full width. */
+.sheet-head {
+  position: sticky; top: 0; z-index: 5; display: flex; flex-direction: column; gap: 14px;
+  margin: -10px -16px -8px; padding: 10px 16px 8px; background: var(--bg);
+  border-bottom: 1px solid transparent; transition: border-color 0.15s, box-shadow 0.15s;
+}
+.sheet-head.scrolled { border-bottom-color: var(--line); box-shadow: 0 8px 18px -12px rgba(0, 0, 0, 0.55); }
 .grabber { display: flex; justify-content: center; }
 .grabber span { width: 38px; height: 5px; border-radius: 3px; background: var(--surface3); }
 .sheet-title { flex: 1; font-size: 19px; font-weight: 800; }
@@ -246,6 +253,11 @@ button.mmap-btn { border: 1px solid var(--line); background: var(--surface2); bo
 .muscle-line { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--sub); line-height: 1.45; }
 .card.pick-row { flex-direction: row; align-items: center; gap: 12px; border-radius: 16px; }
 .card.pick-row.same { border-color: var(--accent-line); }
+/* One header per muscle on the Train page (back, then biceps…) */
+.mus-head { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 10px 12px; border-radius: 16px; background: var(--surface2); border: 1px solid var(--line2); border-inline-start: 4px solid var(--accent); }
+.mus-head .mus-n { width: 30px; height: 30px; border-radius: 10px; flex: none; display: grid; place-items: center; font-size: 18px; background: var(--accent-soft); color: var(--accent-text); border: 1px solid var(--accent-line); }
+.mus-head .mus-name { font-size: 17px; font-weight: 800; line-height: 1.2; }
+.mus-head.done .mus-n { background: var(--accent); color: var(--ink); border-color: var(--accent); }
 /* Finished exercise */
 .ex-card { scroll-margin-top: 76px; transition: background-color 0.3s, border-color 0.3s; }
 .card.complete { border-color: var(--accent-line); background: var(--accent-soft); }

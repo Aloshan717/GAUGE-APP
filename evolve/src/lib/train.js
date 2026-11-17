@@ -214,6 +214,20 @@ export function lastTrained(logs, now = Date.now()) {
 export const MAX_PER_MUSCLE = 6;
 export const slotMuscle = (s) => s.muscle || GROUPS[s.group]?.muscle || null;
 
+// Today's exercises in one block per muscle: the muscles in the order you
+// picked them, then any other muscle in the order it first appears. Inside a
+// block the exercises keep their order. [{ muscle, slots }]
+export function groupSlots(slots = [], order = []) {
+  const blocks = new Map();
+  for (const m of order) blocks.set(m, []);
+  for (const s of slots) {
+    const m = slotMuscle(s);
+    if (!blocks.has(m)) blocks.set(m, []);
+    blocks.get(m).push(s);
+  }
+  return [...blocks].filter(([, list]) => list.length).map(([muscle, list]) => ({ muscle, slots: list }));
+}
+
 // Exercises per muscle the suggestion would give for this time.
 export function recommendedCounts({ muscles = [], logs = [], profile = {}, minutes } = {}) {
   const out = Object.fromEntries(muscles.map((m) => [m, 0]));
