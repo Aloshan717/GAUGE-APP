@@ -1,5 +1,5 @@
 // EVOLVE — training logic: today's session, lift history, next-set advice.
-import { GROUPS, BY_ID, groupItems, usable, logExerciseId, canonicalId } from "./exercises.js";
+import { GROUPS, BY_ID, groupItems, usable, logExerciseId, logMuscle, canonicalId } from "./exercises.js";
 import { musclesOf, customMuscles, partsOf } from "./muscles.js";
 import { coerceNumber, normalizeDate } from "./core.js";
 
@@ -13,6 +13,7 @@ export const ANGLES = {
   Back: [["vpull", ["upperLats"], ["Width (upper lats)", "العرض (أعلى المجنص)"]], ["row", ["midBack"], ["Thickness (mid back)", "السماكة (منتصف الظهر)"]],
     ["row", ["lowerLats"], ["Lower lats", "أسفل المجنص"]], ["rear", ["rearDelts"], ["Rear shoulders", "الكتف الخلفي"]]],
   Shoulders: [["ohp", ["frontDelts"], ["Front", "الأمامي"]], ["lateral", ["sideDelts"], ["Side", "الجانبي"]], ["rear", ["rearDelts"], ["Rear", "الخلفي"]]],
+  Traps: [["shrug", ["traps"], ["Upper", "العلوي"]], ["trapmid", ["midTraps"], ["Middle", "الأوسط"]], ["traplow", ["lowerTraps"], ["Lower", "السفلي"]]],
   Biceps: [["curl", ["bicepsLong"], ["Long head", "الرأس الطويل"]], ["curl", ["bicepsShort"], ["Short head", "الرأس القصير"]], ["curl", ["brachialis"], ["Brachialis", "العضدية"]]],
   Triceps: [["triceps", ["tricepsLong"], ["Long head", "الرأس الطويل"]], ["triceps", ["tricepsLateral"], ["Outer head", "الرأس الجانبي"]], ["triceps", ["tricepsMedial"], ["Medial head", "الرأس الإنسي"]]],
   Legs: [["squat", ["quadsOuter", "quadsInner", "quads"], ["Quads", "الفخذ الأمامي"]], ["hinge", ["hamsUpper"], ["Upper hamstrings", "أعلى الفخذ الخلفي"]],
@@ -198,7 +199,7 @@ export const setsText = (sets) => (sets || []).map((s) => `${+s.weight_kg}×${s.
 export function lastTrained(logs, now = Date.now()) {
   const out = {};
   for (const l of logs || []) {
-    const m = l?.muscle_group;
+    const m = logMuscle(l);
     const d = normalizeDate(l?.date);
     if (m && d && (!out[m] || d > out[m])) out[m] = d;
   }
@@ -332,7 +333,7 @@ export function pastWorkouts(logs, { before } = {}) {
     const day = days.get(d);
     const when = String(l.created_at || "");
     if (!day.has(key)) {
-      day.set(key, { id, name: id ? BY_ID[id].name[0] : name, muscle: l.muscle_group || (id ? GROUPS[BY_ID[id].group].muscle : null), sets: 0, first: when, ref: String(l.id || "") });
+      day.set(key, { id, name: id ? BY_ID[id].name[0] : name, muscle: logMuscle(l) || (id ? GROUPS[BY_ID[id].group].muscle : null), sets: 0, first: when, ref: String(l.id || "") });
     }
     const e = day.get(key);
     e.sets += 1;

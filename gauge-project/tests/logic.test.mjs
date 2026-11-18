@@ -210,6 +210,11 @@ test("workout tabs: Biceps/Triceps; legacy Arms only while old sets exist", () =
   assert.equal(withLegacy[withLegacy.length - 1], "Arms");
   assert.ok(withLegacy.includes("Biceps") && withLegacy.includes("Triceps"));
   assert.ok(!WORKOUT_MUSCLES.includes("Arms"));
+  // Traps sets from Evolve get their own tab, right after Shoulders — only once there are some.
+  const withTraps = workoutMuscleTabs([{ muscle_group: "Traps" }, { muscle_group: "Arms" }]);
+  assert.equal(withTraps[withTraps.indexOf("Shoulders") + 1], "Traps");
+  assert.equal(withTraps[withTraps.length - 1], "Arms");
+  assert.ok(!workoutMuscleTabs([{ muscle_group: "Shoulders" }]).includes("Traps"));
 });
 
 // ─── NEW: goal start date + baseline (pace fix) ──────────────────────────────

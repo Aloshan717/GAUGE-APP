@@ -18,9 +18,9 @@ export const exerciseImages = (ex, frame = 0) => (ex?.img ? IMG_BASES.map((b) =>
 export const exerciseImage = (ex, frame = 0) => exerciseImages(ex, frame)[0] || null;
 
 // Muscles you can pick on the Train page. Same names Gauge stored, so old lifts line up.
-export const MUSCLES = ["Chest", "Back", "Shoulders", "Biceps", "Triceps", "Legs", "Core"];
+export const MUSCLES = ["Chest", "Back", "Shoulders", "Traps", "Biceps", "Triceps", "Legs", "Core"];
 export const MUSCLE_NAMES = {
-  Chest: ["Chest", "الصدر"], Back: ["Back", "الظهر"], Shoulders: ["Shoulders", "الأكتاف"],
+  Chest: ["Chest", "الصدر"], Back: ["Back", "الظهر"], Shoulders: ["Shoulders", "الأكتاف"], Traps: ["Traps", "الترابيس"],
   Biceps: ["Biceps", "البايسبس"], Triceps: ["Triceps", "الترايسبس"], Legs: ["Legs", "الأرجل"], Core: ["Core", "البطن"],
 };
 
@@ -43,7 +43,9 @@ export const GROUPS = {
   lateral:  { muscle: "Shoulders", compound: false, job: ["Lateral raise", "رفرفة جانبية"], main: ["Side shoulders", "الكتف الجانبي"], also: null, reps: { muscle: [12, 20], strength: [10, 15] } },
   rear:     { muscle: "Shoulders", compound: false, job: ["Rear raise", "رفرفة خلفية"], main: ["Rear shoulders", "الكتف الخلفي"], also: ["Upper back", "أعلى الظهر"], reps: { muscle: [12, 20], strength: [10, 15] } },
   frontraise: { muscle: "Shoulders", compound: false, job: ["Front raise", "رفرفة أمامية"], main: ["Front shoulders", "الكتف الأمامي"], also: null, reps: { muscle: [12, 15], strength: [10, 12] } },
-  shrug:    { muscle: "Shoulders", compound: false, job: ["Shrug", "رفع الكتفين"], main: ["Traps", "الترابيس"], also: ["Grip", "القبضة"], reps: { muscle: [10, 15], strength: [8, 12] } },
+  shrug:    { muscle: "Traps", compound: false, job: ["Shrug", "رفع الكتفين"], main: ["Upper traps", "الترابيس العلوي"], also: ["Grip", "القبضة"], reps: { muscle: [10, 15], strength: [8, 12] } },
+  trapmid:  { muscle: "Traps", compound: false, job: ["Shoulder-blade squeeze", "ضم لوحي الكتف"], main: ["Middle traps", "الترابيس الأوسط"], also: ["Rear shoulders", "الكتف الخلفي"], reps: { muscle: [12, 15], strength: [10, 12] } },
+  traplow:  { muscle: "Traps", compound: false, job: ["Shoulder blades down", "تنزيل لوحي الكتف"], main: ["Lower traps", "الترابيس السفلي"], also: ["Middle traps · shoulders", "الترابيس الأوسط · الأكتاف"], reps: { muscle: [10, 15], strength: [8, 12] } },
   curl:     { muscle: "Biceps", compound: false, job: ["Elbow flexion", "ثني الكوع"], main: ["Biceps", "البايسبس"], also: ["Forearms", "الساعد"], reps: { muscle: [10, 15], strength: [8, 12] } },
   squat:    { muscle: "Legs", compound: true, job: ["Squat", "سكوات"], main: ["Quads", "الفخذ الأمامي"], also: ["Glutes · inner thighs", "المؤخرة · الفخذ الداخلي"], reps: { muscle: [6, 10], strength: [4, 6] } },
   hinge:    { muscle: "Legs", compound: true, job: ["Hip hinge", "ثني الورك"], main: ["Hamstrings", "الفخذ الخلفي"], also: ["Glutes · lower back", "المؤخرة · أسفل الظهر"], reps: { muscle: [8, 10], strength: [5, 8] } },
@@ -419,6 +421,21 @@ const RAW = [
   ["one_arm_reverse_pec_deck", "rear", null, "machine", "", "same", "One-arm reverse pec deck", "جهاز الفراشة العكسي بيد وحدة", "Pec fly machine · sit sideways, one handle", "جهاز الفراشة · اجلس على جنب، مقبض واحد", "Longer range, each side alone", "مدى أطول وكل جهة لحالها"],
   ["rear_delt_pad_machine", "rear", null, "machine", "", "same", "Rear delt machine (arm pads)", "جهاز الكتف الخلفي (مساند للذراع)", "Rear delt machine · push back with your arms", "جهاز الكتف الخلفي · تدفع بذراعك للخلف", "Hands relaxed — all rear shoulder", "يدك مرتاحة — الشغل كله على الكتف الخلفي"],
   ["calf_machine_shrug", "shrug", "Calf-Machine_Shoulder_Shrug", "machine", "", "same", "Shrug on the calf machine", "ترابيس على جهاز السمانة", "Standing calf machine · pads on your shoulders", "جهاز السمانة واقف · المساند على كتفك", "Heavy shrugs with nothing to grip", "ترابيس ثقيل بدون ما تمسك شي"],
+  // Traps, part by part: upper (shrugs), middle (shoulder-blade squeezes), lower (shoulder blades down).
+  ["snatch_grip_shrug", "shrug", "Snatch_Shrug", "barbell", "", "same", "Wide-grip barbell shrug", "ترابيس بار بقبضة عريضة", "Barbell · hands wide", "بار · اليدين عريضة", "Wide hands — shoulders straight up to the ears", "قبضة عريضة — ارفع كتوفك لأذنك"],
+  ["bb_shrug_behind", "shrug", "Barbell_Shrug_Behind_The_Back", "barbell", "", "angle", "Behind-the-back barbell shrug", "ترابيس بار من الخلف", "Barbell behind you", "بار خلف ظهرك", "Bar behind you — upper and middle traps", "البار خلفك — الترابيس العلوي والأوسط"],
+  ["power_shrug", "shrug", "Clean_Shrug", "barbell", "back", "angle", "Power shrug", "ترابيس انفجاري (باور شرَق)", "Barbell · from mid-thigh", "بار · من منتصف الفخذ", "Fast, explosive shrugs — the heaviest loads", "رفعة سريعة انفجارية — أثقل وزن"],
+  ["prone_t_raise", "trapmid", "Dumbbell_Lying_Rear_Lateral_Raise", "dumbbell bench", "", "same", "Prone T-raise", "رفرفة T منبطح", "Light dumbbells · bench, slight incline", "دمبل خفيف · بنش بميل بسيط", "Thumbs up, arms out to a T — squeeze at the top", "الإبهام لفوق والذراعين على شكل T — اضغط فوق"],
+  ["band_pull_apart", "trapmid", "Band_Pull_Apart", "band", "", "same", "Band pull-apart", "فتح المطاط (باند بول أبارت)", "Resistance band · arms straight", "مطاط مقاومة · الذراعين مفرودة", "Pull the band to your chest and squeeze the shoulder blades", "اسحب المطاط لصدرك واضغط لوحي الكتف"],
+  ["prone_squeeze", "trapmid", "Middle_Back_Shrug", "dumbbell bench", "", "same", "Prone shoulder-blade squeeze", "ضم لوحي الكتف منبطح", "Dumbbells · incline bench, chest on the pad", "دمبل · بنش مائل وصدرك على المسند", "Arms stay straight — only the shoulder blades move", "الذراعين ثابتة — لوحي الكتف بس يتحركون"],
+  ["one_arm_t_raise", "trapmid", "Dumbbell_Lying_One-Arm_Rear_Lateral_Raise", "dumbbell bench", "", "same", "One-arm prone T-raise", "رفرفة T منبطح بيد وحدة", "Dumbbell · bench, slight incline", "دمبل · بنش بميل بسيط", "One side at a time — hold the bench with the other hand", "جهة وحدة كل مرة — امسك البنش باليد الثانية"],
+  ["wide_seal_row", "trapmid", "Lying_Cambered_Barbell_Row", "barbell bench", "", "angle", "Wide chest-supported barbell row", "سحب بار منبطح بقبضة عريضة", "Barbell · high flat bench, lie face down", "بار · بنش مستوي عالي وانت منبطح", "Wide grip to the chest — heavy work for the middle traps", "قبضة عريضة للصدر — شغل ثقيل للترابيس الأوسط"],
+  ["row_machine_squeeze", "trapmid", null, "machine", "", "same", "Shoulder-blade squeeze on the row machine", "ضم لوحي الكتف على جهاز السحب", "Seated row machine · arms straight", "جهاز السحب جالس · الذراعين مفرودة", "Heavier load for the middle traps — the arms never bend", "وزن أعلى للترابيس الأوسط — الذراعين ما تنثني"],
+  ["incline_y_raise", "traplow", "Straight_Raises_on_Incline_Bench", "dumbbell bench", "", "same", "Incline Y-raise", "رفرفة Y على بنش مائل", "Light dumbbells or a light bar · incline bench, chest on the pad", "دمبل خفيف أو بار خفيف · بنش مائل وصدرك على المسند", "Arms up in a Y — shoulder blades down and back", "الذراعين لفوق على شكل Y — لوحي الكتف لتحت ولورا"],
+  ["cable_y_raise", "traplow", null, "cable", "", "same", "Cable Y-raise", "رفرفة Y كيبل", "Two low pulleys, cables crossed", "كيبلين من تحت متقاطعين", "Tension all the way up into the Y", "شد طول الحركة لين شكل Y"],
+  ["scap_pull_up", "traplow", "Scapular_Pull-Up", "bar", "", "angle", "Scapular pull-up", "سحب لوح الكتف على العقلة", "Pull-up bar", "عقلة", "Hang, then pull the shoulders down — arms stay straight", "تعلّق ونزّل كتوفك لتحت — الذراعين مفرودة"],
+  ["scap_pulldown", "traplow", null, "machine", "", "angle", "Scapular pulldown", "تنزيل لوح الكتف على جهاز السحب", "Lat pulldown machine · arms straight", "جهاز سحب الظهر · الذراعين مفرودة", "Move the bar a few cm with the shoulder blades only", "حرّك البار كم سنتي بلوحي الكتف بس"],
+  ["scaption", "traplow", "Dumbbell_Scaption", "dumbbell", "", "angle", "Scaption raise", "رفرفة سكابشن", "Light dumbbells · thumbs up", "دمبل خفيف · الإبهام لفوق", "Arms 30° forward — shoulder blades rotate up, kind to the shoulders", "الذراعين قدام بزاوية 30° — لوح الكتف يدور لفوق ومريح للكتف"],
 
   ["v_squat", "squat", null, "machine", "knee", "same", "V-squat machine", "جهاز في سكوات", "V-squat machine (plate-loaded)", "جهاز في سكوات (أقراص)", "Deep quads, back supported", "فخذ أمامي عميق والظهر مسنود"],
   ["reverse_hack_squat", "squat", null, "machine", "knee", "angle", "Reverse hack squat", "هاك سكوات عكسي", "Hack squat machine · facing the pad", "جهاز الهاك سكوات · وجهك للمسند", "More glutes, kind to the lower back", "مؤخرة أكثر ومريح لأسفل الظهر"],
@@ -500,7 +517,8 @@ export function matchExercise(name) {
 // — but not across unrelated muscles, so a triceps "kickback" you typed never
 // turns into a glute exercise. (Rear delts under Back, dips under Chest… fine.)
 const NEAR = {
-  Chest: ["Chest", "Triceps", "Shoulders"], Back: ["Back", "Shoulders", "Biceps", "Legs"], Shoulders: ["Shoulders", "Back", "Chest", "Triceps"],
+  Chest: ["Chest", "Triceps", "Shoulders"], Back: ["Back", "Shoulders", "Traps", "Biceps", "Legs"], Shoulders: ["Shoulders", "Traps", "Back", "Chest", "Triceps"],
+  Traps: ["Traps", "Shoulders", "Back"],
   Biceps: ["Biceps", "Back"], Triceps: ["Triceps", "Chest", "Shoulders"], Legs: ["Legs", "Back", "Core"], Core: ["Core", "Legs"],
 };
 export const logExerciseId = (log) => {
@@ -509,6 +527,15 @@ export const logExerciseId = (log) => {
   if (!id) return null;
   const m = log?.muscle_group;
   return NEAR[m] && !NEAR[m].includes(GROUPS[BY_ID[id].group].muscle) ? null : id;
+};
+
+// The muscle a logged set counts for: the one it was saved under — except the
+// trap exercises (shrugs) saved under Shoulders before Traps had its own chip.
+export const logMuscle = (log) => {
+  const m = log?.muscle_group || null;
+  if (m !== "Shoulders") return m;
+  const id = logExerciseId(log);
+  return id && GROUPS[BY_ID[id].group].muscle === "Traps" ? "Traps" : m;
 };
 
 // Alternatives for a swap: same group, usable here, not already in today's

@@ -12,7 +12,7 @@
 // matches your goal. The target in use only changes when you tap "Apply".
 import { coerceNumber, normalizeDate, mergeWeightSeries, withMuscleKg, goalStartDate, goalTracks } from "./core.js";
 import { addDays, adaptiveMaintenance, maintenance, dailyTargets, burnByDate, arrival, typicalMuscleRate, goalDirection } from "./body.js";
-import { BY_ID, MUSCLES, MUSCLE_NAMES, logExerciseId } from "./exercises.js";
+import { BY_ID, MUSCLES, MUSCLE_NAMES, logExerciseId, logMuscle } from "./exercises.js";
 import { e1rm, liftHistory, recommend, repsFor, volumeOf } from "./train.js";
 
 const DAY = 86400000;
@@ -84,7 +84,7 @@ function trainingIn(data, week) {
   const sessions = (data.sessions || []).filter((s) => inWeek(s.date) && coerceNumber(s.duration_min) > 0);
   const days = [...new Set(logs.map((l) => normalizeDate(l.date)))].sort();
   const muscles = {};
-  for (const l of logs) { const m = l.muscle_group || "Other"; muscles[m] = (muscles[m] || 0) + 1; }
+  for (const l of logs) { const m = logMuscle(l) || "Other"; muscles[m] = (muscles[m] || 0) + 1; }
   return {
     logs, days, workouts: days.length, sessions: sessions.length,
     minutes: sessions.reduce((a, s) => a + coerceNumber(s.duration_min), 0),
@@ -198,7 +198,7 @@ function exercisesIn(data, week, train, profile) {
     let next = null;
     if (ex) next = recommend(id, liftHistory(upTo, id), repsFor(ex.group, { focus: profile.focus }));
     out.push({
-      key: k, id, name: ex ? ex.name : [rows[0].exercise || "?", rows[0].exercise || "?"], muscle: rows[0].muscle_group || null,
+      key: k, id, name: ex ? ex.name : [rows[0].exercise || "?", rows[0].exercise || "?"], muscle: logMuscle(rows[0]),
       sets: rows.length, days: new Set(rows.map((l) => normalizeDate(l.date))).size,
       best: { kg: best.kg, reps: best.reps }, top, prevTop, prevDate, change: prevTop != null ? +(top - prevTop).toFixed(2) : null,
       repsChange: prevTop != null && top === prevTop && prevTopReps != null ? topReps - prevTopReps : null,
@@ -300,7 +300,7 @@ export function weekRecs(r, { profile = {}, data = {}, week } = {}) {
     }
     const mu = by.muscle;
     if (mu && mu.left > 0.2 && mu.status !== "ok" && mu.status !== "done") {
-      const perWeek = MUSCLES.map((m) => [m, (tr.muscles[m] || 0) / weeks]).filter(([m]) => m !== "Core" && m !== "Abs");
+      const perWeek = MUSCLES.map((m) => [m, (tr.muscles[m] || 0) / weeks]).filter(([m]) => m !== "Core" && m !== "Abs" && m !== "Traps");
       const low = perWeek.filter(([, s]) => s < 10).sort((a, b) => a[1] - b[1])[0];
       recs.push({ k: low ? "recMuscleLow" : "recMuscleGoal", p: { n: { signed: mu.need ?? 0, digits: 2 }, p: r.food.proteinTarget || "—", a: r.food.protein || "—", lm: low ? MUSCLE_NAMES[low[0]] || [low[0], low[0]] : "", ls: low ? Math.round(low[1]) : 0 }, kind: "train" });
     }
@@ -332,12 +332,12 @@ export function weekRecs(r, { profile = {}, data = {}, week } = {}) {
   if (stall) recs.push({ k: "recStall", p: { name: stall.name }, kind: "stall" });
 
   if (!recs.some((x) => x.k === "recMuscleLow")) {
-    MUSCLES.map((m) => [m, tr.muscles[m] || 0]).filter(([m, s]) => s > 0 && s < (m === "Legs" ? 10 : 8) * weeks)
+    MUSCLES.map((m) => [m, tr.muscles[m] || 0]).filter(([m, s]) => s > 0 && s < (m === "Legs" ? 10 : m === "Traps" ? 6 : 8) * weeks)
       .sort((a, b) => a[1] - b[1]).slice(0, 2)
       .forEach(([m, s]) => recs.push({ k: "recSetsLow", p: { m: MUSCLE_NAMES[m] || [m, m], s }, kind: "train" }));
   }
   if (week) {   // a muscle you usually train but skipped in this period
-    const recent = new Set((data.logs || []).filter((l) => { const d = normalizeDate(l.date); return d && d >= addDays(week.from, -28) && d < week.from; }).map((l) => l.muscle_group));
+    const recent = new Set((data.logs || []).filter((l) => { const d = normalizeDate(l.date); return d && d >= addDays(week.from, -28) && d < week.from; }).map(logMuscle));
     MUSCLES.filter((m) => recent.has(m) && !tr.muscles[m]).slice(0, 1)
       .forEach((m) => recs.push({ k: "recSkipped", p: { m: MUSCLE_NAMES[m] || [m, m] }, kind: "train" }));
   }

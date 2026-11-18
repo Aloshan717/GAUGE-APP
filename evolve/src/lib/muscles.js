@@ -29,6 +29,8 @@ export const MUSCLE_LABELS = {
   forearmFlexors: ["Grip (inner forearm)", "القبضة (باطن الساعد)"],
   forearmExtensors: ["Back of the forearm", "ظهر الساعد"],
   traps: ["Upper traps", "الترابيس العلوي"],
+  midTraps: ["Middle traps", "الترابيس الأوسط"],
+  lowerTraps: ["Lower traps", "الترابيس السفلي"],
   midBack: ["Mid back", "منتصف الظهر"],
   lats: ["Lats", "المجنص"],
   upperLats: ["Upper lats (width)", "أعلى المجنص (العرض)"],
@@ -73,7 +75,9 @@ export const REGIONS = {
   forearmFlexors: { front: ["forearm-flex"] },
   forearmExtensors: { back: ["forearm-ext"] },
   traps: { front: ["neck"], back: ["traps-upper"] },
-  midBack: { back: ["traps-mid"] },
+  midTraps: { back: ["traps-mid"] },
+  lowerTraps: { back: ["traps-lower"] },
+  midBack: { back: ["traps-mid", "traps-lower"] },   // the muscles between the shoulder blades, middle and lower traps
   lats: { back: ["lats-upper", "lats-lower"] },
   upperLats: { back: ["lats-upper"] },
   lowerLats: { back: ["lats-lower"] },
@@ -100,6 +104,7 @@ export const PARTS = {
   Chest: ["upperChest", "midChest", "lowerChest"],
   Back: ["upperLats", "lowerLats", "midBack", "lowerBack", "traps"],
   Shoulders: ["frontDelts", "sideDelts", "rearDelts", "traps"],
+  Traps: ["traps", "midTraps", "lowerTraps"],
   Biceps: ["bicepsLong", "bicepsShort", "brachialis", "brachioradialis"],
   Triceps: ["tricepsLong", "tricepsLateral", "tricepsMedial"],
   Legs: ["quadsOuter", "rectusFemoris", "quadsInner", "hamsUpper", "hamsLower", "glutes", "abductors", "adductors", "calves"],
@@ -123,6 +128,8 @@ const BY_GROUP = {
   frontraise: [["frontDelts"], ["sideDelts", "upperChest"]],
   rear: [["rearDelts"], ["midBack", "traps"]],
   shrug: [["traps"], ["forearmFlexors"]],
+  trapmid: [["midTraps"], ["rearDelts", "lowerTraps"]],
+  traplow: [["lowerTraps"], ["midTraps", "sideDelts"]],
   curl: [["biceps"], ["brachioradialis"]],
   squat: [[...VASTI, "glutes"], ["rectusFemoris", "adductors", "lowerBack"]],
   hinge: [["hamsUpper", "glutes"], ["hamsLower", "lowerBack"]],
@@ -230,7 +237,19 @@ const BY_EXERCISE = {
   face_pull: [["rearDelts", "midBack"], ["traps"]],
   cable_row_to_neck: [["rearDelts", "midBack"], ["traps", "biceps"]],
   cable_external_rotation: [["rearDelts"], ["midBack"]],
-  smith_shrug: [["traps", "midBack"], ["forearmFlexors"]],
+  smith_shrug: [["traps", "midTraps"], ["forearmFlexors"]],
+  bb_shrug_behind: [["traps", "midTraps"], ["forearmFlexors"]],
+  power_shrug: [["traps"], ["forearmFlexors", "hamsUpper", "glutes"]],
+  band_pull_apart: [["midTraps", "rearDelts"], ["lowerTraps"]],
+  prone_t_raise: [["midTraps", "rearDelts"], ["lowerTraps"]],
+  one_arm_t_raise: [["midTraps", "rearDelts"], ["lowerTraps"]],
+  prone_squeeze: [["midTraps"], ["lowerTraps"]],
+  wide_seal_row: [["midTraps", "rearDelts"], ["lats", "biceps", "lowerTraps"]],
+  row_machine_squeeze: [["midTraps"], ["lowerTraps"]],
+  incline_y_raise: [["lowerTraps"], ["midTraps", "frontDelts", "sideDelts"]],
+  scap_pull_up: [["lowerTraps"], ["lats", "midTraps"]],
+  scap_pulldown: [["lowerTraps"], ["lats", "midTraps"]],
+  scaption: [["lowerTraps", "sideDelts"], ["frontDelts", "traps"]],
 
   incline_db_curl: CURL_LONG, close_ez_curl: CURL_LONG, drag_curl: CURL_LONG,
   machine_preacher_curl: CURL_SHORT, db_preacher_curl: CURL_SHORT, cable_preacher_curl: CURL_SHORT, spider_curl: CURL_SHORT,
@@ -299,6 +318,7 @@ const BY_CHIP = {
   Chest: [CHEST, ["frontDelts", "triceps"]],
   Back: [["lats", "midBack"], ["biceps", "rearDelts"]],
   Shoulders: [["frontDelts", "sideDelts", "rearDelts"], []],
+  Traps: [["traps", "midTraps", "lowerTraps"], []],
   Biceps: [["biceps"], ["brachioradialis"]],
   Triceps: [["triceps"], []],
   Legs: [["quads", "glutes", "hamstrings"], ["calves"]],
@@ -356,7 +376,7 @@ const areaOf = (p) => Math.abs(p.reduce((a, [x, y], i) => { const [x2, y2] = p[(
 
 // The view (front or back) where the main muscles show most. Back-side jobs
 // (rows, pulldowns, triceps, hinges, shrugs, calves…) are always drawn from behind.
-const BACK_GROUPS = new Set(["row", "vpull", "rear", "shrug", "triceps", "hinge", "legcurl", "glutes", "abduction", "calf"]);
+const BACK_GROUPS = new Set(["row", "vpull", "rear", "shrug", "trapmid", "traplow", "triceps", "hinge", "legcurl", "glutes", "abduction", "calf"]);
 // Squats, presses, extensions and lunges are drawn from the front (the quads)
 // unless the exercise has no main muscle there (a glute-only lunge).
 const FRONT_GROUPS = new Set(["squat", "legpress", "legext", "lunge"]);

@@ -6,7 +6,7 @@ import { useApp } from "../ctx.js";
 import { Icon, Chips, Photo, Note, Stepper, MuscleMap } from "../ui.jsx";
 import { sb, store } from "../lib/api.js";
 import { fmtNum, fmtDate } from "../lib/i18n.js";
-import { BY_ID, GROUPS, MUSCLES, MUSCLE_NAMES } from "../lib/exercises.js";
+import { BY_ID, GROUPS, MUSCLES, MUSCLE_NAMES, logMuscle } from "../lib/exercises.js";
 import { liftHistory, recommend, setsText, recommendedCounts, adjustSession, slotMuscle, groupSlots, customMatch, setAllSets, suggestedSets,
   pastWorkouts, lastTimeFor, slotsFromItems, sameExercise, bestOf, recordKind, recordIndex, volumeOf, restSeconds, MAX_PER_MUSCLE, MAX_SETS, coverage } from "../lib/train.js";
 import { enqueue, patchQueued, dropQueued, tempId, isTemp } from "../lib/queue.js";
@@ -502,7 +502,7 @@ export default function Train() {
     const doneSets = slots.flatMap((x) => (active.done?.[x.id] || []).filter(Boolean));
     const volume = volumeOf(doneSets);
     const lastSame = workouts.find((w) => w.muscles.some((m) => ms.includes(m)));
-    const lastVolume = lastSame ? volumeOf((data.logs || []).filter((l) => l.date === lastSame.date && ms.includes(l.muscle_group)).map((l) => ({ kg: Number(l.weight_kg), reps: Number(l.reps) }))) : 0;
+    const lastVolume = lastSame ? volumeOf((data.logs || []).filter((l) => l.date === lastSame.date && ms.includes(logMuscle(l))).map((l) => ({ kg: Number(l.weight_kg), reps: Number(l.reps) }))) : 0;
     const summary = {
       date: today, minutes: dur, sets: doneSets.length, volume, muscles: ms,
       exercises: slots.filter((x) => (active.done?.[x.id] || []).some(Boolean)).length,

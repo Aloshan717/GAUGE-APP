@@ -1037,10 +1037,15 @@ export const SESSION_MUSCLES = ["Chest", "Back", "Legs", "Shoulders", "Biceps", 
 export const WORKOUT_MUSCLES = ["Chest", "Back", "Legs", "Shoulders", "Biceps", "Triceps", "Core"];
 
 // Older sets were logged under "Arms". Keep that tab visible only while such
-// sets exist, so history is never hidden by the rename.
+// sets exist, so history is never hidden by the rename. Sets saved under
+// "Traps" (Evolve trains the traps on their own) get a tab after Shoulders the
+// same way.
 export function workoutMuscleTabs(logs) {
-  const legacy = (logs || []).some((l) => l && l.muscle_group === "Arms");
-  return legacy ? [...WORKOUT_MUSCLES, "Arms"] : [...WORKOUT_MUSCLES];
+  const has = (m) => (logs || []).some((l) => l && l.muscle_group === m);
+  const tabs = [...WORKOUT_MUSCLES];
+  if (has("Traps")) tabs.splice(tabs.indexOf("Shoulders") + 1, 0, "Traps");
+  if (has("Arms")) tabs.push("Arms");
+  return tabs;
 }
 
 // ─── SESSIONS ────────────────────────────────────────────────────────────────

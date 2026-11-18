@@ -1,6 +1,6 @@
 // Evolve logic tests: library, swaps, sessions, advice, plan, energy, goal checks.
 import assert from "node:assert/strict";
-import { EXERCISES, BY_ID, GROUPS, usable, swapOptions, matchExercise, logExerciseId } from "../src/lib/exercises.js";
+import { EXERCISES, BY_ID, GROUPS, MUSCLES, MUSCLE_NAMES, usable, swapOptions, matchExercise, logExerciseId, logMuscle } from "../src/lib/exercises.js";
 import { buildSession, recommend, liftHistory, weightStep, exercisesFor, adjustSession, recommendedCounts, makeCustomSlot, customMatch, makeSlot, setAllSets, suggestedSets,
   pastWorkouts, lastTimeFor, slotsFromItems, sameExercise, coverage, groupSlots } from "../src/lib/train.js";
 import { generatePlan, weeklySets, swapInPlan, toggleKept, setSlotSets, reviewCount, planDayFor, nextPlanDay, DEFAULT_DAYS } from "../src/lib/plan.js";
@@ -320,6 +320,7 @@ test("whole muscle: each exercise aims at a different part, then round again", (
   assert.deepEqual(lead(adjustSession([], { muscles: ["Biceps"], counts: { Biceps: 3 } })), ["bicepsLong", "bicepsShort", "brachialis"]);
   assert.deepEqual(lead(adjustSession([], { muscles: ["Triceps"], counts: { Triceps: 3 } })), ["tricepsLong", "tricepsLateral", "tricepsMedial"]);
   assert.deepEqual(lead(adjustSession([], { muscles: ["Shoulders"], counts: { Shoulders: 3 } })), ["frontDelts", "sideDelts", "rearDelts"]);
+  assert.deepEqual(lead(adjustSession([], { muscles: ["Traps"], counts: { Traps: 3 } })), ["traps", "midTraps", "lowerTraps"]);
   const back = adjustSession([], { muscles: ["Back"], counts: { Back: 3 } });
   assert.deepEqual(back.map((x) => BY_ID[x.ex].group).sort(), ["row", "row", "vpull"]);
   assert.ok(coverage("Back", back).slice(0, 3).every((c) => c.done));
@@ -428,7 +429,7 @@ test("plenty of swaps: biceps alone has 20+ in a full gym", () => {
 test("plenty of machines: every muscle has several, every movement in a full gym has at least one", () => {
   const machines = EXERCISES.filter((e) => e.equip.includes("machine"));
   assert.ok(machines.length >= 95, `${machines.length} machines`);
-  for (const m of ["Chest", "Back", "Shoulders", "Biceps", "Triceps", "Legs", "Core"]) {
+  for (const m of MUSCLES) {
     const n = machines.filter((e) => GROUPS[e.group].muscle === m).length;
     assert.ok(n >= 4, `${m}: ${n} machines`);
   }
@@ -514,6 +515,80 @@ test("small maps zoom on the target and pick the right side", () => {
     const m = musclesOf(e), v = mainView(m, e.group), b = focusBox(m, v);
     assert.ok(b && b[0] >= 0 && b[1] >= 0 && b[0] + b[2] <= 100.01 && b[1] + b[3] <= 220.01, `${e.id} ${JSON.stringify(b)}`);
   }
+});
+// ── Traps: its own muscle, upper / middle / lower ──
+test("Traps is its own muscle, after Shoulders, with shrugs and the middle and lower traps", () => {
+  assert.deepEqual(MUSCLES, ["Chest", "Back", "Shoulders", "Traps", "Biceps", "Triceps", "Legs", "Core"]);
+  assert.deepEqual(MUSCLE_NAMES.Traps, ["Traps", "الترابيس"]);
+  const traps = EXERCISES.filter((e) => GROUPS[e.group].muscle === "Traps");
+  assert.ok(traps.length >= 20, `${traps.length} trap exercises`);
+  assert.deepEqual([...new Set(traps.map((e) => e.group))], ["shrug", "trapmid", "traplow"]);
+  assert.ok(!EXERCISES.some((e) => GROUPS[e.group].muscle === "Shoulders" && e.group === "shrug"));
+  // Every one with a photo except the machine and cable ones.
+  assert.ok(traps.every((e) => e.img || e.equip.includes("machine") || e.equip.includes("cable")));
+  // Each part leads with its own piece of the muscle.
+  const lead = (g) => new Set(traps.filter((e) => e.group === g).map((e) => musclesOf(e).primary[0]));
+  assert.deepEqual([...lead("shrug")], ["traps"]);
+  assert.deepEqual([...lead("trapmid")], ["midTraps"]);
+  assert.deepEqual([...lead("traplow")], ["lowerTraps"]);
+  // Every part can be trained at home with dumbbells and a bench.
+  for (const g of ["shrug", "trapmid", "traplow"]) assert.ok(traps.some((e) => e.group === g && usable(e, { equipment: "home" })), `${g} at home`);
+  // Your own trap exercise: pick the part, or it lights the whole muscle.
+  assert.deepEqual(PARTS.Traps, ["traps", "midTraps", "lowerTraps"]);
+  assert.deepEqual(customMuscles("Traps").primary, ["traps", "midTraps", "lowerTraps"]);
+});
+test("Traps day: suggestions cover upper, middle and lower; swaps stay in the part", () => {
+  const s = buildSession({ muscles: ["Traps"], minutes: 30 });
+  assert.deepEqual(s.map((x) => x.group), ["shrug", "trapmid", "traplow"]);
+  assert.deepEqual(coverage("Traps", s).map((c) => [c.label[0], c.done]), [["Upper", true], ["Middle", true], ["Lower", true]]);
+  assert.deepEqual(coverage("Traps", s.slice(0, 1)).map((c) => c.done), [true, false, false]);
+  // Back + Shoulders + Traps: each gets its own blocks, no repeats.
+  const big = buildSession({ muscles: ["Back", "Shoulders", "Traps"], minutes: 90 });
+  assert.ok(big.some((x) => x.muscle === "Traps" && x.group === "shrug"));
+  assert.equal(new Set(big.map((x) => x.ex)).size, big.length);
+  // A shrug swaps for another shrug; a Y-raise for another lower-trap move.
+  assert.ok(swapOptions("barbell_shrug", { equipment: "gym" }).every((e) => e.group === "shrug"));
+  assert.ok(swapOptions("incline_y_raise", { equipment: "gym" }).length >= 4);
+  assert.ok(swapOptions("band_pull_apart", { equipment: "gym" }).every((e) => GROUPS[e.group].muscle === "Traps"));
+});
+test("trap map: upper, middle and lower light their own part; rows still light the mid back", () => {
+  const back = (id) => regionLevels(musclesOf(id), "back");
+  assert.equal(back("barbell_shrug")["traps-upper"], "primary");
+  assert.equal(back("prone_t_raise")["traps-mid"], "primary");
+  assert.equal(back("prone_t_raise")["traps-lower"], "secondary");
+  assert.equal(back("incline_y_raise")["traps-lower"], "primary");
+  assert.equal(back("incline_y_raise")["traps-mid"], "secondary");
+  assert.equal(back("seated_cable_row")["traps-mid"], "primary");
+  assert.equal(back("seated_cable_row")["traps-lower"], "primary");
+  assert.ok(BACK.some(([r]) => r === "traps-lower"));
+  for (const id of ["band_pull_apart", "scap_pull_up", "scaption", "row_machine_squeeze"]) assert.equal(mainView(musclesOf(id), BY_ID[id].group), "back", id);
+  assert.ok(sameAngle("prone_t_raise", "band_pull_apart"));
+  assert.ok(!sameAngle("barbell_shrug", "incline_y_raise"));
+  assert.equal(searchExercises("ترابيس")[0] && GROUPS[searchExercises("ترابيس")[0].group].muscle, "Traps");
+  assert.ok(searchExercises("lower traps").some((e) => e.id === "incline_y_raise"));
+});
+test("shrugs logged under Shoulders before Traps existed count for Traps", () => {
+  assert.equal(logMuscle({ muscle_group: "Shoulders", exercise: "Barbell shrug", exercise_id: "barbell_shrug" }), "Traps");
+  assert.equal(logMuscle({ muscle_group: "Shoulders", exercise: "Dumbbell shrug" }), "Traps");   // typed, no id
+  assert.equal(logMuscle({ muscle_group: "Shoulders", exercise: "Dumbbell lateral raise", exercise_id: "db_lateral_raise" }), "Shoulders");
+  assert.equal(logMuscle({ muscle_group: "Back", exercise: "Face pull", exercise_id: "face_pull" }), "Back");
+  assert.equal(logMuscle({ muscle_group: "Traps", exercise: "Prone T-raise", exercise_id: "prone_t_raise" }), "Traps");
+  assert.equal(logMuscle({ muscle_group: "Shoulders", exercise: "my own move" }), "Shoulders");
+  assert.equal(logExerciseId({ muscle_group: "Traps", exercise: "Barbell shrug" }), "barbell_shrug");
+  // An old shoulder day with shrugs: Shoulders + Traps, and "same as last time" for Traps finds the shrugs.
+  const logs = [
+    { date: "2026-11-02", muscle_group: "Shoulders", exercise: "Dumbbell shoulder press", exercise_id: "db_shoulder_press", weight_kg: 20, reps: 10, created_at: "2026-11-02T10:00:00Z" },
+    { date: "2026-11-02", muscle_group: "Shoulders", exercise: "Barbell shrug", exercise_id: "barbell_shrug", weight_kg: 80, reps: 12, created_at: "2026-11-02T10:30:00Z" },
+  ];
+  const w = pastWorkouts(logs);
+  assert.deepEqual(w[0].muscles, ["Shoulders", "Traps"]);
+  assert.deepEqual(lastTimeFor("Traps", w).items.map((i) => i.id), ["barbell_shrug"]);
+  assert.deepEqual(lastTimeFor("Shoulders", w).items.map((i) => i.id), ["db_shoulder_press"]);
+  // The report counts them for Traps too, and never asks for more trap sets to grow muscle.
+  const r = weeklyReport({ week: reportPeriod("2026-11-29"), data: { logs: logs.map((l) => ({ ...l, date: "2026-11-20" })), days: [], weights: [], inbody: [], sessions: [], goal: null } });
+  assert.equal(r.training.muscles.Traps, 1);
+  assert.equal(r.training.muscles.Shoulders, 1);
+  assert.equal(r.training.exercises.find((x) => x.id === "barbell_shrug").muscle, "Traps");
 });
 test("search finds the pec fly machine in Arabic and English, names first", () => {
   assert.equal(searchExercises("فراشة")[0].id, "pec_deck");
